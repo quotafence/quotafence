@@ -1,8 +1,8 @@
 # Architecture
 
 This document describes the intended architecture. The repository currently
-contains the first provider-neutral domain types and policies, while application,
-storage, and provider modules remain planned.
+contains the provider-neutral domain and local SQLite storage layers, while
+application, command, and provider modules remain planned.
 
 ## Goals
 
@@ -37,8 +37,8 @@ src-tauri/src/
     codex/                   First provider adapter
 ```
 
-The `domain/` module now exists. The remaining paths are targets, not a reason
-to create empty modules in advance.
+The `domain/` and `storage/` modules now exist. The remaining paths are targets,
+not a reason to create empty modules in advance.
 
 ## Component responsibilities
 
@@ -70,10 +70,13 @@ does not pretend that quota from different providers is fungible.
 
 ### Local storage
 
-A local transactional database is planned for configuration, allocations,
-reservations, usage events, and reconciliation checkpoints. Schema migrations
-must be versioned and recoverable. Secrets should not be stored when an
-installed provider client can safely own authentication.
+The Rust backend owns a local SQLite database for configuration, allocations,
+reservations, and usage events. Migrations are versioned, foreign keys are
+enabled, allocation and ledger writes use immediate transactions, and usage
+events are append-only. Provider credentials are not part of the schema.
+
+The application layer will supply a path inside Tauri's app-data directory.
+Tests use isolated in-memory databases. See [Storage](storage.md).
 
 ### Provider adapters
 
