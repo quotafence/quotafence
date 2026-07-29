@@ -87,8 +87,8 @@ pnpm tauri dev
 pnpm check
 ```
 
-This builds the frontend, checks Rust formatting and compilation, and runs the
-Rust tests.
+This builds the frontend, checks Rust formatting and compilation, runs Clippy
+with warnings denied, and runs the Rust tests.
 
 ## Contributing
 
