@@ -297,6 +297,27 @@ impl Reservation {
         created_at: UnixMillis,
         expires_at: UnixMillis,
     ) -> DomainResult<Self> {
+        Self::restore(
+            id,
+            scope_id,
+            window_id,
+            amount,
+            created_at,
+            expires_at,
+            ReservationStatus::Active,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        id: ReservationId,
+        scope_id: ScopeId,
+        window_id: WindowId,
+        amount: QuotaAmount,
+        created_at: UnixMillis,
+        expires_at: UnixMillis,
+        status: ReservationStatus,
+    ) -> DomainResult<Self> {
         if amount.value() == 0 {
             return Err(DomainError::ZeroAmount {
                 context: "reservation",
@@ -317,7 +338,7 @@ impl Reservation {
             amount,
             created_at,
             expires_at,
-            status: ReservationStatus::Active,
+            status,
         })
     }
 

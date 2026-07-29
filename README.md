@@ -62,7 +62,8 @@ The first release is intentionally a modular monolith. A background daemon and
 standalone CLI can be extracted when managed sessions or multiple frontends
 require them. See [Architecture](docs/architecture.md),
 [Quota model](docs/quota-model.md), and
-[Provider adapters](docs/provider-adapters.md).
+[Provider adapters](docs/provider-adapters.md). The implemented SQLite layer is
+described in [Storage](docs/storage.md).
 
 ## Development
 
