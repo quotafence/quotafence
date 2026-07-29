@@ -15,14 +15,13 @@ content in an issue, fixture, log, or screenshot.
 
 ## Local setup
 
-You need Node.js 22+, pnpm 11.17.0, stable Rust, and the
+You need Node.js 22+ with npm 10+, stable Rust, and the
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your
 operating system.
 
 ```bash
-corepack enable
-pnpm install
-pnpm tauri dev
+npm install
+npm run tauri -- dev
 ```
 
 ## Making a change
@@ -30,7 +29,7 @@ pnpm tauri dev
 1. Create a focused branch such as `feat/codex-adapter` or `fix/quota-rollover`.
 2. Keep domain policy independent from provider-specific implementation details.
 3. Add or update tests for behavior changes.
-4. Run `pnpm check`.
+4. Run `npm run check`.
 5. Update documentation when concepts, configuration, or user-visible behavior change.
 
 Commit messages should follow the

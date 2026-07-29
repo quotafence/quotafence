@@ -3,14 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "packageManager": "pnpm@11.17.0",
+  "packageManager": "npm@10.9.8",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "check": "pnpm build && pnpm check:rust",
+    "check": "npm run build && npm run check:rust",
     "check:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo check --locked --manifest-path src-tauri/Cargo.toml && cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --locked --manifest-path src-tauri/Cargo.toml",
     "preview": "vite preview",
     "tauri": "tauri"

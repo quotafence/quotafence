@@ -69,22 +69,21 @@ require them. See [Architecture](docs/architecture.md),
 ### Prerequisites
 
 - Node.js 22 or newer
-- pnpm 11.17.0 (Corepack is recommended)
+- npm 10 or newer (included with Node.js)
 - stable Rust toolchain
 - Tauri 2 platform prerequisites for your operating system
 
 ### Run locally
 
 ```bash
-corepack enable
-pnpm install
-pnpm tauri dev
+npm install
+npm run tauri -- dev
 ```
 
 ### Validate a change
 
 ```bash
-pnpm check
+npm run check
 ```
 
 This builds the frontend, checks Rust formatting and compilation, runs Clippy
