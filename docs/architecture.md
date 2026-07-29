@@ -46,8 +46,10 @@ advance.
 ### Desktop UI
 
 Displays allocations, remaining quota, data confidence, provider capabilities,
-and managed-session state. It must not infer enforcement guarantees from a
-provider name.
+and managed-session state. The current local MVP implements onboarding,
+multi-source window selection, project/task allocations, allocation updates,
+and manual usage recording. It does not infer enforcement guarantees from a
+provider name. See [Local MVP](local-mvp.md).
 
 ### Tauri command boundary
 

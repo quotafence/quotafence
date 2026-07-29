@@ -23,11 +23,14 @@ Provider and policy enum values remain explicit `snake_case` strings.
 The current command DTOs cover:
 
 - provider, account, quota-pool, and quota-window creation;
+- atomic quota-source onboarding;
 - scope creation;
+- atomic scope-and-allocation creation;
 - allocation updates;
 - quota reservation and release;
 - usage recording with optional atomic reservation consumption; and
-- quota-dashboard queries.
+- quota-dashboard queries; and
+- complete local-state queries for application startup and refresh.
 
 Command IDs are supplied by the caller to give retries a stable identity. A
 duplicate currently returns a storage conflict rather than silently succeeding;

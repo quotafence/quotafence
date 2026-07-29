@@ -3,8 +3,9 @@
 Local-first quota allocation and enforcement for coding-agent subscriptions.
 
 > [!IMPORTANT]
-> Agent Quota Manager is in its foundation phase. It does not enforce quota yet
-> and has no stable release. Codex is the first planned provider integration.
+> Agent Quota Manager is an early local MVP with no stable release. Manual
+> allocation and accounting work locally, but provider detection and managed
+> enforcement are not implemented yet. Codex is the first planned integration.
 
 Coding-agent subscriptions usually expose one shared usage allowance. When
 several repositories or tasks compete for that allowance, it is difficult to
@@ -65,7 +66,9 @@ require them. See [Architecture](docs/architecture.md),
 [Provider adapters](docs/provider-adapters.md). The implemented SQLite layer is
 described in [Storage](docs/storage.md), and use-case orchestration in
 [Application services](docs/application-services.md). The desktop IPC contract
-is documented in [Tauri commands](docs/tauri-commands.md).
+is documented in [Tauri commands](docs/tauri-commands.md). See
+[Local MVP](docs/local-mvp.md) for the current end-to-end workflow and its
+limitations.
 
 ## Development
 

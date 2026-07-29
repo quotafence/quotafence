@@ -3,43 +3,26 @@ mod commands;
 pub mod domain;
 pub mod storage;
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(commands::initialize)
         .invoke_handler(tauri::generate_handler![
-            greet,
             commands::create_provider,
             commands::create_account,
             commands::create_quota_pool,
             commands::create_quota_window,
+            commands::create_quota_source,
             commands::create_scope,
+            commands::create_allocated_scope,
             commands::set_allocation,
             commands::reserve_quota,
             commands::release_reservation,
             commands::record_usage,
             commands::get_quota_dashboard,
+            commands::get_local_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::greet;
-
-    #[test]
-    fn greeting_includes_the_requested_name() {
-        assert_eq!(
-            greet("Codex"),
-            "Hello, Codex! You've been greeted from Rust!"
-        );
-    }
 }
