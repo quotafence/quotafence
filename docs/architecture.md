@@ -1,8 +1,8 @@
 # Architecture
 
 This document describes the intended architecture. The repository currently
-contains the provider-neutral domain, local SQLite storage, and application
-service layers, while Tauri commands and provider adapters remain planned.
+contains the provider-neutral domain, local SQLite storage, application
+services, and Tauri command boundary, while provider adapters remain planned.
 
 ## Goals
 
@@ -37,8 +37,9 @@ src-tauri/src/
     codex/                   First provider adapter
 ```
 
-The `domain/`, `storage/`, and `application/` modules now exist. The remaining
-paths are targets, not a reason to create empty modules in advance.
+The `commands/`, `domain/`, `storage/`, and `application/` modules now exist.
+The remaining paths are targets, not a reason to create empty modules in
+advance.
 
 ## Component responsibilities
 
@@ -53,7 +54,9 @@ provider name.
 Validates requests from the webview and exposes small application use cases. It
 must not expose arbitrary shell execution or unrestricted filesystem access.
 Transport and storage DTOs must be converted through domain constructors so
-deserialization cannot bypass domain invariants.
+deserialization cannot bypass domain invariants. The current boundary owns the
+application-data path, synchronized service state, and stable IPC error mapping;
+see [Tauri commands](tauri-commands.md).
 
 ### Quota core
 
@@ -82,8 +85,8 @@ reservations, and usage events. Migrations are versioned, foreign keys are
 enabled, allocation and ledger writes use immediate transactions, and usage
 events are append-only. Provider credentials are not part of the schema.
 
-The application layer will supply a path inside Tauri's app-data directory.
-Tests use isolated in-memory databases. See [Storage](storage.md).
+The Tauri boundary supplies a path inside the operating system's app-data
+directory. Tests use isolated in-memory databases. See [Storage](storage.md).
 
 ### Provider adapters
 

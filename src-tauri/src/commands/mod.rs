@@ -1,0 +1,146 @@
+mod error;
+mod state;
+
+use std::{error::Error, fs};
+
+use tauri::{Manager, Runtime, State};
+
+use crate::application::{
+    CreateAccount, CreateProvider, CreateQuotaPool, CreateQuotaWindow, CreateScope,
+    GetQuotaDashboard, QuotaDashboard, RecordUsage, ReleaseReservation, ReserveQuota,
+    SetAllocation,
+};
+
+pub use error::{IpcError, IpcResult};
+use state::AppState;
+
+const DATABASE_FILENAME: &str = "agent-quota-manager.sqlite3";
+
+pub(crate) fn initialize<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn Error>> {
+    let app_data_dir = app.path().app_data_dir()?;
+    fs::create_dir_all(&app_data_dir)?;
+
+    let state = AppState::open(app_data_dir.join(DATABASE_FILENAME))?;
+    if !app.manage(state) {
+        return Err(std::io::Error::other("quota service state is already managed").into());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) fn create_provider(
+    state: State<'_, AppState>,
+    request: CreateProvider,
+) -> IpcResult<()> {
+    state.execute(|service| service.create_provider(request))
+}
+
+#[tauri::command]
+pub(crate) fn create_account(state: State<'_, AppState>, request: CreateAccount) -> IpcResult<()> {
+    state.execute(|service| service.create_account(request))
+}
+
+#[tauri::command]
+pub(crate) fn create_quota_pool(
+    state: State<'_, AppState>,
+    request: CreateQuotaPool,
+) -> IpcResult<()> {
+    state.execute(|service| service.create_quota_pool(request))
+}
+
+#[tauri::command]
+pub(crate) fn create_quota_window(
+    state: State<'_, AppState>,
+    request: CreateQuotaWindow,
+) -> IpcResult<()> {
+    state.execute(|service| service.create_quota_window(request))
+}
+
+#[tauri::command]
+pub(crate) fn create_scope(state: State<'_, AppState>, request: CreateScope) -> IpcResult<()> {
+    state.execute(|service| service.create_scope(request))
+}
+
+#[tauri::command]
+pub(crate) fn set_allocation(state: State<'_, AppState>, request: SetAllocation) -> IpcResult<()> {
+    state.execute(|service| service.set_allocation(request))
+}
+
+#[tauri::command]
+pub(crate) fn reserve_quota(state: State<'_, AppState>, request: ReserveQuota) -> IpcResult<()> {
+    state.execute(|service| service.reserve_quota(request))
+}
+
+#[tauri::command]
+pub(crate) fn release_reservation(
+    state: State<'_, AppState>,
+    request: ReleaseReservation,
+) -> IpcResult<()> {
+    state.execute(|service| service.release_reservation(request))
+}
+
+#[tauri::command]
+pub(crate) fn record_usage(state: State<'_, AppState>, request: RecordUsage) -> IpcResult<()> {
+    state.execute(|service| service.record_usage(request))
+}
+
+#[tauri::command]
+pub(crate) fn get_quota_dashboard(
+    state: State<'_, AppState>,
+    request: GetQuotaDashboard,
+) -> IpcResult<QuotaDashboard> {
+    state.execute(|service| service.dashboard(request))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{application::QuotaService, storage::Database};
+
+    fn in_memory_state() -> AppState {
+        AppState::new(QuotaService::new(Database::open_in_memory().unwrap()))
+    }
+
+    #[test]
+    fn state_executes_application_commands() {
+        let state = in_memory_state();
+
+        state
+            .execute(|service| {
+                service.create_provider(CreateProvider {
+                    id: "codex".to_owned(),
+                    display_name: "Codex".to_owned(),
+                })
+            })
+            .unwrap();
+
+        let duplicate = state
+            .execute(|service| {
+                service.create_provider(CreateProvider {
+                    id: "codex".to_owned(),
+                    display_name: "Codex".to_owned(),
+                })
+            })
+            .unwrap_err();
+
+        assert_eq!(duplicate.code, "conflict");
+    }
+
+    #[test]
+    fn state_maps_validation_failures_for_the_frontend() {
+        let state = in_memory_state();
+
+        let error = state
+            .execute(|service| {
+                service.create_provider(CreateProvider {
+                    id: " ".to_owned(),
+                    display_name: "Codex".to_owned(),
+                })
+            })
+            .unwrap_err();
+
+        assert_eq!(error.code, "validation_error");
+        assert_eq!(error.message, "provider ID cannot be empty");
+    }
+}

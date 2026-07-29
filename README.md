@@ -64,7 +64,8 @@ require them. See [Architecture](docs/architecture.md),
 [Quota model](docs/quota-model.md), and
 [Provider adapters](docs/provider-adapters.md). The implemented SQLite layer is
 described in [Storage](docs/storage.md), and use-case orchestration in
-[Application services](docs/application-services.md).
+[Application services](docs/application-services.md). The desktop IPC contract
+is documented in [Tauri commands](docs/tauri-commands.md).
 
 ## Development
 
