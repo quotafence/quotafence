@@ -1,8 +1,8 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use crate::domain::{
-    QuotaAmount, QuotaUnit, Reservation, ReservationId, ReservationStatus, ScopeId, UnixMillis,
-    UsageAttribution, UsageEvent, UsageEventId, WindowId,
+    QuotaAmount, QuotaBalance, QuotaUnit, Reservation, ReservationId, ReservationStatus, ScopeId,
+    UnixMillis, UsageAttribution, UsageEvent, UsageEventId, WindowId,
 };
 
 use super::{
@@ -139,6 +139,59 @@ impl<'connection> LedgerRepository<'connection> {
         }
 
         Ok(())
+    }
+
+    pub fn allocation_balance(
+        &mut self,
+        scope_id: &ScopeId,
+        window_id: &WindowId,
+        at: UnixMillis,
+    ) -> StorageResult<QuotaBalance> {
+        let transaction = self.connection.transaction()?;
+        let (allocation, unit) = allocation_amount_and_unit(&transaction, scope_id, window_id)?;
+        let usage = attributed_usage_for_scope_tree(&transaction, scope_id, window_id)?;
+        let reservations =
+            active_reservations_for_scope_tree(&transaction, scope_id, window_id, at)?;
+        let balance = QuotaBalance::new(
+            QuotaAmount::new(
+                from_sql_integer(allocation, "allocation amount")?,
+                unit.clone(),
+            ),
+            QuotaAmount::new(from_sql_integer(usage, "attributed usage")?, unit.clone()),
+            QuotaAmount::new(from_sql_integer(reservations, "active reservations")?, unit),
+        )?;
+        transaction.commit()?;
+
+        Ok(balance)
+    }
+
+    pub fn unattributed_usage_for_window(
+        &self,
+        window_id: &WindowId,
+    ) -> StorageResult<QuotaAmount> {
+        let row = self
+            .connection
+            .query_row(
+                "SELECT COALESCE(SUM(u.amount), 0), p.unit
+                 FROM quota_windows w
+                 JOIN quota_pools p ON p.id = w.pool_id
+                 LEFT JOIN usage_events u
+                   ON u.window_id = w.id AND u.scope_id IS NULL
+                 WHERE w.id = ?1
+                 GROUP BY p.unit",
+                [window_id.as_str()],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()?
+            .ok_or_else(|| StorageError::NotFound {
+                entity: "quota window",
+                id: window_id.to_string(),
+            })?;
+
+        Ok(QuotaAmount::new(
+            from_sql_integer(row.0, "unattributed usage")?,
+            QuotaUnit::new(row.1)?,
+        ))
     }
 
     pub fn record_usage(&mut self, event: &UsageEvent) -> StorageResult<()> {
@@ -588,5 +641,37 @@ mod tests {
             .get_reservation(&ReservationId::new("feature-work").unwrap())
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn parent_balance_includes_child_usage_and_reservations() {
+        let mut database = seeded_database();
+        {
+            let mut allocations = database.allocations();
+            allocations.set(&allocation("project-a", 70)).unwrap();
+            allocations.set(&allocation("feature-a", 60)).unwrap();
+        }
+        let mut ledger = database.ledger();
+        ledger
+            .reserve(
+                &reservation("feature-work", "feature-a", 20),
+                UnixMillis::new(2_000),
+            )
+            .unwrap();
+        ledger
+            .record_usage(&usage("usage-1", "feature-a", 15))
+            .unwrap();
+
+        let balance = ledger
+            .allocation_balance(
+                &ScopeId::new("project-a").unwrap(),
+                &WindowId::new("week-1").unwrap(),
+                UnixMillis::new(3_000),
+            )
+            .unwrap();
+
+        assert_eq!(balance.attributed_usage().value(), 15);
+        assert_eq!(balance.active_reservations().value(), 20);
+        assert_eq!(balance.remaining(), 35);
     }
 }

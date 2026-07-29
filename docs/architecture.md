@@ -1,8 +1,8 @@
 # Architecture
 
 This document describes the intended architecture. The repository currently
-contains the provider-neutral domain and local SQLite storage layers, while
-application, command, and provider modules remain planned.
+contains the provider-neutral domain, local SQLite storage, and application
+service layers, while Tauri commands and provider adapters remain planned.
 
 ## Goals
 
@@ -37,8 +37,8 @@ src-tauri/src/
     codex/                   First provider adapter
 ```
 
-The `domain/` and `storage/` modules now exist. The remaining paths are targets,
-not a reason to create empty modules in advance.
+The `domain/`, `storage/`, and `application/` modules now exist. The remaining
+paths are targets, not a reason to create empty modules in advance.
 
 ## Component responsibilities
 
@@ -67,6 +67,13 @@ Owns provider-neutral rules:
 
 The core works with provider-native quota units plus confidence metadata. It
 does not pretend that quota from different providers is fungible.
+
+### Application services
+
+Application services validate command DTOs through domain constructors,
+orchestrate repositories, and produce serializable dashboard snapshots. They do
+not depend on Tauri, webview state, or a provider implementation. See
+[Application services](application-services.md).
 
 ### Local storage
 
