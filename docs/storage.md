@@ -17,9 +17,10 @@ The `src-tauri/src/storage` module provides:
 - atomic usage recording and reservation consumption; and
 - append-only usage events.
 
-The Tauri application-data path has not been wired into application startup yet.
-That belongs to the application/command milestone; the storage layer does not
-guess a filesystem location.
+Application startup now resolves Tauri's operating-system-specific app-data
+directory and opens `agent-quota-manager.sqlite3` inside it. The storage layer
+still receives that path from its caller rather than guessing a filesystem
+location.
 
 ## Connection configuration
 
@@ -85,7 +86,6 @@ Migration rules:
 
 ## Not implemented yet
 
-- Tauri app-data path resolution and managed state;
 - encryption at rest;
 - backup, export, or restore;
 - reconciliation checkpoints; and

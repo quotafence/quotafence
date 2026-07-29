@@ -63,12 +63,13 @@ child activity.
 `QuotaService::with_policy` allows a caller or test to inject another validated
 policy. Persisting per-scope policy is a later schema/application change.
 
-## Next boundary
+## Tauri boundary
 
-The Tauri command layer will:
+The implemented Tauri boundary resolves the application-data database path,
+holds `QuotaService` in synchronized managed state, maps typed application
+errors to stable IPC errors, and exposes fixed use cases to the React frontend.
+See [Tauri commands](tauri-commands.md).
 
-1. resolve the application-data database path;
-2. hold `QuotaService` in synchronized managed state;
-3. generate command IDs where appropriate;
-4. map typed application errors to stable IPC error codes; and
-5. expose only explicitly approved commands to the React frontend.
+The caller continues to supply stable command IDs. ID generation and retry
+semantics will be designed with the frontend workflow rather than hidden inside
+the application service.
