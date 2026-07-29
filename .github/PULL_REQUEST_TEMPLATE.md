@@ -10,7 +10,7 @@
 
 <!-- List the checks you ran. -->
 
-- [ ] `pnpm check`
+- [ ] `npm run check`
 - [ ] Tests added or updated when behavior changed
 - [ ] Documentation updated when concepts or configuration changed
 

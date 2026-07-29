@@ -11,13 +11,18 @@ therefore models quota without assuming that every provider reports tokens.
 | Provider | A coding-agent subscription service, such as Codex |
 | Account | A locally available signed-in identity for one provider |
 | Quota pool | One provider-defined allowance, such as a weekly usage window |
-| Window | The period and reset rule applied to a quota pool |
+| Window | The period, reset boundary, and capacity applied to a quota pool |
 | Scope | A project, repository, task, or reserved system bucket |
 | Allocation | The maximum share assigned to a scope for a window |
 | Reservation | Capacity held temporarily for work in progress |
 | Usage event | An immutable local record that debits a scope |
 | Policy | The warn, confirm, or stop behavior at thresholds |
 | Confidence | Whether a value is confirmed, observed, inferred, or estimated |
+
+The Rust implementation of these provider-neutral types lives in
+`src-tauri/src/domain`. IDs and display names reject empty values, quota windows
+are half-open intervals, and usage events and reservations require positive
+amounts.
 
 ## Units
 
@@ -48,6 +53,11 @@ The parent allocation is always the upper bound. Unused child quota is not
 automatically borrowed by siblings unless an explicit borrowing policy allows
 it.
 
+The domain validates that top-level allocations do not exceed a window's
+capacity and that child allocations do not exceed their parent allocation.
+Application services remain responsible for supplying the correct scope
+ancestry when applying the child validator.
+
 ## Available capacity
 
 For a scope in a specific window:
@@ -59,6 +69,9 @@ available = allocation - attributed usage - active reservations
 Provider-level availability also accounts for unattributed usage discovered
 during reconciliation. Negative values are valid audit facts and must not be
 silently clamped in storage, though the UI may present zero as spendable.
+
+The domain exposes both values: signed `remaining` preserves overage, while
+non-negative `spendable` is suitable for admission decisions and display.
 
 ## Reservations
 

@@ -1,7 +1,8 @@
 # Architecture
 
-This document describes the intended architecture. The repository is currently
-at the application-foundation stage, so some modules below do not exist yet.
+This document describes the intended architecture. The repository currently
+contains the first provider-neutral domain types and policies, while application,
+storage, and provider modules remain planned.
 
 ## Goals
 
@@ -36,7 +37,8 @@ src-tauri/src/
     codex/                   First provider adapter
 ```
 
-This is a target layout, not a reason to create empty modules in advance.
+The `domain/` module now exists. The remaining paths are targets, not a reason
+to create empty modules in advance.
 
 ## Component responsibilities
 
@@ -50,6 +52,8 @@ provider name.
 
 Validates requests from the webview and exposes small application use cases. It
 must not expose arbitrary shell execution or unrestricted filesystem access.
+Transport and storage DTOs must be converted through domain constructors so
+deserialization cannot bypass domain invariants.
 
 ### Quota core
 
