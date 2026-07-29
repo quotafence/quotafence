@@ -63,7 +63,8 @@ standalone CLI can be extracted when managed sessions or multiple frontends
 require them. See [Architecture](docs/architecture.md),
 [Quota model](docs/quota-model.md), and
 [Provider adapters](docs/provider-adapters.md). The implemented SQLite layer is
-described in [Storage](docs/storage.md).
+described in [Storage](docs/storage.md), and use-case orchestration in
+[Application services](docs/application-services.md).
 
 ## Development
 
