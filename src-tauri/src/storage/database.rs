@@ -8,9 +8,9 @@ use super::{
     allocations::set_in_transaction, ledger::reserve_in_transaction, managed_sessions, migrations,
     provider_snapshots,
     workspace_bindings::insert_in_transaction as insert_workspace_binding_in_transaction,
-    AllocationRepository, CatalogRepository, LedgerRepository, ManagedSessionRepository,
-    ManagedSessionStatus, NewManagedSession, ProviderQuotaSnapshot, StorageResult,
-    WorkspaceBinding,
+    AllocationRepository, CatalogRepository, LedgerRepository, ManagedSessionReconciliationResult,
+    ManagedSessionRepository, ManagedSessionStatus, NewManagedSession, ProviderQuotaSnapshot,
+    StorageResult, WorkspaceBinding,
 };
 
 pub struct Database {
@@ -129,13 +129,21 @@ impl Database {
         status: ManagedSessionStatus,
         finished_at: i64,
         exit_code: Option<i32>,
-    ) -> StorageResult<()> {
+        current_window_id: Option<&WindowId>,
+    ) -> StorageResult<ManagedSessionReconciliationResult> {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        managed_sessions::finish_and_release(&transaction, id, status, finished_at, exit_code)?;
+        let result = managed_sessions::finish_and_reconcile(
+            &transaction,
+            id,
+            status,
+            finished_at,
+            exit_code,
+            current_window_id,
+        )?;
         transaction.commit()?;
-        Ok(())
+        Ok(result)
     }
 
     pub fn insert_quota_source_with_snapshot(

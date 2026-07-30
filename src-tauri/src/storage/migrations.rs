@@ -194,6 +194,37 @@ CREATE INDEX idx_managed_sessions_status
     ON managed_sessions(status, created_at);
 "#;
 
+const MANAGED_SESSION_RECONCILIATION: &str = r#"
+ALTER TABLE managed_sessions
+    ADD COLUMN baseline_used INTEGER CHECK (baseline_used IS NULL OR baseline_used >= 0);
+ALTER TABLE managed_sessions
+    ADD COLUMN baseline_observed_at INTEGER;
+ALTER TABLE managed_sessions
+    ADD COLUMN contended INTEGER NOT NULL DEFAULT 0 CHECK (contended IN (0, 1));
+ALTER TABLE managed_sessions
+    ADD COLUMN reconciled_amount INTEGER CHECK (
+        reconciled_amount IS NULL OR reconciled_amount >= 0
+    );
+ALTER TABLE managed_sessions
+    ADD COLUMN reconciled_at INTEGER;
+ALTER TABLE managed_sessions
+    ADD COLUMN reconciliation_outcome TEXT CHECK (
+        reconciliation_outcome IS NULL OR reconciliation_outcome IN (
+            'attributed',
+            'no_usage',
+            'ambiguous',
+            'window_rolled_over',
+            'snapshot_unavailable'
+        )
+    );
+
+UPDATE managed_sessions
+SET reconciliation_status = 'unavailable',
+    reconciliation_outcome = 'snapshot_unavailable'
+WHERE status IN ('completed', 'failed', 'interrupted')
+  AND reconciliation_status = 'pending';
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -229,6 +260,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 7,
         name: "managed_sessions",
         sql: MANAGED_SESSIONS,
+    },
+    Migration {
+        version: 8,
+        name: "managed_session_reconciliation",
+        sql: MANAGED_SESSION_RECONCILIATION,
     },
 ];
 
@@ -278,6 +314,86 @@ pub(crate) fn latest_version() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reconciliation_migration_preserves_existing_terminal_sessions() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys = ON;
+                 CREATE TABLE schema_migrations (
+                    version INTEGER PRIMARY KEY NOT NULL,
+                    name TEXT NOT NULL,
+                    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );",
+            )
+            .unwrap();
+        for migration in MIGRATIONS.iter().filter(|migration| migration.version <= 7) {
+            connection.execute_batch(migration.sql).unwrap();
+            connection
+                .execute(
+                    "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+                    params![migration.version, migration.name],
+                )
+                .unwrap();
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO providers (id, display_name) VALUES ('codex', 'Codex');
+                 INSERT INTO accounts (id, provider_id, display_name)
+                 VALUES ('account', 'codex', 'Subscription');
+                 INSERT INTO quota_pools (id, account_id, display_name, unit)
+                 VALUES ('pool', 'account', 'Weekly', 'percent');
+                 INSERT INTO quota_windows (id, pool_id, starts_at, ends_at, capacity)
+                 VALUES ('window', 'pool', 1000, 10000, 100);
+                 INSERT INTO scopes (id, parent_id, kind, display_name)
+                 VALUES ('workspace', NULL, 'repository', 'Workspace');
+                 INSERT INTO reservations (
+                    id, scope_id, window_id, amount, created_at, expires_at, status
+                 ) VALUES (
+                    'reservation', 'workspace', 'window', 20, 2000, 8000, 'released'
+                 );
+                 INSERT INTO managed_sessions (
+                    id, adapter, pool_id, window_id, scope_id, reservation_id,
+                    canonical_path, status, reconciliation_status, supervisor_pid,
+                    child_pid, created_at, started_at, finished_at, exit_code
+                 ) VALUES (
+                    'session', 'codex', 'pool', 'window', 'workspace', 'reservation',
+                    '/code/workspace', 'completed', 'pending', 42,
+                    84, 2000, 2100, 3000, 0
+                 );",
+            )
+            .unwrap();
+
+        migrate(&mut connection).unwrap();
+
+        let migrated: (String, Option<i64>, bool, String) = connection
+            .query_row(
+                "SELECT reconciliation_status, baseline_used, contended,
+                        reconciliation_outcome
+                 FROM managed_sessions WHERE id = 'session'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            migrated,
+            (
+                "unavailable".to_owned(),
+                None,
+                false,
+                "snapshot_unavailable".to_owned()
+            )
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            latest_version()
+        );
+    }
 
     #[test]
     fn lifecycle_migration_accepts_preexisting_duplicate_sources() {

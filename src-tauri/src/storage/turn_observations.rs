@@ -161,12 +161,31 @@ impl<'connection> TurnObservationRepository<'connection> {
             params![observation.adapter(), observation.window_id().as_str()],
             |row| row.get(0),
         )?;
-        let contended = active_count > 0 || stale_overlap_count > 0;
+        let active_managed_count: i64 = transaction.query_row(
+            "SELECT COUNT(*)
+             FROM managed_sessions
+             WHERE adapter = ?1
+               AND window_id = ?2
+               AND status IN ('starting', 'running')",
+            params![observation.adapter(), observation.window_id().as_str()],
+            |row| row.get(0),
+        )?;
+        let contended = active_count > 0 || active_managed_count > 0 || stale_overlap_count > 0;
         if active_count > 0 {
             transaction.execute(
                 "UPDATE provider_turn_observations
                  SET contended = 1
                  WHERE adapter = ?1 AND window_id = ?2",
+                params![observation.adapter(), observation.window_id().as_str()],
+            )?;
+        }
+        if active_managed_count > 0 {
+            transaction.execute(
+                "UPDATE managed_sessions
+                 SET contended = 1
+                 WHERE adapter = ?1
+                   AND window_id = ?2
+                   AND status IN ('starting', 'running')",
                 params![observation.adapter(), observation.window_id().as_str()],
             )?;
         }

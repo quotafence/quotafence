@@ -119,6 +119,24 @@ pub struct ActiveManagedSession {
     pub supervisor_pid: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManagedSessionReconciliationStatus {
+    Attributed,
+    NoUsage,
+    Ambiguous,
+    WindowRolledOver,
+    SnapshotUnavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedSessionReconciliation {
+    pub status: ManagedSessionReconciliationStatus,
+    pub amount: Option<u64>,
+    pub scope_id: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuotaDashboard {

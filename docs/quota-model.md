@@ -111,11 +111,12 @@ Local attribution and provider totals are separate observations:
 
 A window reset creates a new window identity. It does not rewrite historical
 usage. When a provider exposes only an aggregate total, a before/after delta is
-an observation rather than proof of causality. AQM may associate it with a lone
-managed session at observed confidence. The Codex hook experiment associates a
-lone observed turn at inferred confidence because external account usage may
-still occur between its checkpoints. Overlapping observed turns remain
-unattributed.
+an observation rather than proof of causality. AQM associates a lone
+non-contended managed Codex session with that delta at observed confidence.
+Visible overlapping work keeps the delta unattributed. The Codex hook
+experiment associates a lone observed turn at inferred confidence because
+external account usage may still occur between its checkpoints. Overlapping
+observed turns remain unattributed.
 
 ## Enforcement
 

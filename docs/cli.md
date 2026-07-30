@@ -116,8 +116,10 @@ The wrapper:
 5. starts the resolved Codex executable directly in that folder with inherited
    stdin, stdout, and stderr;
 6. forwards `SIGINT` and `SIGTERM` on Unix and preserves ordinary Codex exit
-   codes; and
-7. atomically marks the session terminal and releases its reservation.
+   codes;
+7. refreshes the same provider checkpoint after Codex exits; and
+8. atomically records an unambiguous observed delta, marks the session
+   terminal, and consumes or releases its reservation.
 
 Confirmation-required launches need an explicit override:
 
@@ -137,9 +139,15 @@ command. AQM resolves Codex from `AGENT_QUOTA_CODEX_BIN`, `PATH`, and supported
 installation locations. It stores folder and process metadata, but does not
 read prompts, source files, transcripts, or provider credentials.
 
-This milestone owns admission and process lifecycle, but does not yet attribute
-the post-session provider delta. The reservation is released at exit; M4 will
-replace it with observed usage when reconciliation is unambiguous.
+The baseline is persisted before spawn. A same-window delta is attributed to
+the workspace at `observed` confidence only when AQM has not seen concurrent
+Codex work. Visible contention keeps the delta unattributed; rollover, a lower
+counter, or an unavailable final checkpoint never creates scoped usage.
+Provider percentage checkpoints are aggregate and integer-valued, so external
+usage that AQM cannot observe remains a known source of uncertainty.
+
+Hooks launched by this managed Codex child inherit an AQM session marker and
+return without recording a second turn observation.
 
 ## Experimental Codex desktop tracking
 
@@ -220,10 +228,13 @@ entrypoint now cover:
   pool;
 - direct child-process launch, inherited terminal, signal forwarding, exit-code
   preservation, and orphan recovery;
+- managed pre/post checkpoints with atomic usage and reservation
+  reconciliation;
 - per-turn provider baselines and rollover-safe reconciliation; and
 - inferred attribution for one uncontended mapped Codex desktop turn.
 
 Managed launches now refuse stop decisions and require `--yes` at a
-confirmation boundary. They do not yet reconcile their own provider delta,
-persist per-workspace policy overrides, or terminate a running process because
-of live quota movement. Hook attribution remains observed rather than managed.
+confirmation boundary. They reconcile their own provider delta at `observed`
+confidence, but do not yet persist per-workspace policy overrides or terminate
+a running process because of live quota movement. Hook attribution remains
+experimental and `inferred`.

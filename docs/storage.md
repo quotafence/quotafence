@@ -97,9 +97,14 @@ transcript contents, source code, and credentials are not stored.
 Migration 7 adds `managed_sessions`. Each row links one adapter, provider pool,
 quota window, workspace scope, canonical folder, and reservation to minimal
 process lifecycle metadata. A partial unique index permits only one starting or
-running managed session per provider pool. Reconciliation state is separate
-from process outcome so the next milestone can record an unavailable
-checkpoint without rewriting whether the child completed or failed.
+running managed session per provider pool.
+
+Migration 8 adds the persisted pre-spawn baseline, observation time, contention
+flag, reconciled amount, reconciliation outcome, and reconciliation time.
+Existing terminal M3 sessions are retained and marked
+reconciliation-unavailable because no trustworthy baseline was recorded for
+them. A repeated terminal command returns the stored outcome instead of
+inserting a second usage event.
 
 ## Transactions
 
@@ -116,8 +121,9 @@ only top-level workspace allocations.
 Reservation admission also uses an immediate transaction. It subtracts existing
 attributed usage and active reservations before inserting a new reservation.
 Managed-session admission inserts its reservation and starting record in that
-same transaction. A terminal session transition and reservation release also
-commit atomically.
+same transaction. After the final provider refresh, immutable usage insertion,
+reconciliation state, terminal process state, and reservation consumption or
+release also commit atomically.
 
 Recording usage and consuming its reservation happen in one transaction. If the
 reservation is missing, inactive, or belongs to another scope/window, the usage

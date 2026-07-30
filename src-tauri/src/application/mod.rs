@@ -17,8 +17,9 @@ pub use error::{ApplicationError, ApplicationResult};
 pub use service::QuotaService;
 pub use view::{
     ActiveManagedSession, AdmissionAssessment, AllocationSnapshot, LocalState,
-    ManagedSessionLaunch, ProviderTurnObservationSummary, QuotaDashboard, QuotaSourceSummary,
-    ScopeSummary, SyncProviderQuotaResult, TurnObservationStartResult, TurnObservationStartStatus,
+    ManagedSessionLaunch, ManagedSessionReconciliation, ManagedSessionReconciliationStatus,
+    ProviderTurnObservationSummary, QuotaDashboard, QuotaSourceSummary, ScopeSummary,
+    SyncProviderQuotaResult, TurnObservationStartResult, TurnObservationStartStatus,
     TurnReconciliationResult, TurnReconciliationStatus, WindowSummary, WorkspaceAllocationContext,
     WorkspaceBindingSummary, WorkspaceContext,
 };
