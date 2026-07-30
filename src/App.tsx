@@ -6,14 +6,12 @@ import { Icon } from "./components/Icon";
 import { Modal } from "./components/Modal";
 import { ScopeForm } from "./components/ScopeForm";
 import { SourceSetupForm } from "./components/SourceSetupForm";
-import { UsageForm } from "./components/UsageForm";
 import {
   archiveQuotaSource,
   createAllocatedScope,
   createQuotaSource,
   getErrorMessage,
   getLocalState,
-  recordUsage,
   setAllocation,
   syncCodexQuota,
 } from "./lib/api";
@@ -23,14 +21,12 @@ import type {
   QuotaSourceSummary,
   ScopeInput,
   ScopeSummary,
-  UsageInput,
 } from "./types";
 
 type ModalState =
   | { type: "source" }
   | { type: "scope" }
   | { type: "allocation"; scope: ScopeSummary }
-  | { type: "usage"; scopeId?: string }
   | { type: "remove-source"; source: QuotaSourceSummary }
   | null;
 
@@ -341,7 +337,6 @@ function App() {
         onAddSource={() => setModal({ type: "source" })}
         onAddScope={() => setModal({ type: "scope" })}
         onEditAllocation={(scope) => setModal({ type: "allocation", scope })}
-        onRecordUsage={(scopeId) => setModal({ type: "usage", scopeId })}
         onRefresh={handleRefresh}
         onRemoveSource={(source) => setModal({ type: "remove-source", source })}
         removingSource={submitting}
@@ -451,29 +446,6 @@ function App() {
         </Modal>
       )}
 
-      {modal?.type === "usage" && dashboard && (
-        <Modal
-          eyebrow="Local observation"
-          title="Record usage"
-          onClose={() => setModal(null)}
-        >
-          <UsageForm
-            scopes={localState.scopes.filter((scope) =>
-              dashboard.allocations.some(
-                (allocation) => allocation.scopeId === scope.id,
-              ),
-            )}
-            initialScopeId={modal.scopeId}
-            unit={unit}
-            submitting={submitting}
-            onSubmit={(input: UsageInput) =>
-              runMutation(() =>
-                recordUsage(input, dashboard.window.id, unit),
-              )
-            }
-          />
-        </Modal>
-      )}
     </>
   );
 }

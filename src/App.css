@@ -109,15 +109,6 @@ h3,
   background: #29332f;
 }
 
-.button.lime {
-  color: #1b231f;
-  background: var(--accent);
-}
-
-.button.lime:hover:not(:disabled) {
-  background: #d5ff83;
-}
-
 .button.subtle {
   color: #4e5852;
   background: #f1f3ef;
@@ -171,20 +162,6 @@ h3,
   border-color: rgba(211, 76, 76, 0.45);
   color: var(--danger);
   background: rgba(211, 76, 76, 0.08);
-}
-
-.text-button {
-  padding: 5px;
-  border: 0;
-  color: #69736c;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.text-button:hover {
-  color: var(--ink);
 }
 
 .eyebrow {
@@ -1336,13 +1313,6 @@ h3,
   font-size: 10px;
 }
 
-.quota-hero > .button {
-  position: absolute;
-  right: 20px;
-  bottom: 19px;
-  z-index: 1;
-}
-
 .metric-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1946,10 +1916,6 @@ h3,
     height: 100px;
   }
 
-  .quota-hero > .button {
-    display: none;
-  }
-
   .metric-grid {
     grid-template-columns: 1fr;
   }
@@ -1958,19 +1924,11 @@ h3,
     align-items: flex-start;
   }
 
-  .section-actions .button.subtle {
-    display: none;
-  }
-
   .allocation-row {
     grid-template-columns: minmax(130px, 1fr) 85px;
   }
 
   .allocation-limit {
-    display: none;
-  }
-
-  .row-actions .text-button {
     display: none;
   }
 

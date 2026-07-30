@@ -21,7 +21,6 @@ pub fn run() {
             commands::set_allocation,
             commands::reserve_quota,
             commands::release_reservation,
-            commands::record_usage,
             commands::get_quota_dashboard,
             commands::get_local_state,
             commands::detect_codex_quota,

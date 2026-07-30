@@ -32,7 +32,6 @@ The approved product commands are:
 - `set_allocation`
 - `reserve_quota`
 - `release_reservation`
-- `record_usage`
 - `get_quota_dashboard`
 - `get_local_state`
 - `detect_codex_quota`

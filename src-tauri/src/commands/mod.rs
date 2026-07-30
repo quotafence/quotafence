@@ -13,8 +13,7 @@ use tauri::{Manager, Runtime, State};
 use crate::application::{
     ArchiveQuotaSource, CreateAccount, CreateAllocatedScope, CreateProvider, CreateQuotaPool,
     CreateQuotaSource, CreateQuotaWindow, CreateScope, GetLocalState, GetQuotaDashboard,
-    LocalState, QuotaDashboard, RecordUsage, ReleaseReservation, ReserveQuota, SetAllocation,
-    SyncProviderQuota,
+    LocalState, QuotaDashboard, ReleaseReservation, ReserveQuota, SetAllocation, SyncProviderQuota,
 };
 use crate::providers::codex::{self, CodexDetection, DetectedQuotaWindow, DetectionStatus};
 
@@ -109,11 +108,6 @@ pub(crate) fn release_reservation(
     request: ReleaseReservation,
 ) -> IpcResult<()> {
     state.execute(|service| service.release_reservation(request))
-}
-
-#[tauri::command]
-pub(crate) fn record_usage(state: State<'_, AppState>, request: RecordUsage) -> IpcResult<()> {
-    state.execute(|service| service.record_usage(request))
 }
 
 #[tauri::command]

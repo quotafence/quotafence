@@ -6,7 +6,6 @@ import type {
   LocalState,
   QuotaSourceInput,
   ScopeInput,
-  UsageInput,
 } from "../types";
 
 function createId(prefix: string): string {
@@ -114,26 +113,6 @@ export async function createAllocatedScope(
       windowId,
       amount: input.allocation,
       unit,
-    },
-  });
-}
-
-export async function recordUsage(
-  input: UsageInput,
-  windowId: string,
-  unit: string,
-): Promise<void> {
-  await invoke("record_usage", {
-    request: {
-      id: createId("usage"),
-      windowId,
-      scopeId: input.scopeId,
-      amount: input.amount,
-      unit,
-      observedAt: Date.now(),
-      source: "local_measured",
-      confidence: "observed",
-      reservationId: null,
     },
   });
 }
