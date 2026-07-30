@@ -6,20 +6,20 @@ use std::{
 use crate::{
     domain::{
         Account, AccountId, Allocation, EnforcementPolicy, Provider, ProviderId, QuotaAmount,
-        QuotaPool, QuotaPoolId, QuotaUnit, QuotaWindow, Reservation, ReservationId, Scope, ScopeId,
-        UnixMillis, UsageAttribution, UsageEvent, UsageEventId, WindowId,
+        QuotaBalance, QuotaPool, QuotaPoolId, QuotaUnit, QuotaWindow, Reservation, ReservationId,
+        Scope, ScopeId, UnixMillis, UsageAttribution, UsageEvent, UsageEventId, WindowId,
     },
     storage::{Database, ProviderQuotaSnapshot, RepositoryBinding, StorageError},
 };
 
 use super::{
-    error::to_view_integer, AllocationSnapshot, ApplicationError, ApplicationResult,
-    ArchiveQuotaSource, BindRepository, CreateAccount, CreateAllocatedScope, CreateProvider,
-    CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow, CreateScope, GetLocalState,
-    GetQuotaDashboard, GetRepositoryContext, LocalState, QuotaDashboard, QuotaSourceSummary,
-    RecordUsage, ReleaseReservation, RepositoryAllocationContext, RepositoryBindingSummary,
-    RepositoryContext, ReserveQuota, ScopeSummary, SetAllocation, SyncProviderQuota,
-    SyncProviderQuotaResult, WindowSummary,
+    error::to_view_integer, AdmissionAssessment, AllocationSnapshot, ApplicationError,
+    ApplicationResult, ArchiveQuotaSource, BindRepository, CreateAccount, CreateAllocatedScope,
+    CreateProvider, CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow, CreateScope,
+    EvaluateRepositoryAdmission, GetLocalState, GetQuotaDashboard, GetRepositoryContext,
+    LocalState, QuotaDashboard, QuotaSourceSummary, RecordUsage, ReleaseReservation,
+    RepositoryAllocationContext, RepositoryBindingSummary, RepositoryContext, ReserveQuota,
+    ScopeSummary, SetAllocation, SyncProviderQuota, SyncProviderQuotaResult, WindowSummary,
 };
 
 pub struct QuotaService {
@@ -341,15 +341,25 @@ impl QuotaService {
                 .into_iter()
                 .find(|allocation| allocation.scope_id == binding.scope_id().as_str())
             {
+                let provider_decision = self.provider_decision(&dashboard.window)?;
+                let allocation_decision = allocation.decision;
                 allocations.push(RepositoryAllocationContext {
+                    provider_id: source.provider_id,
                     provider_display_name: source.provider_display_name,
+                    pool_id: source.pool_id,
                     pool_display_name: source.pool_display_name,
                     window_id: source.window_id,
+                    window_is_active: source.is_active,
                     unit: allocation.unit,
                     limit: allocation.limit,
                     remaining: allocation.remaining,
                     spendable: allocation.spendable,
-                    decision: allocation.decision,
+                    provider_capacity: dashboard.window.capacity,
+                    provider_remaining: dashboard.window.provider_remaining,
+                    provider_spendable: dashboard.window.provider_spendable,
+                    allocation_decision,
+                    provider_decision,
+                    decision: allocation_decision.max(provider_decision),
                 });
             }
         }
@@ -365,6 +375,90 @@ impl QuotaService {
             allocations,
             available_repository_scopes,
         })
+    }
+
+    pub fn evaluate_repository_admission(
+        &mut self,
+        command: EvaluateRepositoryAdmission,
+    ) -> ApplicationResult<AdmissionAssessment> {
+        let provider_id = required_request_text(command.provider_id, "provider ID")?;
+        let context = self.repository_context(GetRepositoryContext {
+            canonical_root: command.canonical_root,
+            at: command.at,
+        })?;
+        let binding = context
+            .binding
+            .ok_or_else(|| ApplicationError::InvalidRequest {
+                message: format!(
+                    "repository {} is not bound; run `aqm bind --scope <name-or-id>` first",
+                    context.canonical_root
+                ),
+            })?;
+        let mut matching: Vec<_> = context
+            .allocations
+            .into_iter()
+            .filter(|allocation| allocation.provider_id.eq_ignore_ascii_case(&provider_id))
+            .collect();
+        if matching.is_empty() {
+            return Err(ApplicationError::InvalidRequest {
+                message: format!(
+                    "scope {} has no allocation for provider {provider_id}",
+                    binding.scope_display_name
+                ),
+            });
+        }
+        if matching.len() > 1 {
+            return Err(ApplicationError::InvalidRequest {
+                message: format!(
+                    "scope {} has multiple active allocations for provider {provider_id}; select a quota pool explicitly",
+                    binding.scope_display_name
+                ),
+            });
+        }
+        let allocation = matching.remove(0);
+        if !allocation.window_is_active {
+            return Err(ApplicationError::InvalidRequest {
+                message: format!(
+                    "quota window {} is not active; refresh the provider checkpoint before admission",
+                    allocation.window_id
+                ),
+            });
+        }
+
+        Ok(AdmissionAssessment {
+            canonical_root: context.canonical_root,
+            scope_id: binding.scope_id,
+            scope_display_name: binding.scope_display_name,
+            provider_id: allocation.provider_id,
+            provider_display_name: allocation.provider_display_name,
+            pool_id: allocation.pool_id,
+            pool_display_name: allocation.pool_display_name,
+            window_id: allocation.window_id,
+            unit: allocation.unit,
+            allocation_limit: allocation.limit,
+            allocation_remaining: allocation.remaining,
+            provider_capacity: allocation.provider_capacity,
+            provider_remaining: allocation.provider_remaining,
+            allocation_decision: allocation.allocation_decision,
+            provider_decision: allocation.provider_decision,
+            decision: allocation.decision,
+        })
+    }
+
+    fn provider_decision(
+        &self,
+        window: &WindowSummary,
+    ) -> ApplicationResult<crate::domain::EnforcementDecision> {
+        let unit = QuotaUnit::new(window.unit.clone())?;
+        let balance = QuotaBalance::new(
+            QuotaAmount::new(window.capacity, unit.clone()),
+            QuotaAmount::new(
+                window.capacity.saturating_sub(window.provider_spendable),
+                unit.clone(),
+            ),
+            QuotaAmount::new(0, unit),
+        )?;
+        Ok(self.policy.evaluate(&balance))
     }
 
     pub fn create_allocated_scope(
@@ -714,8 +808,9 @@ mod tests {
         application::{
             ArchiveQuotaSource, BindRepository, CreateAccount, CreateAllocatedScope,
             CreateProvider, CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow, CreateScope,
-            GetLocalState, GetQuotaDashboard, GetRepositoryContext, ProviderQuotaSnapshotInput,
-            RecordUsage, ReserveQuota, SetAllocation, SyncProviderQuota,
+            EvaluateRepositoryAdmission, GetLocalState, GetQuotaDashboard, GetRepositoryContext,
+            ProviderQuotaSnapshotInput, RecordUsage, ReserveQuota, SetAllocation,
+            SyncProviderQuota,
         },
         domain::{Confidence, EnforcementDecision, ScopeKind, UsageSource},
         storage::Database,
@@ -1100,8 +1195,10 @@ mod tests {
         assert_eq!(context.binding.unwrap().scope_id, "repository-a");
         assert_eq!(context.allocations.len(), 1);
         assert_eq!(context.allocations[0].provider_display_name, "Codex");
+        assert_eq!(context.allocations[0].provider_id, "codex");
         assert_eq!(context.allocations[0].limit, 30);
         assert_eq!(context.allocations[0].remaining, 30);
+        assert_eq!(context.allocations[0].decision, EnforcementDecision::Allow);
         assert_eq!(
             state
                 .scopes
@@ -1112,6 +1209,106 @@ mod tests {
                 .as_deref(),
             Some("/code/repository-a")
         );
+    }
+
+    #[test]
+    fn admission_uses_the_more_restrictive_provider_capacity_decision() {
+        let mut service = configured_service();
+        add_repository_allocation(&mut service);
+        service
+            .bind_repository(BindRepository {
+                canonical_root: "/code/repository-a".to_owned(),
+                scope_reference: "repository-a".to_owned(),
+                bound_at: 2_000,
+            })
+            .unwrap();
+        service
+            .record_usage(RecordUsage {
+                id: "external-usage".to_owned(),
+                window_id: "week-1".to_owned(),
+                scope_id: None,
+                amount: 95,
+                unit: "quota_points".to_owned(),
+                observed_at: 2_500,
+                source: UsageSource::ProviderConfirmed,
+                confidence: Confidence::Confirmed,
+                reservation_id: None,
+            })
+            .unwrap();
+
+        let assessment = service
+            .evaluate_repository_admission(EvaluateRepositoryAdmission {
+                canonical_root: "/code/repository-a".to_owned(),
+                provider_id: "codex".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+
+        assert_eq!(assessment.allocation_decision, EnforcementDecision::Allow);
+        assert_eq!(
+            assessment.provider_decision,
+            EnforcementDecision::RequireConfirmation
+        );
+        assert_eq!(
+            assessment.decision,
+            EnforcementDecision::RequireConfirmation
+        );
+        assert_eq!(assessment.allocation_remaining, 30);
+        assert_eq!(assessment.provider_remaining, 5);
+    }
+
+    #[test]
+    fn admission_honors_repository_usage_when_it_is_more_restrictive() {
+        let mut service = configured_service();
+        add_repository_allocation(&mut service);
+        service
+            .bind_repository(BindRepository {
+                canonical_root: "/code/repository-a".to_owned(),
+                scope_reference: "repository-a".to_owned(),
+                bound_at: 2_000,
+            })
+            .unwrap();
+        service
+            .record_usage(RecordUsage {
+                id: "repository-usage".to_owned(),
+                window_id: "week-1".to_owned(),
+                scope_id: Some("repository-a".to_owned()),
+                amount: 24,
+                unit: "quota_points".to_owned(),
+                observed_at: 2_500,
+                source: UsageSource::LocalMeasured,
+                confidence: Confidence::Observed,
+                reservation_id: None,
+            })
+            .unwrap();
+
+        let assessment = service
+            .evaluate_repository_admission(EvaluateRepositoryAdmission {
+                canonical_root: "/code/repository-a".to_owned(),
+                provider_id: "codex".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+
+        assert_eq!(assessment.allocation_decision, EnforcementDecision::Warn);
+        assert_eq!(assessment.provider_decision, EnforcementDecision::Allow);
+        assert_eq!(assessment.decision, EnforcementDecision::Warn);
+    }
+
+    #[test]
+    fn admission_requires_an_explicit_repository_binding() {
+        let mut service = configured_service();
+        add_repository_allocation(&mut service);
+
+        let error = service
+            .evaluate_repository_admission(EvaluateRepositoryAdmission {
+                canonical_root: "/code/repository-a".to_owned(),
+                provider_id: "codex".to_owned(),
+                at: 3_000,
+            })
+            .unwrap_err();
+
+        assert!(error.to_string().contains("is not bound"));
     }
 
     #[test]

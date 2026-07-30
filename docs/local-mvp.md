@@ -57,12 +57,14 @@ This milestone does not:
 - launch or stop a managed coding-agent session;
 - attribute a provider-confirmed total to individual projects automatically;
 - accept manual usage estimates as a substitute for automatic attribution;
-- persist per-scope policy or enforce it during admission;
+- persist per-scope policy or enforce it against a launched process;
 - forecast depletion from session history;
 - archive scopes; or
 - run as a background daemon.
 
 The companion CLI resolves nested working directories to a canonical Git root,
 binds that root explicitly to an existing repository allocation, and reports
-its active allocation context. It does not yet admit or launch provider work.
+its active allocation context. It can dry-run Codex admission after refreshing
+the provider checkpoint, but does not yet reserve capacity or launch provider
+work.
 See the [CLI guide](cli.md) and [Codex-first roadmap](roadmap.md).

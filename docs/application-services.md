@@ -28,6 +28,7 @@ The current command DTOs cover:
 - atomic scope-and-allocation creation;
 - explicit canonical-root to repository-scope binding;
 - repository context and active-allocation queries;
+- provider-neutral repository admission assessment;
 - allocation updates;
 - quota reservation and release;
 - usage recording with optional atomic reservation consumption; and
@@ -38,6 +39,12 @@ The current command DTOs cover:
 The CLI resolves Git metadata outside this layer, then passes a canonical root
 to these use cases. Application services never scan repository contents and do
 not silently create a scope or budget for an unmapped path.
+
+`EvaluateRepositoryAdmission` selects the active allocation for a bound
+repository and provider. Its effective decision is the more restrictive of the
+repository allocation balance and account-wide provider capacity. Refreshing a
+provider checkpoint remains an adapter responsibility and happens before this
+use case is evaluated.
 
 Command IDs are supplied by the caller to give retries a stable identity. A
 duplicate currently returns a storage conflict rather than silently succeeding;
@@ -73,7 +80,9 @@ because they have not yet appeared in provider usage.
 
 `QuotaService::new` uses the standard 80/90/100 percent policy.
 `QuotaService::with_policy` allows a caller or test to inject another validated
-policy. Persisting per-scope policy is a later schema/application change.
+policy. `allow`, `warn`, `require_confirmation`, and `stop` are pure assessment
+results at this layer; process enforcement begins only when AQM owns a managed
+launch. Persisting per-scope policy is a later schema/application change.
 
 ## Tauri boundary
 

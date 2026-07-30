@@ -28,11 +28,13 @@ The repository currently has:
 - automatic Codex checkpoint refresh on startup and explicit refresh;
 - absolute snapshots that do not double-count repeated reads; and
 - reset-window rollover that carries allocations without carrying old usage.
-- canonical Git repository bindings and a read-only `aqm context` CLI.
+- canonical Git repository bindings and a read-only `aqm context` CLI; and
+- a provider-refreshing `aqm admit codex` dry run with stable policy outcomes.
 
 It does **not** yet have managed-session records, provider process supervision,
 automatic session attribution,
-persisted per-scope policy, admission enforcement, or burn-rate forecasting.
+persisted per-scope policy, process-level admission enforcement, or burn-rate
+forecasting.
 
 ## Gap to an end-to-end Codex slice
 
@@ -45,8 +47,8 @@ persisted per-scope policy, admission enforcement, or burn-rate forecasting.
 | Reservation | Domain/storage implemented; not in daily workflow | Admission reserves capacity before spawn |
 | Attribution | Ledger primitives only; no user-entered estimates | Session result produces scoped observed usage |
 | Reconciliation | Provider total affects dashboard | Pre/post session delta is reconciled without false precision |
-| Policy | In-memory standard thresholds; read-only decision | Persisted effective policy drives CLI behavior |
-| Enforcement | None | Warn, confirm, or refuse an AQM-managed launch |
+| Policy | In-memory standard thresholds drive dry-run admission | Persisted effective policy drives managed launch |
+| Enforcement | Dry-run result and shell exit code only | Warn, confirm, or refuse an AQM-managed launch |
 | Forecasting | None | Depletion estimate based on trustworthy history |
 | Routing | None | Deferred until one provider loop is reliable |
 
@@ -76,7 +78,7 @@ Verification: tests for nested directories, symlinks/case normalization where
 supported, unmapped repositories, duplicate bindings, deleted paths, and no
 source-file reads.
 
-### M2 — Admission without process launch
+### M2 — Admission without process launch — complete
 
 - Add the CLI shell and a dry-run admission path.
 - Refresh the relevant Codex checkpoint before evaluating admission.
@@ -87,6 +89,11 @@ source-file reads.
 
 Verification: deterministic application-service tests with a fake clock and
 fake provider adapter; CLI contract tests for output and exit codes.
+
+Implemented as `aqm admit codex`. The application boundary receives an explicit
+timestamp, the Codex checkpoint application accepts fabricated detection data
+in tests, and the CLI reserves exit codes `0`, `10`, `20`, and `30` for policy
+outcomes. `--yes` accepts confirmation but never overrides stop.
 
 ### M3 — One managed Codex session
 

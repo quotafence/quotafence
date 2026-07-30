@@ -52,13 +52,21 @@ pub struct RepositoryBindingSummary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepositoryAllocationContext {
+    pub provider_id: String,
     pub provider_display_name: String,
+    pub pool_id: String,
     pub pool_display_name: String,
     pub window_id: String,
+    pub window_is_active: bool,
     pub unit: String,
     pub limit: u64,
     pub remaining: i64,
     pub spendable: u64,
+    pub provider_capacity: u64,
+    pub provider_remaining: i64,
+    pub provider_spendable: u64,
+    pub allocation_decision: EnforcementDecision,
+    pub provider_decision: EnforcementDecision,
     pub decision: EnforcementDecision,
 }
 
@@ -69,6 +77,27 @@ pub struct RepositoryContext {
     pub binding: Option<RepositoryBindingSummary>,
     pub allocations: Vec<RepositoryAllocationContext>,
     pub available_repository_scopes: Vec<ScopeSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdmissionAssessment {
+    pub canonical_root: String,
+    pub scope_id: String,
+    pub scope_display_name: String,
+    pub provider_id: String,
+    pub provider_display_name: String,
+    pub pool_id: String,
+    pub pool_display_name: String,
+    pub window_id: String,
+    pub unit: String,
+    pub allocation_limit: u64,
+    pub allocation_remaining: i64,
+    pub provider_capacity: u64,
+    pub provider_remaining: i64,
+    pub allocation_decision: EnforcementDecision,
+    pub provider_decision: EnforcementDecision,
+    pub decision: EnforcementDecision,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

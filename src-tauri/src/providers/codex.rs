@@ -11,6 +11,8 @@ use std::{
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use crate::application::{GetLocalState, QuotaService, SyncProviderQuota};
+
 const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(30);
 const RATE_LIMIT_TIMEOUT: Duration = Duration::from_secs(45);
 
@@ -46,6 +48,24 @@ pub struct CodexDetection {
     pub provider_display_name: String,
     pub plan_type: Option<String>,
     pub windows: Vec<DetectedQuotaWindow>,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CodexSyncStatus {
+    Synced,
+    NotApplicable,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexSyncResult {
+    pub status: CodexSyncStatus,
+    pub window_id: Option<String>,
+    pub rolled_over: bool,
+    pub synced_at: Option<i64>,
     pub message: Option<String>,
 }
 
@@ -113,6 +133,102 @@ pub fn detection_failed() -> CodexDetection {
         DetectionStatus::Unavailable,
         "Codex subscription detection stopped unexpectedly. You can retry or use manual setup.",
     )
+}
+
+pub fn sync_detection(
+    service: &mut QuotaService,
+    window_id: String,
+    observed_at: i64,
+    detection: CodexDetection,
+) -> CodexSyncResult {
+    let source = match service.local_state(GetLocalState {
+        selected_window_id: Some(window_id.clone()),
+        at: observed_at,
+    }) {
+        Ok(local_state) => local_state
+            .sources
+            .into_iter()
+            .find(|source| source.window_id == window_id),
+        Err(error) => {
+            return CodexSyncResult {
+                status: CodexSyncStatus::Unavailable,
+                window_id: Some(window_id),
+                rolled_over: false,
+                synced_at: None,
+                message: Some(error.to_string()),
+            };
+        }
+    };
+    let Some(source) = source else {
+        return CodexSyncResult {
+            status: CodexSyncStatus::Unavailable,
+            window_id: Some(window_id),
+            rolled_over: false,
+            synced_at: None,
+            message: Some("The selected quota source no longer exists.".to_owned()),
+        };
+    };
+
+    if !source.provider_id.eq_ignore_ascii_case("codex") || source.unit != "percent" {
+        return CodexSyncResult {
+            status: CodexSyncStatus::NotApplicable,
+            window_id: Some(source.window_id),
+            rolled_over: false,
+            synced_at: None,
+            message: None,
+        };
+    }
+    if detection.status != DetectionStatus::Detected {
+        return CodexSyncResult {
+            status: CodexSyncStatus::Unavailable,
+            window_id: Some(source.window_id),
+            rolled_over: false,
+            synced_at: None,
+            message: detection.message,
+        };
+    }
+
+    let Some(remote_window) = matching_window(&detection.windows, source.starts_at, source.ends_at)
+    else {
+        return CodexSyncResult {
+            status: CodexSyncStatus::Unavailable,
+            window_id: Some(source.window_id),
+            rolled_over: false,
+            synced_at: None,
+            message: Some(
+                "Codex returned quota windows, but none matched this local source.".to_owned(),
+            ),
+        };
+    };
+    let sync = service.sync_provider_quota(SyncProviderQuota {
+        current_window_id: source.window_id.clone(),
+        adapter: "codex_app_server".to_owned(),
+        remote_limit_id: detection.provider_id,
+        remote_window_kind: remote_window.kind.clone(),
+        starts_at: remote_window.starts_at,
+        ends_at: remote_window.ends_at,
+        capacity: remote_window.capacity,
+        used: remote_window.used,
+        unit: remote_window.unit.clone(),
+        observed_at,
+    });
+
+    match sync {
+        Ok(result) => CodexSyncResult {
+            status: CodexSyncStatus::Synced,
+            window_id: Some(result.window_id),
+            rolled_over: result.rolled_over,
+            synced_at: Some(observed_at),
+            message: None,
+        },
+        Err(error) => CodexSyncResult {
+            status: CodexSyncStatus::Unavailable,
+            window_id: Some(source.window_id),
+            rolled_over: false,
+            synced_at: None,
+            message: Some(error.to_string()),
+        },
+    }
 }
 
 fn query_rate_limits() -> Result<CodexDetection, AdapterError> {
@@ -313,6 +429,23 @@ fn parse_window(kind: &str, window: &Value) -> Result<DetectedQuotaWindow, Adapt
     })
 }
 
+fn matching_window(
+    windows: &[DetectedQuotaWindow],
+    local_starts_at: i64,
+    local_ends_at: i64,
+) -> Option<&DetectedQuotaWindow> {
+    let local_duration = local_ends_at.checked_sub(local_starts_at)?;
+    windows
+        .iter()
+        .filter_map(|window| {
+            let remote_duration = window.ends_at.checked_sub(window.starts_at)?;
+            let difference = remote_duration.abs_diff(local_duration);
+            (difference <= 5 * 60_000).then_some((difference, window))
+        })
+        .min_by_key(|(difference, _)| *difference)
+        .map(|(_, window)| window)
+}
+
 fn window_display_name(duration_minutes: u64) -> String {
     match duration_minutes {
         10_080 => "Weekly allowance".to_owned(),
@@ -366,6 +499,12 @@ fn looks_like_auth_error(message: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        application::{
+            CreateQuotaSource, GetQuotaDashboard, ProviderQuotaSnapshotInput, QuotaService,
+        },
+        storage::Database,
+    };
 
     #[test]
     fn parses_official_rate_limit_snapshot_without_account_identity() {
@@ -454,5 +593,65 @@ mod tests {
         assert!(looks_like_auth_error("Please run codex login"));
         assert!(looks_like_auth_error("HTTP 401 Unauthorized"));
         assert!(!looks_like_auth_error("temporary transport failure"));
+    }
+
+    #[test]
+    fn applies_a_fake_checkpoint_and_rolls_the_window_without_spawning_codex() {
+        let mut service = QuotaService::new(Database::open_in_memory().unwrap());
+        service
+            .create_quota_source(CreateQuotaSource {
+                provider_id: "codex".to_owned(),
+                provider_display_name: "Codex".to_owned(),
+                account_id: "codex-subscription".to_owned(),
+                account_display_name: "Subscription".to_owned(),
+                pool_id: "codex-window".to_owned(),
+                pool_display_name: "Allowance".to_owned(),
+                window_id: "codex-window-old".to_owned(),
+                starts_at: 1_000,
+                ends_at: 601_000,
+                capacity: 100,
+                unit: "percent".to_owned(),
+                provider_snapshot: Some(ProviderQuotaSnapshotInput {
+                    adapter: "codex_app_server".to_owned(),
+                    remote_limit_id: "codex".to_owned(),
+                    remote_window_kind: "primary".to_owned(),
+                    used: 10,
+                    observed_at: 2_000,
+                    resets_at: 601_000,
+                }),
+            })
+            .unwrap();
+        let detection = CodexDetection::detected(
+            Some("plus".to_owned()),
+            vec![DetectedQuotaWindow {
+                id: "codex-primary".to_owned(),
+                display_name: "10-minute allowance".to_owned(),
+                kind: "primary".to_owned(),
+                starts_at: 3_000,
+                ends_at: 603_000,
+                capacity: 100,
+                used: 88,
+                remaining: 12,
+                unit: "percent".to_owned(),
+                duration_minutes: 10,
+            }],
+        );
+
+        let result = sync_detection(
+            &mut service,
+            "codex-window-old".to_owned(),
+            4_000,
+            detection,
+        );
+
+        assert_eq!(result.status, CodexSyncStatus::Synced);
+        assert!(result.rolled_over);
+        let dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: result.window_id.unwrap(),
+                at: 4_000,
+            })
+            .unwrap();
+        assert_eq!(dashboard.window.provider_remaining, 12);
     }
 }
