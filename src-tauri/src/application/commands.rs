@@ -63,6 +63,21 @@ pub struct ArchiveQuotaSource {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BindRepository {
+    pub canonical_root: String,
+    pub scope_reference: String,
+    pub bound_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetRepositoryContext {
+    pub canonical_root: String,
+    pub at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderQuotaSnapshotInput {
     pub adapter: String,
     pub remote_limit_id: String,

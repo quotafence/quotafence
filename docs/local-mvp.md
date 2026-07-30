@@ -32,6 +32,7 @@ For the selected quota window, the UI can:
 - distinguish root allocations from unallocated capacity;
 - create project, repository, and nested task allocations;
 - update existing allocation limits;
+- show canonical repository roots on explicitly bound repository allocations;
 - refresh the selected Codex source on startup or on demand;
 - carry allocations into the next provider reset window;
 - prevent duplicate active bindings to the same detected provider limit;
@@ -54,7 +55,6 @@ This milestone does not:
 
 - alter or copy coding-agent authentication;
 - launch or stop a managed coding-agent session;
-- map the current working repository to an allocation;
 - attribute a provider-confirmed total to individual projects automatically;
 - accept manual usage estimates as a substitute for automatic attribution;
 - persist per-scope policy or enforce it during admission;
@@ -62,5 +62,7 @@ This milestone does not:
 - archive scopes; or
 - run as a background daemon.
 
-The next vertical slice starts with repository binding and a read-only CLI
-context command. See the [Codex-first roadmap](roadmap.md).
+The companion CLI resolves nested working directories to a canonical Git root,
+binds that root explicitly to an existing repository allocation, and reports
+its active allocation context. It does not yet admit or launch provider work.
+See the [CLI guide](cli.md) and [Codex-first roadmap](roadmap.md).

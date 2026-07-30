@@ -28,9 +28,10 @@ The repository currently has:
 - automatic Codex checkpoint refresh on startup and explicit refresh;
 - absolute snapshots that do not double-count repeated reads; and
 - reset-window rollover that carries allocations without carrying old usage.
+- canonical Git repository bindings and a read-only `aqm context` CLI.
 
-It does **not** yet have repository bindings, an AQM CLI, managed-session
-records, provider process supervision, automatic session attribution,
+It does **not** yet have managed-session records, provider process supervision,
+automatic session attribution,
 persisted per-scope policy, admission enforcement, or burn-rate forecasting.
 
 ## Gap to an end-to-end Codex slice
@@ -39,7 +40,7 @@ persisted per-scope policy, admission enforcement, or burn-rate forecasting.
 | --- | --- | --- |
 | Provider checkpoint | Implemented | Reused before and after managed work |
 | Window rollover | Implemented | Covered during session reconciliation |
-| Repository context | Scope kind exists; no path binding | Current Git root resolves deterministically to one scope |
+| Repository context | Implemented | Reused for admission and managed launch |
 | Managed launch | Detection process only | AQM owns the Codex child lifecycle and exit result |
 | Reservation | Domain/storage implemented; not in daily workflow | Admission reserves capacity before spawn |
 | Attribution | Ledger primitives only; no user-entered estimates | Session result produces scoped observed usage |
@@ -62,7 +63,7 @@ Each milestone should ship in one reviewable PR where practical.
 Verification: adapter parsing tests, migration tests, snapshot replacement
 tests, rollover tests, and manual QA against the installed Codex client.
 
-### M1 — Repository identity and binding
+### M1 — Repository identity and binding — complete
 
 - Add a repository binding from a canonical Git worktree root to a repository
   scope; keep the binding separate from the scope itself.

@@ -123,6 +123,14 @@ CREATE INDEX active_quota_pools
 ON quota_pools(archived_at, display_name, id);
 "#;
 
+const REPOSITORY_BINDINGS: &str = r#"
+CREATE TABLE repository_bindings (
+    canonical_root TEXT PRIMARY KEY NOT NULL CHECK (length(trim(canonical_root)) > 0),
+    scope_id TEXT NOT NULL UNIQUE REFERENCES scopes(id) ON DELETE RESTRICT,
+    bound_at INTEGER NOT NULL
+);
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -138,6 +146,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 3,
         name: "quota_source_lifecycle",
         sql: QUOTA_SOURCE_LIFECYCLE,
+    },
+    Migration {
+        version: 4,
+        name: "repository_bindings",
+        sql: REPOSITORY_BINDINGS,
     },
 ];
 
@@ -247,7 +260,7 @@ mod tests {
                     row.get::<_, i64>(0)
                 })
                 .unwrap(),
-            3
+            latest_version()
         );
     }
 }

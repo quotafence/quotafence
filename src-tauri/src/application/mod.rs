@@ -4,14 +4,15 @@ mod service;
 mod view;
 
 pub use commands::{
-    ArchiveQuotaSource, CreateAccount, CreateAllocatedScope, CreateProvider, CreateQuotaPool,
-    CreateQuotaSource, CreateQuotaWindow, CreateScope, GetLocalState, GetQuotaDashboard,
-    ProviderQuotaSnapshotInput, RecordUsage, ReleaseReservation, ReserveQuota, SetAllocation,
-    SyncProviderQuota,
+    ArchiveQuotaSource, BindRepository, CreateAccount, CreateAllocatedScope, CreateProvider,
+    CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow, CreateScope, GetLocalState,
+    GetQuotaDashboard, GetRepositoryContext, ProviderQuotaSnapshotInput, RecordUsage,
+    ReleaseReservation, ReserveQuota, SetAllocation, SyncProviderQuota,
 };
 pub use error::{ApplicationError, ApplicationResult};
 pub use service::QuotaService;
 pub use view::{
-    AllocationSnapshot, LocalState, QuotaDashboard, QuotaSourceSummary, ScopeSummary,
+    AllocationSnapshot, LocalState, QuotaDashboard, QuotaSourceSummary,
+    RepositoryAllocationContext, RepositoryBindingSummary, RepositoryContext, ScopeSummary,
     SyncProviderQuotaResult, WindowSummary,
 };

@@ -10,6 +10,7 @@ pub enum ApplicationError {
     Storage(StorageError),
     NotFound { resource: &'static str, id: String },
     InconsistentData { message: String },
+    InvalidRequest { message: String },
     NumericOutOfRange { field: &'static str, value: i128 },
 }
 
@@ -20,6 +21,7 @@ impl fmt::Display for ApplicationError {
             Self::Storage(error) => write!(formatter, "storage operation failed: {error}"),
             Self::NotFound { resource, id } => write!(formatter, "{resource} {id} was not found"),
             Self::InconsistentData { message } => formatter.write_str(message),
+            Self::InvalidRequest { message } => formatter.write_str(message),
             Self::NumericOutOfRange { field, value } => {
                 write!(formatter, "{field} value {value} cannot be represented")
             }

@@ -1,4 +1,7 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
 use crate::{
     domain::{
@@ -6,15 +9,17 @@ use crate::{
         QuotaPool, QuotaPoolId, QuotaUnit, QuotaWindow, Reservation, ReservationId, Scope, ScopeId,
         UnixMillis, UsageAttribution, UsageEvent, UsageEventId, WindowId,
     },
-    storage::{Database, ProviderQuotaSnapshot, StorageError},
+    storage::{Database, ProviderQuotaSnapshot, RepositoryBinding, StorageError},
 };
 
 use super::{
     error::to_view_integer, AllocationSnapshot, ApplicationError, ApplicationResult,
-    ArchiveQuotaSource, CreateAccount, CreateAllocatedScope, CreateProvider, CreateQuotaPool,
-    CreateQuotaSource, CreateQuotaWindow, CreateScope, GetLocalState, GetQuotaDashboard,
-    LocalState, QuotaDashboard, QuotaSourceSummary, RecordUsage, ReleaseReservation, ReserveQuota,
-    ScopeSummary, SetAllocation, SyncProviderQuota, SyncProviderQuotaResult, WindowSummary,
+    ArchiveQuotaSource, BindRepository, CreateAccount, CreateAllocatedScope, CreateProvider,
+    CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow, CreateScope, GetLocalState,
+    GetQuotaDashboard, GetRepositoryContext, LocalState, QuotaDashboard, QuotaSourceSummary,
+    RecordUsage, ReleaseReservation, RepositoryAllocationContext, RepositoryBindingSummary,
+    RepositoryContext, ReserveQuota, ScopeSummary, SetAllocation, SyncProviderQuota,
+    SyncProviderQuotaResult, WindowSummary,
 };
 
 pub struct QuotaService {
@@ -197,6 +202,169 @@ impl QuotaService {
         )?;
         self.database.catalog().insert_scope(&scope)?;
         Ok(())
+    }
+
+    pub fn bind_repository(
+        &mut self,
+        command: BindRepository,
+    ) -> ApplicationResult<RepositoryBindingSummary> {
+        let canonical_root = required_request_text(command.canonical_root, "repository root")?;
+        let scope_reference = required_request_text(command.scope_reference, "scope reference")?
+            .trim()
+            .to_owned();
+        let scopes = self.database.catalog().list_scopes()?;
+        let mut matches: Vec<_> = scopes
+            .iter()
+            .filter(|scope| {
+                scope.kind() == crate::domain::ScopeKind::Repository
+                    && (scope.id().as_str() == scope_reference
+                        || scope.display_name().eq_ignore_ascii_case(&scope_reference))
+            })
+            .collect();
+        if matches.is_empty() {
+            return Err(ApplicationError::NotFound {
+                resource: "repository scope",
+                id: scope_reference,
+            });
+        }
+        if matches.len() > 1 {
+            return Err(ApplicationError::InvalidRequest {
+                message: format!(
+                    "repository scope reference {scope_reference:?} is ambiguous; use the scope ID"
+                ),
+            });
+        }
+        let scope = matches.remove(0);
+        if let Some(existing) = self
+            .database
+            .repository_bindings()
+            .get_by_root(&canonical_root)?
+        {
+            return Err(ApplicationError::InvalidRequest {
+                message: format!(
+                    "repository {canonical_root} is already bound to scope {}",
+                    existing.scope_id()
+                ),
+            });
+        }
+        if let Some(existing) = self
+            .database
+            .repository_bindings()
+            .list()?
+            .into_iter()
+            .find(|binding| binding.scope_id() == scope.id())
+        {
+            return Err(ApplicationError::InvalidRequest {
+                message: format!(
+                    "repository scope {} is already bound to {}",
+                    scope.id(),
+                    existing.canonical_root()
+                ),
+            });
+        }
+        let binding = RepositoryBinding::new(
+            canonical_root.clone(),
+            scope.id().clone(),
+            UnixMillis::new(command.bound_at),
+        );
+        self.database.repository_bindings().insert(&binding)?;
+
+        Ok(RepositoryBindingSummary {
+            canonical_root,
+            scope_id: scope.id().to_string(),
+            scope_display_name: scope.display_name().to_owned(),
+            bound_at: command.bound_at,
+        })
+    }
+
+    pub fn repository_context(
+        &mut self,
+        command: GetRepositoryContext,
+    ) -> ApplicationResult<RepositoryContext> {
+        let canonical_root = required_request_text(command.canonical_root, "repository root")?;
+        let binding = self
+            .database
+            .repository_bindings()
+            .get_by_root(&canonical_root)?;
+        let scopes = self.database.catalog().list_scopes()?;
+        let bindings = self.database.repository_bindings().list()?;
+        let bound_scope_ids: HashSet<_> = bindings
+            .iter()
+            .map(|binding| binding.scope_id().clone())
+            .collect();
+        let available_repository_scopes = scopes
+            .iter()
+            .filter(|scope| {
+                scope.kind() == crate::domain::ScopeKind::Repository
+                    && !bound_scope_ids.contains(scope.id())
+            })
+            .map(|scope| ScopeSummary {
+                id: scope.id().to_string(),
+                parent_id: scope.parent_id().map(ToString::to_string),
+                kind: scope.kind(),
+                display_name: scope.display_name().to_owned(),
+                repository_root: None,
+            })
+            .collect();
+
+        let Some(binding) = binding else {
+            return Ok(RepositoryContext {
+                canonical_root,
+                binding: None,
+                allocations: Vec::new(),
+                available_repository_scopes,
+            });
+        };
+        let scope = scopes
+            .iter()
+            .find(|scope| scope.id() == binding.scope_id())
+            .ok_or_else(|| {
+                inconsistent_reference(
+                    "repository binding",
+                    binding.canonical_root(),
+                    "scope",
+                    binding.scope_id(),
+                )
+            })?;
+        let local_state = self.local_state(GetLocalState {
+            selected_window_id: None,
+            at: command.at,
+        })?;
+        let mut allocations = Vec::new();
+        for source in local_state.sources {
+            let dashboard = self.dashboard(GetQuotaDashboard {
+                window_id: source.window_id.clone(),
+                at: command.at,
+            })?;
+            if let Some(allocation) = dashboard
+                .allocations
+                .into_iter()
+                .find(|allocation| allocation.scope_id == binding.scope_id().as_str())
+            {
+                allocations.push(RepositoryAllocationContext {
+                    provider_display_name: source.provider_display_name,
+                    pool_display_name: source.pool_display_name,
+                    window_id: source.window_id,
+                    unit: allocation.unit,
+                    limit: allocation.limit,
+                    remaining: allocation.remaining,
+                    spendable: allocation.spendable,
+                    decision: allocation.decision,
+                });
+            }
+        }
+
+        Ok(RepositoryContext {
+            canonical_root: canonical_root.clone(),
+            binding: Some(RepositoryBindingSummary {
+                canonical_root,
+                scope_id: scope.id().to_string(),
+                scope_display_name: scope.display_name().to_owned(),
+                bound_at: binding.bound_at().value(),
+            }),
+            allocations,
+            available_repository_scopes,
+        })
     }
 
     pub fn create_allocated_scope(
@@ -406,6 +574,18 @@ impl QuotaService {
         let pools = catalog.list_active_quota_pools()?;
         let windows = catalog.list_quota_windows()?;
         let scopes = catalog.list_scopes()?;
+        let repository_roots: HashMap<_, _> = self
+            .database
+            .repository_bindings()
+            .list()?
+            .into_iter()
+            .map(|binding| {
+                (
+                    binding.scope_id().clone(),
+                    binding.canonical_root().to_owned(),
+                )
+            })
+            .collect();
         let mut sources = Vec::with_capacity(pools.len());
 
         for pool in pools {
@@ -487,6 +667,7 @@ impl QuotaService {
                     parent_id: scope.parent_id().map(ToString::to_string),
                     kind: scope.kind(),
                     display_name: scope.display_name().to_owned(),
+                    repository_root: repository_roots.get(scope.id()).cloned(),
                 })
                 .collect(),
             selected_window_id,
@@ -497,6 +678,15 @@ impl QuotaService {
 
 fn arithmetic_overflow() -> ApplicationError {
     crate::domain::DomainError::ArithmeticOverflow.into()
+}
+
+fn required_request_text(value: String, field: &str) -> ApplicationResult<String> {
+    if value.trim().is_empty() {
+        return Err(ApplicationError::InvalidRequest {
+            message: format!("{field} cannot be empty"),
+        });
+    }
+    Ok(value)
 }
 
 fn map_input_storage_error(error: StorageError) -> ApplicationError {
@@ -522,10 +712,10 @@ mod tests {
     use super::*;
     use crate::{
         application::{
-            ArchiveQuotaSource, CreateAccount, CreateAllocatedScope, CreateProvider,
-            CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow, CreateScope, GetLocalState,
-            GetQuotaDashboard, ProviderQuotaSnapshotInput, RecordUsage, ReserveQuota,
-            SetAllocation, SyncProviderQuota,
+            ArchiveQuotaSource, BindRepository, CreateAccount, CreateAllocatedScope,
+            CreateProvider, CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow, CreateScope,
+            GetLocalState, GetQuotaDashboard, GetRepositoryContext, ProviderQuotaSnapshotInput,
+            RecordUsage, ReserveQuota, SetAllocation, SyncProviderQuota,
         },
         domain::{Confidence, EnforcementDecision, ScopeKind, UsageSource},
         storage::Database,
@@ -623,6 +813,20 @@ mod tests {
                 resets_at: 10_000,
             }),
         }
+    }
+
+    fn add_repository_allocation(service: &mut QuotaService) {
+        service
+            .create_allocated_scope(CreateAllocatedScope {
+                id: "repository-a".to_owned(),
+                parent_id: None,
+                kind: ScopeKind::Repository,
+                display_name: "Repository A".to_owned(),
+                window_id: "week-1".to_owned(),
+                amount: 30,
+                unit: "quota_points".to_owned(),
+            })
+            .unwrap();
     }
 
     fn snapshot<'a>(dashboard: &'a QuotaDashboard, scope_id: &str) -> &'a AllocationSnapshot {
@@ -847,6 +1051,100 @@ mod tests {
         assert_eq!(state.scopes.len(), 2);
         assert_eq!(state.selected_window_id.as_deref(), Some("week-1"));
         assert_eq!(state.dashboard.unwrap().window.capacity, 100);
+    }
+
+    #[test]
+    fn repository_context_is_unmapped_until_explicitly_bound() {
+        let mut service = configured_service();
+        add_repository_allocation(&mut service);
+
+        let context = service
+            .repository_context(GetRepositoryContext {
+                canonical_root: "/code/repository-a".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+
+        assert!(context.binding.is_none());
+        assert!(context.allocations.is_empty());
+        assert_eq!(context.available_repository_scopes.len(), 1);
+        assert_eq!(context.available_repository_scopes[0].id, "repository-a");
+    }
+
+    #[test]
+    fn repository_binding_resolves_scope_and_active_allocations() {
+        let mut service = configured_service();
+        add_repository_allocation(&mut service);
+
+        let binding = service
+            .bind_repository(BindRepository {
+                canonical_root: "/code/repository-a".to_owned(),
+                scope_reference: "Repository A".to_owned(),
+                bound_at: 2_000,
+            })
+            .unwrap();
+        let context = service
+            .repository_context(GetRepositoryContext {
+                canonical_root: "/code/repository-a".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: None,
+                at: 3_000,
+            })
+            .unwrap();
+
+        assert_eq!(binding.scope_id, "repository-a");
+        assert_eq!(context.binding.unwrap().scope_id, "repository-a");
+        assert_eq!(context.allocations.len(), 1);
+        assert_eq!(context.allocations[0].provider_display_name, "Codex");
+        assert_eq!(context.allocations[0].limit, 30);
+        assert_eq!(context.allocations[0].remaining, 30);
+        assert_eq!(
+            state
+                .scopes
+                .iter()
+                .find(|scope| scope.id == "repository-a")
+                .unwrap()
+                .repository_root
+                .as_deref(),
+            Some("/code/repository-a")
+        );
+    }
+
+    #[test]
+    fn repository_bindings_reject_duplicate_roots_and_scope_reuse() {
+        let mut service = configured_service();
+        add_repository_allocation(&mut service);
+        service
+            .bind_repository(BindRepository {
+                canonical_root: "/code/repository-a".to_owned(),
+                scope_reference: "repository-a".to_owned(),
+                bound_at: 2_000,
+            })
+            .unwrap();
+
+        let duplicate_root = service.bind_repository(BindRepository {
+            canonical_root: "/code/repository-a".to_owned(),
+            scope_reference: "repository-a".to_owned(),
+            bound_at: 3_000,
+        });
+        let duplicate_scope = service.bind_repository(BindRepository {
+            canonical_root: "/code/another".to_owned(),
+            scope_reference: "repository-a".to_owned(),
+            bound_at: 3_000,
+        });
+
+        assert!(matches!(
+            duplicate_root,
+            Err(ApplicationError::InvalidRequest { .. })
+        ));
+        assert!(matches!(
+            duplicate_scope,
+            Err(ApplicationError::InvalidRequest { .. })
+        ));
     }
 
     #[test]

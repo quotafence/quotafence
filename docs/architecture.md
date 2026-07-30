@@ -3,7 +3,8 @@
 This document describes the intended architecture. The repository currently
 contains the provider-neutral domain, local SQLite storage, application
 services, Tauri command boundary, and a Codex discovery/synchronization adapter.
-Repository mapping and managed-session execution remain planned.
+Repository mapping and a lightweight context CLI are implemented;
+managed-session execution remains planned.
 
 ## Goals
 
@@ -27,7 +28,7 @@ Repository mapping and managed-session execution remain planned.
 
 ## Initial shape: a modular monolith
 
-The repository remains a modular monolith. The desktop and the planned CLI
+The repository remains a modular monolith. The desktop and CLI
 should share domain, application, storage, and adapter code. This keeps
 installation and debugging simple while the managed-session contract evolves.
 
@@ -40,10 +41,8 @@ src-tauri/src/
   storage/                   Local persistence and migrations
   providers/
     codex/                   First provider adapter
-  bin/aqm.rs                 Planned lightweight CLI entry point
+  bin/aqm.rs                 Repository context and future managed workflow
 ```
-
-The CLI path is a target, not a reason to create an empty binary in advance.
 
 ## Component responsibilities
 
@@ -52,8 +51,9 @@ The CLI path is a target, not a reason to create an empty binary in advance.
 Displays setup, allocations, remaining capacity, confidence, provider
 capabilities, and eventually managed-session state. The current local MVP
 implements onboarding, multi-source window selection, project/task allocations,
-and allocation updates. It does not accept manual usage estimates or infer enforcement
-guarantees from a provider name. See [Local MVP](local-mvp.md).
+and allocation updates. Repository bindings created by the CLI appear on
+repository allocations. It does not accept manual usage estimates or infer
+enforcement guarantees from a provider name. See [Local MVP](local-mvp.md).
 
 ### Tauri command boundary
 
@@ -111,10 +111,10 @@ not yet launch a user session or expose session-level consumption.
 
 ### CLI wrapper
 
-The first managed workflow should be `aqm run codex`. The CLI resolves the
-current repository, calls the same application services as the desktop, and
-owns the child process lifecycle. It should not duplicate policy or storage
-logic in command handlers.
+The CLI currently resolves and explicitly binds the current repository through
+the shared application and storage layers. The first managed workflow should be
+`aqm run codex`, with the CLI owning the child process lifecycle without
+duplicating policy or storage logic in command handlers. See [CLI](cli.md).
 
 ## Managed-session flow
 

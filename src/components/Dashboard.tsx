@@ -112,6 +112,14 @@ function orderedScopes(scopes: ScopeSummary[]): ScopeSummary[] {
   return ordered;
 }
 
+function repositoryLabel(scope: ScopeSummary): string {
+  if (!scope.repositoryRoot) {
+    return scope.kind;
+  }
+  const segments = scope.repositoryRoot.split(/[\\/]/).filter(Boolean);
+  return `repository · ${segments[segments.length - 1] ?? scope.repositoryRoot}`;
+}
+
 function AllocationRow({
   scope,
   allocation,
@@ -139,8 +147,8 @@ function AllocationRow({
         </span>
         <div>
           <strong>{scope.displayName}</strong>
-          <span>
-            {scope.kind}
+          <span title={scope.repositoryRoot ?? undefined}>
+            {repositoryLabel(scope)}
             {scope.parentId ? " · nested allocation" : ""}
           </span>
         </div>
