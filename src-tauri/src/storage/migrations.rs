@@ -131,6 +131,11 @@ CREATE TABLE repository_bindings (
 );
 "#;
 
+const WORKSPACE_BINDINGS: &str = r#"
+ALTER TABLE repository_bindings RENAME TO workspace_bindings;
+ALTER TABLE workspace_bindings RENAME COLUMN canonical_root TO canonical_path;
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -151,6 +156,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 4,
         name: "repository_bindings",
         sql: REPOSITORY_BINDINGS,
+    },
+    Migration {
+        version: 5,
+        name: "workspace_bindings",
+        sql: WORKSPACE_BINDINGS,
     },
 ];
 
@@ -261,6 +271,57 @@ mod tests {
                 })
                 .unwrap(),
             latest_version()
+        );
+    }
+
+    #[test]
+    fn workspace_migration_preserves_existing_git_root_bindings_as_folders() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys = ON;
+                 CREATE TABLE schema_migrations (
+                    version INTEGER PRIMARY KEY NOT NULL,
+                    name TEXT NOT NULL,
+                    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );",
+            )
+            .unwrap();
+        connection.execute_batch(INITIAL_SCHEMA).unwrap();
+        connection.execute_batch(PROVIDER_QUOTA_SNAPSHOTS).unwrap();
+        connection.execute_batch(QUOTA_SOURCE_LIFECYCLE).unwrap();
+        connection.execute_batch(REPOSITORY_BINDINGS).unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO schema_migrations (version, name)
+                 VALUES
+                    (1, 'initial_schema'),
+                    (2, 'provider_quota_snapshots'),
+                    (3, 'quota_source_lifecycle'),
+                    (4, 'repository_bindings');
+                 INSERT INTO scopes (id, parent_id, kind, display_name)
+                 VALUES ('workspace-a', NULL, 'repository', 'Workspace A');
+                 INSERT INTO repository_bindings (canonical_root, scope_id, bound_at)
+                 VALUES ('/code/workspace-a', 'workspace-a', 1000);",
+            )
+            .unwrap();
+
+        migrate(&mut connection).unwrap();
+
+        let migrated: (String, String, i64) = connection
+            .query_row(
+                "SELECT canonical_path, scope_id, bound_at FROM workspace_bindings",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            migrated,
+            (
+                "/code/workspace-a".to_owned(),
+                "workspace-a".to_owned(),
+                1_000
+            )
         );
     }
 }

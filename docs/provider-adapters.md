@@ -54,10 +54,10 @@ Current capability status:
 | Quota discovery | Implemented |
 | Checkpoint refresh | Implemented |
 | Reset rollover | Implemented |
-| Repository binding | Not implemented |
+| Workspace binding | Implemented for any local folder |
 | Managed user session | Not implemented |
 | Automatic attribution | Not implemented |
-| Admission enforcement | Policy model exists; not wired to launch |
+| Admission assessment | Implemented as a dry run; not wired to launch |
 | Live hard stop | Not supported |
 
 The current Codex adapter implements quota discovery and synchronization:
@@ -69,7 +69,9 @@ The current Codex adapter implements quota discovery and synchronization:
 - call `account/rateLimits/read`;
 - map every complete primary or secondary window into percentage capacity,
   provider-confirmed usage, duration, and reset time; and
-- replace the absolute provider snapshot on startup or explicit refresh;
+- replace the absolute provider snapshot on startup or explicit refresh,
+  identifying the connected source by adapter metadata rather than its local
+  storage ID;
 - carry allocations into a fresh local window after the provider reset; and
 - stop the transient App Server process after the snapshot is returned.
 
@@ -79,7 +81,7 @@ Malformed, incomplete, and out-of-range provider responses are rejected.
 
 The remaining Codex vertical slice is:
 
-1. map a repository to an allocation;
+1. resolve a workspace allocation from the current folder;
 2. admit and reserve one managed session;
 3. launch and supervise Codex through the CLI wrapper;
 4. attribute and reconcile its usage; and

@@ -1472,21 +1472,6 @@ h3,
   background: #edf4e4;
 }
 
-.scope-icon.repository {
-  color: #416e87;
-  background: #e9f1f5;
-}
-
-.scope-icon.task {
-  color: #77579b;
-  background: #f0ebf6;
-}
-
-.scope-icon.reserve {
-  color: #9a6c2d;
-  background: #f8efdf;
-}
-
 .scope-identity > div {
   min-width: 0;
   display: flex;
@@ -1663,7 +1648,7 @@ h3,
 
 .kind-options {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 9px;
 }
 
@@ -1686,6 +1671,52 @@ h3,
   border-color: #8fb947;
   color: #273128;
   background: #f2f8e8;
+}
+
+.folder-picker {
+  width: 100%;
+  min-height: 64px;
+  padding: 11px 13px;
+  border: 1px dashed #bfc7bd;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: #5f6962;
+  background: white;
+  text-align: left;
+  cursor: pointer;
+}
+
+.folder-picker:hover,
+.folder-picker.selected {
+  border-color: #8fb947;
+  color: #33451e;
+  background: #f5f9ee;
+}
+
+.folder-picker > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.folder-picker strong,
+.folder-picker small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-picker strong {
+  font-size: 11px;
+}
+
+.folder-picker small {
+  max-width: 400px;
+  margin-top: 4px;
+  color: #879087;
+  font-size: 9px;
 }
 
 .selected-scope {
@@ -1729,6 +1760,16 @@ h3,
   background: #fff3f2;
   box-shadow: var(--shadow);
   font-size: 11px;
+}
+
+.error-toast.success {
+  border-color: #b9d59b;
+  background: #edf6e4;
+  color: #334625;
+}
+
+.error-toast.success > svg {
+  flex: 0 0 auto;
 }
 
 .error-toast span {

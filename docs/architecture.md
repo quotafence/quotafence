@@ -3,14 +3,14 @@
 This document describes the intended architecture. The repository currently
 contains the provider-neutral domain, local SQLite storage, application
 services, Tauri command boundary, and a Codex discovery/synchronization adapter.
-Repository mapping and a lightweight context CLI are implemented;
+Folder-based workspace mapping and a lightweight context CLI are implemented;
 provider-refreshing admission dry runs are also implemented, while
 managed-session execution remains planned.
 
 ## Goals
 
-- Protect capacity for high-priority repository and task work.
-- Attribute managed coding-agent usage to those scopes automatically.
+- Protect capacity for high-priority folder workspaces.
+- Attribute managed coding-agent usage to those workspaces automatically.
 - Put admission and policy enforcement in the managed execution path.
 - Forecast depletion from trustworthy reconciled history.
 - Keep configuration and usage history local by default.
@@ -42,7 +42,7 @@ src-tauri/src/
   storage/                   Local persistence and migrations
   providers/
     codex/                   First provider adapter
-  bin/aqm.rs                 Repository context, binding, and admission dry run
+  bin/aqm.rs                 Workspace context, binding, and admission dry run
 ```
 
 ## Component responsibilities
@@ -51,10 +51,10 @@ src-tauri/src/
 
 Displays setup, allocations, remaining capacity, confidence, provider
 capabilities, and eventually managed-session state. The current local MVP
-implements onboarding, multi-source window selection, project/task allocations,
-and allocation updates. Repository bindings created by the CLI appear on
-repository allocations. It does not accept manual usage estimates or infer
-enforcement guarantees from a provider name. See [Local MVP](local-mvp.md).
+implements onboarding, multi-source window selection, folder selection,
+workspace allocations, and allocation updates. It does not accept manual usage
+estimates or infer enforcement guarantees from a provider name. See
+[Local MVP](local-mvp.md).
 
 ### Tauri command boundary
 
@@ -70,7 +70,7 @@ see [Tauri commands](tauri-commands.md).
 Owns provider-neutral rules:
 
 - allocation and rollover;
-- hierarchical debiting;
+- folder-level debiting;
 - reservations for in-flight work;
 - warning and stop policies; and
 - reconciliation of attributed and unattributed usage.
@@ -114,7 +114,7 @@ not yet launch a user session or expose session-level consumption.
 
 ### CLI wrapper
 
-The CLI resolves and explicitly binds the current repository through the shared
+The CLI resolves and explicitly binds the current folder through the shared
 application and storage layers. `aqm admit codex` refreshes the relevant
 checkpoint and evaluates the effective admission boundary without launching a
 process. The first managed workflow should be `aqm run codex`, with the CLI
@@ -123,12 +123,12 @@ in command handlers. See [CLI](cli.md).
 
 ## Managed-session flow
 
-1. Resolve the current Git root through an explicit repository binding.
+1. Canonicalize the current folder and resolve its nearest workspace binding.
 2. Refresh the relevant provider checkpoint.
 3. Read the allocation, usage, reservations, policy, and adapter capabilities.
 4. Allow, warn, request confirmation, or refuse admission.
 5. Persist a session record and reserve capacity before spawning.
-6. Start and supervise Codex in the repository working directory.
+6. Start and supervise Codex in the workspace working directory.
 7. Persist the exit outcome, refresh the provider checkpoint, and reconcile.
 8. Consume or release the reservation and append immutable attribution events.
 
@@ -156,7 +156,7 @@ because AQM can kill a child process.
 ## Trust boundaries
 
 - The webview is untrusted input to Rust commands.
-- Repository paths and metadata are untrusted.
+- Workspace paths and metadata are untrusted.
 - Provider output may be malformed, incomplete, or change between versions.
 - Logs and exports may reveal private project names or usage patterns.
 - External provider authentication remains outside the app whenever practical.

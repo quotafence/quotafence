@@ -12,11 +12,12 @@ use tauri::{Manager, Runtime, State};
 use crate::providers::codex::{self, CodexDetection, CodexSyncResult};
 use crate::{
     application::{
-        ArchiveQuotaSource, CreateAccount, CreateAllocatedScope, CreateProvider, CreateQuotaPool,
-        CreateQuotaSource, CreateQuotaWindow, CreateScope, GetLocalState, GetQuotaDashboard,
+        ArchiveQuotaSource, CreateAccount, CreateAllocatedWorkspace, CreateProvider,
+        CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow, GetLocalState, GetQuotaDashboard,
         LocalState, QuotaDashboard, ReleaseReservation, ReserveQuota, SetAllocation,
     },
     paths::DATABASE_FILENAME,
+    workspace::canonicalize_workspace_path,
 };
 
 pub use error::{IpcError, IpcResult};
@@ -80,16 +81,13 @@ pub(crate) fn archive_quota_source(
 }
 
 #[tauri::command]
-pub(crate) fn create_scope(state: State<'_, AppState>, request: CreateScope) -> IpcResult<()> {
-    state.execute(|service| service.create_scope(request))
-}
-
-#[tauri::command]
-pub(crate) fn create_allocated_scope(
+pub(crate) fn create_allocated_workspace(
     state: State<'_, AppState>,
-    request: CreateAllocatedScope,
+    mut request: CreateAllocatedWorkspace,
 ) -> IpcResult<()> {
-    state.execute(|service| service.create_allocated_scope(request))
+    request.canonical_path = canonicalize_workspace_path(&request.canonical_path)
+        .map_err(|error| IpcError::invalid_workspace(error.to_string()))?;
+    state.execute(|service| service.create_allocated_workspace(request))
 }
 
 #[tauri::command]

@@ -177,7 +177,7 @@ impl QuotaWindow {
 #[serde(rename_all = "snake_case")]
 pub enum ScopeKind {
     Project,
-    Repository,
+    Workspace,
     Task,
     Reserve,
 }

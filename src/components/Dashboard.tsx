@@ -3,7 +3,6 @@ import type {
   AllocationSnapshot,
   LocalState,
   QuotaSourceSummary,
-  ScopeKind,
   ScopeSummary,
 } from "../types";
 import { Icon } from "./Icon";
@@ -20,16 +19,6 @@ type DashboardProps = {
   removingSource: boolean;
 };
 
-const kindIcons: Record<
-  ScopeKind,
-  "folder" | "repository" | "task" | "shield"
-> = {
-  project: "folder",
-  repository: "repository",
-  task: "task",
-  reserve: "shield",
-};
-
 function labelUnit(unit: string): string {
   return unit.split("_").join(" ");
 }
@@ -40,6 +29,14 @@ function formatAmount(value: number, unit: string): string {
   }
 
   return `${value.toLocaleString()} ${labelUnit(unit)}`;
+}
+
+function formatShare(value: number, total: number): string {
+  if (total === 0) {
+    return "0%";
+  }
+  const percentage = (value / total) * 100;
+  return `${Number.isInteger(percentage) ? percentage : percentage.toFixed(1)}%`;
 }
 
 function formatReset(endsAt: number): string {
@@ -81,75 +78,60 @@ function formatLastSync(timestamp: number | null): string {
 }
 
 function orderedScopes(scopes: ScopeSummary[]): ScopeSummary[] {
-  const byParent = new Map<string | null, ScopeSummary[]>();
-  for (const scope of scopes) {
-    const siblings = byParent.get(scope.parentId) ?? [];
-    siblings.push(scope);
-    byParent.set(scope.parentId, siblings);
-  }
-  for (const siblings of byParent.values()) {
-    siblings.sort((left, right) => left.displayName.localeCompare(right.displayName));
-  }
-
-  const ordered: ScopeSummary[] = [];
-  const visited = new Set<string>();
-  function append(parentId: string | null) {
-    for (const scope of byParent.get(parentId) ?? []) {
-      if (visited.has(scope.id)) {
-        continue;
-      }
-      visited.add(scope.id);
-      ordered.push(scope);
-      append(scope.id);
-    }
-  }
-  append(null);
-  for (const scope of scopes) {
-    if (!visited.has(scope.id)) {
-      ordered.push(scope);
-    }
-  }
-  return ordered;
+  return scopes
+    .filter(
+      (scope) =>
+        scope.kind === "workspace" &&
+        scope.parentId === null &&
+        scope.workspacePath !== null,
+    )
+    .sort((left, right) => left.displayName.localeCompare(right.displayName));
 }
 
-function repositoryLabel(scope: ScopeSummary): string {
-  if (!scope.repositoryRoot) {
+function workspaceLabel(scope: ScopeSummary): string {
+  if (!scope.workspacePath) {
     return scope.kind;
   }
-  const segments = scope.repositoryRoot.split(/[\\/]/).filter(Boolean);
-  return `repository · ${segments[segments.length - 1] ?? scope.repositoryRoot}`;
+  const segments = scope.workspacePath.split(/[\\/]/).filter(Boolean);
+  return `workspace · ${segments[segments.length - 1] ?? scope.workspacePath}`;
 }
 
 function AllocationRow({
   scope,
   allocation,
   unit,
+  providerCapacity,
+  providerSpendable,
   onEdit,
 }: {
   scope: ScopeSummary;
   allocation?: AllocationSnapshot;
   unit: string;
+  providerCapacity: number;
+  providerSpendable: number;
   onEdit: () => void;
 }) {
-  const committed = allocation
-    ? allocation.attributedUsage + allocation.activeReservations
+  const usableNow = allocation
+    ? Math.min(allocation.spendable, providerSpendable)
     : 0;
-  const progress = allocation?.limit
-    ? Math.min(100, Math.round((committed / allocation.limit) * 100))
+  const remainingPercent = allocation?.limit
+    ? Math.min(
+        100,
+        Math.round((usableNow / allocation.limit) * 100),
+      )
     : 0;
   const decision = allocation?.decision ?? "allow";
 
   return (
-    <article className={`allocation-row ${scope.parentId ? "child" : ""}`}>
+    <article className="allocation-row">
       <div className="scope-identity">
-        <span className={`scope-icon ${scope.kind}`}>
-          <Icon name={kindIcons[scope.kind]} size={18} />
+        <span className="scope-icon workspace">
+          <Icon name="folder" size={18} />
         </span>
         <div>
           <strong>{scope.displayName}</strong>
-          <span title={scope.repositoryRoot ?? undefined}>
-            {repositoryLabel(scope)}
-            {scope.parentId ? " · nested allocation" : ""}
+          <span title={scope.workspacePath ?? undefined}>
+            {workspaceLabel(scope)}
           </span>
         </div>
       </div>
@@ -158,13 +140,20 @@ function AllocationRow({
         {allocation ? (
           <>
             <div className="progress-meta">
-              <span>{formatAmount(committed, unit)} committed</span>
-              <span>{progress}%</span>
+              <span>{formatAmount(usableNow, unit)} usable now</span>
+              <span>{remainingPercent}% of folder cap</span>
             </div>
-            <div className="progress-track">
+            <div
+              className="progress-track"
+              role="progressbar"
+              aria-label={`${scope.displayName} quota remaining`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={remainingPercent}
+            >
               <span
                 className={`progress-fill ${decision}`}
-                style={{ width: `${progress}%` }}
+                style={{ width: `${remainingPercent}%` }}
               />
             </div>
           </>
@@ -175,7 +164,11 @@ function AllocationRow({
 
       <div className="allocation-limit">
         <strong>{allocation ? formatAmount(allocation.limit, unit) : "—"}</strong>
-        <span>{allocation ? `${formatAmount(allocation.remaining, unit)} left` : "No limit"}</span>
+        <span>
+          {allocation
+            ? `${formatShare(allocation.limit, providerCapacity)} of total quota`
+            : "No limit"}
+        </span>
       </div>
 
       <div className="row-actions">
@@ -229,20 +222,18 @@ export function Dashboard({
   }
 
   const { window: quotaWindow } = dashboard;
-  const used = Math.max(0, quotaWindow.capacity - quotaWindow.providerRemaining);
-  const usedPercent = quotaWindow.capacity
-    ? Math.min(100, Math.round((used / quotaWindow.capacity) * 100))
+  const availablePercent = quotaWindow.capacity
+    ? Math.min(
+        100,
+        Math.round(
+          (quotaWindow.providerSpendable / quotaWindow.capacity) * 100,
+        ),
+      )
     : 0;
   const allocationByScope = new Map(
     dashboard.allocations.map((allocation) => [allocation.scopeId, allocation]),
   );
   const scopes = orderedScopes(state.scopes);
-  const allocatedParents = state.scopes.filter(
-    (scope) =>
-      !scope.parentId &&
-      allocationByScope.has(scope.id) &&
-      scope.kind !== "task",
-  );
 
   return (
     <div className="app-layout">
@@ -342,7 +333,8 @@ export function Dashboard({
               type="button"
               onClick={onRefresh}
               disabled={refreshing}
-              aria-label="Refresh"
+              aria-label="Sync latest quota"
+              title="Sync latest quota from provider"
             >
               <Icon name="refresh" size={18} className={refreshing ? "spin" : ""} />
             </button>
@@ -367,13 +359,18 @@ export function Dashboard({
           <article className="quota-hero">
             <div
               className="quota-ring"
+              role="progressbar"
+              aria-label="Provider quota remaining"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={availablePercent}
               style={{
-                background: `conic-gradient(var(--accent) ${usedPercent * 3.6}deg, var(--ring-track) 0deg)`,
+                background: `conic-gradient(var(--accent) ${availablePercent * 3.6}deg, var(--ring-track) 0deg)`,
               }}
             >
               <div>
-                <strong>{usedPercent}%</strong>
-                <span>used</span>
+                <strong>{availablePercent}%</strong>
+                <span>left</span>
               </div>
             </div>
             <div className="quota-hero-copy">
@@ -398,17 +395,24 @@ export function Dashboard({
               </span>
               <p>Allocated</p>
               <strong>{formatAmount(quotaWindow.allocatedToRootScopes, quotaWindow.unit)}</strong>
-              <small>{formatAmount(quotaWindow.unallocated, quotaWindow.unit)} unallocated</small>
+              <small>
+                {formatShare(
+                  quotaWindow.allocatedToRootScopes,
+                  quotaWindow.capacity,
+                )}{" "}
+                of total quota · {formatAmount(quotaWindow.unallocated, quotaWindow.unit)}{" "}
+                unallocated
+              </small>
             </article>
             <article className="metric-card">
               <span className="metric-icon violet">
                 <Icon name="activity" size={19} />
               </span>
-              <p>Provider usage</p>
-              <strong>{formatAmount(used, quotaWindow.unit)}</strong>
-              <small>
-                {formatAmount(quotaWindow.unattributedUsage, quotaWindow.unit)} unattributed
-              </small>
+              <p>Unattributed</p>
+              <strong>
+                {formatAmount(quotaWindow.unattributedUsage, quotaWindow.unit)}
+              </strong>
+              <small>not assigned to a workspace</small>
             </article>
             <article className="metric-card">
               <span className="metric-icon amber">
@@ -433,23 +437,24 @@ export function Dashboard({
           <header className="section-header">
             <div>
               <p className="eyebrow">Budget map</p>
-              <h2>Project allocations</h2>
+              <h2>Workspace allocations</h2>
               <span>
-                Usage in a task also debits every parent allocation.
+                Limits are shares of the full provider window; availability also
+                respects the provider quota left now.
               </span>
             </div>
             <div className="section-actions">
               <button className="button outline" type="button" onClick={onAddScope}>
                 <Icon name="plus" size={17} />
-                Add project
+                Add workspace
               </button>
             </div>
           </header>
 
           <div className="allocation-table-header" aria-hidden="true">
             <span>Scope</span>
-            <span>Consumption</span>
-            <span>Limit</span>
+            <span>Available now</span>
+            <span>Share of total</span>
             <span />
           </div>
 
@@ -461,6 +466,8 @@ export function Dashboard({
                   scope={scope}
                   allocation={allocationByScope.get(scope.id)}
                   unit={quotaWindow.unit}
+                  providerCapacity={quotaWindow.capacity}
+                  providerSpendable={quotaWindow.providerSpendable}
                   onEdit={() => onEditAllocation(scope)}
                 />
               ))
@@ -472,7 +479,7 @@ export function Dashboard({
                 <div>
                   <strong>Start allocating your shared allowance</strong>
                   <p>
-                    Add a project or repository, then give it a clear quota limit.
+                    Choose a folder, then give that workspace a clear quota limit.
                   </p>
                 </div>
                 <button className="button dark" type="button" onClick={onAddScope}>
@@ -482,13 +489,6 @@ export function Dashboard({
             )}
           </div>
 
-          {allocatedParents.length > 0 && (
-            <footer className="allocation-footer">
-              <Icon name="shield" size={17} />
-              Tasks can be nested under {allocatedParents.length} allocated{" "}
-              {allocatedParents.length === 1 ? "parent" : "parents"}.
-            </footer>
-          )}
         </section>
       </main>
       {sourceMenu && (

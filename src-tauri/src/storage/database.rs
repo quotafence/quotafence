@@ -5,8 +5,10 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use crate::domain::{Account, Allocation, Provider, QuotaPool, QuotaWindow, Scope, WindowId};
 
 use super::{
-    allocations::set_in_transaction, migrations, provider_snapshots, AllocationRepository,
-    CatalogRepository, LedgerRepository, ProviderQuotaSnapshot, StorageResult,
+    allocations::set_in_transaction, migrations, provider_snapshots,
+    workspace_bindings::insert_in_transaction as insert_workspace_binding_in_transaction,
+    AllocationRepository, CatalogRepository, LedgerRepository, ProviderQuotaSnapshot,
+    StorageResult, WorkspaceBinding,
 };
 
 pub struct Database {
@@ -49,8 +51,8 @@ impl Database {
         LedgerRepository::new(&mut self.connection)
     }
 
-    pub fn repository_bindings(&self) -> super::RepositoryBindingRepository<'_> {
-        super::RepositoryBindingRepository::new(&self.connection)
+    pub fn workspace_bindings(&self) -> super::WorkspaceBindingRepository<'_> {
+        super::WorkspaceBindingRepository::new(&self.connection)
     }
 
     pub fn schema_version(&self) -> StorageResult<i64> {
@@ -69,6 +71,22 @@ impl Database {
         window: &QuotaWindow,
     ) -> StorageResult<()> {
         self.insert_quota_source_with_snapshot(provider, account, pool, window, None)
+    }
+
+    pub fn insert_allocated_workspace(
+        &mut self,
+        scope: &crate::domain::Scope,
+        allocation: &Allocation,
+        binding: &WorkspaceBinding,
+    ) -> StorageResult<()> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        CatalogRepository::new(&transaction).insert_scope(scope)?;
+        set_in_transaction(&transaction, allocation)?;
+        insert_workspace_binding_in_transaction(&transaction, binding)?;
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn insert_quota_source_with_snapshot(

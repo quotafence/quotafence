@@ -1,4 +1,4 @@
-export type ScopeKind = "project" | "repository" | "task" | "reserve";
+export type ScopeKind = "project" | "workspace" | "task" | "reserve";
 
 export type EnforcementDecision = "allow" | "warn" | "confirm" | "stop";
 
@@ -65,7 +65,7 @@ export type ScopeSummary = {
   parentId: string | null;
   kind: ScopeKind;
   displayName: string;
-  repositoryRoot: string | null;
+  workspacePath: string | null;
 };
 
 export type WindowSummary = {
@@ -126,9 +126,8 @@ export type QuotaSourceInput = {
   };
 };
 
-export type ScopeInput = {
+export type WorkspaceInput = {
   displayName: string;
-  kind: ScopeKind;
-  parentId: string | null;
   allocation: number;
+  workspacePath: string;
 };

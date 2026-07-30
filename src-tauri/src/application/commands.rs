@@ -63,23 +63,35 @@ pub struct ArchiveQuotaSource {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BindRepository {
-    pub canonical_root: String,
+pub struct BindWorkspace {
+    pub canonical_path: String,
     pub scope_reference: String,
     pub bound_at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GetRepositoryContext {
-    pub canonical_root: String,
+pub struct CreateAllocatedWorkspace {
+    pub id: String,
+    pub display_name: String,
+    pub canonical_path: String,
+    pub window_id: String,
+    pub amount: u64,
+    pub unit: String,
+    pub bound_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetWorkspaceContext {
+    pub canonical_path: String,
     pub at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct EvaluateRepositoryAdmission {
-    pub canonical_root: String,
+pub struct EvaluateWorkspaceAdmission {
+    pub canonical_path: String,
     pub provider_id: String,
     pub at: i64,
 }

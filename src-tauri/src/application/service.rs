@@ -9,17 +9,19 @@ use crate::{
         QuotaBalance, QuotaPool, QuotaPoolId, QuotaUnit, QuotaWindow, Reservation, ReservationId,
         Scope, ScopeId, UnixMillis, UsageAttribution, UsageEvent, UsageEventId, WindowId,
     },
-    storage::{Database, ProviderQuotaSnapshot, RepositoryBinding, StorageError},
+    storage::{Database, ProviderQuotaSnapshot, StorageError, WorkspaceBinding},
+    workspace::{contains_path, path_depth},
 };
 
 use super::{
     error::to_view_integer, AdmissionAssessment, AllocationSnapshot, ApplicationError,
-    ApplicationResult, ArchiveQuotaSource, BindRepository, CreateAccount, CreateAllocatedScope,
-    CreateProvider, CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow, CreateScope,
-    EvaluateRepositoryAdmission, GetLocalState, GetQuotaDashboard, GetRepositoryContext,
-    LocalState, QuotaDashboard, QuotaSourceSummary, RecordUsage, ReleaseReservation,
-    RepositoryAllocationContext, RepositoryBindingSummary, RepositoryContext, ReserveQuota,
-    ScopeSummary, SetAllocation, SyncProviderQuota, SyncProviderQuotaResult, WindowSummary,
+    ApplicationResult, ArchiveQuotaSource, BindWorkspace, CreateAccount, CreateAllocatedScope,
+    CreateAllocatedWorkspace, CreateProvider, CreateQuotaPool, CreateQuotaSource,
+    CreateQuotaWindow, CreateScope, EvaluateWorkspaceAdmission, GetLocalState, GetQuotaDashboard,
+    GetWorkspaceContext, LocalState, QuotaDashboard, QuotaSourceSummary, RecordUsage,
+    ReleaseReservation, ReserveQuota, ScopeSummary, SetAllocation, SyncProviderQuota,
+    SyncProviderQuotaResult, WindowSummary, WorkspaceAllocationContext, WorkspaceBindingSummary,
+    WorkspaceContext,
 };
 
 pub struct QuotaService {
@@ -204,11 +206,11 @@ impl QuotaService {
         Ok(())
     }
 
-    pub fn bind_repository(
+    pub fn bind_workspace(
         &mut self,
-        command: BindRepository,
-    ) -> ApplicationResult<RepositoryBindingSummary> {
-        let canonical_root = required_request_text(command.canonical_root, "repository root")?;
+        command: BindWorkspace,
+    ) -> ApplicationResult<WorkspaceBindingSummary> {
+        let canonical_path = required_request_text(command.canonical_path, "workspace path")?;
         let scope_reference = required_request_text(command.scope_reference, "scope reference")?
             .trim()
             .to_owned();
@@ -216,86 +218,95 @@ impl QuotaService {
         let mut matches: Vec<_> = scopes
             .iter()
             .filter(|scope| {
-                scope.kind() == crate::domain::ScopeKind::Repository
+                scope.parent_id().is_none()
+                    && matches!(
+                        scope.kind(),
+                        crate::domain::ScopeKind::Workspace | crate::domain::ScopeKind::Project
+                    )
                     && (scope.id().as_str() == scope_reference
                         || scope.display_name().eq_ignore_ascii_case(&scope_reference))
             })
             .collect();
         if matches.is_empty() {
             return Err(ApplicationError::NotFound {
-                resource: "repository scope",
+                resource: "workspace scope",
                 id: scope_reference,
             });
         }
         if matches.len() > 1 {
             return Err(ApplicationError::InvalidRequest {
                 message: format!(
-                    "repository scope reference {scope_reference:?} is ambiguous; use the scope ID"
+                    "workspace scope reference {scope_reference:?} is ambiguous; use the scope ID"
                 ),
             });
         }
         let scope = matches.remove(0);
         if let Some(existing) = self
             .database
-            .repository_bindings()
-            .get_by_root(&canonical_root)?
+            .workspace_bindings()
+            .get_by_path(&canonical_path)?
         {
             return Err(ApplicationError::InvalidRequest {
                 message: format!(
-                    "repository {canonical_root} is already bound to scope {}",
+                    "workspace {canonical_path} is already bound to scope {}",
                     existing.scope_id()
                 ),
             });
         }
         if let Some(existing) = self
             .database
-            .repository_bindings()
+            .workspace_bindings()
             .list()?
             .into_iter()
             .find(|binding| binding.scope_id() == scope.id())
         {
             return Err(ApplicationError::InvalidRequest {
                 message: format!(
-                    "repository scope {} is already bound to {}",
+                    "workspace scope {} is already bound to {}",
                     scope.id(),
-                    existing.canonical_root()
+                    existing.canonical_path()
                 ),
             });
         }
-        let binding = RepositoryBinding::new(
-            canonical_root.clone(),
+        let binding = WorkspaceBinding::new(
+            canonical_path.clone(),
             scope.id().clone(),
             UnixMillis::new(command.bound_at),
         );
-        self.database.repository_bindings().insert(&binding)?;
+        self.database.workspace_bindings().insert(&binding)?;
 
-        Ok(RepositoryBindingSummary {
-            canonical_root,
+        Ok(WorkspaceBindingSummary {
+            canonical_path,
             scope_id: scope.id().to_string(),
             scope_display_name: scope.display_name().to_owned(),
             bound_at: command.bound_at,
         })
     }
 
-    pub fn repository_context(
+    pub fn workspace_context(
         &mut self,
-        command: GetRepositoryContext,
-    ) -> ApplicationResult<RepositoryContext> {
-        let canonical_root = required_request_text(command.canonical_root, "repository root")?;
-        let binding = self
-            .database
-            .repository_bindings()
-            .get_by_root(&canonical_root)?;
+        command: GetWorkspaceContext,
+    ) -> ApplicationResult<WorkspaceContext> {
+        let canonical_path = required_request_text(command.canonical_path, "workspace path")?;
         let scopes = self.database.catalog().list_scopes()?;
-        let bindings = self.database.repository_bindings().list()?;
+        let bindings = self.database.workspace_bindings().list()?;
+        let binding = bindings
+            .iter()
+            .filter(|binding| contains_path(binding.canonical_path(), &canonical_path))
+            .max_by_key(|binding| path_depth(binding.canonical_path()))
+            .cloned();
         let bound_scope_ids: HashSet<_> = bindings
             .iter()
             .map(|binding| binding.scope_id().clone())
             .collect();
-        let available_repository_scopes = scopes
+        let available_workspace_scopes = scopes
             .iter()
             .filter(|scope| {
-                scope.kind() == crate::domain::ScopeKind::Repository
+                scope.parent_id().is_none()
+                    && matches!(
+                        scope.kind(),
+                        crate::domain::ScopeKind::Workspace | crate::domain::ScopeKind::Project
+                    )
                     && !bound_scope_ids.contains(scope.id())
             })
             .map(|scope| ScopeSummary {
@@ -303,16 +314,16 @@ impl QuotaService {
                 parent_id: scope.parent_id().map(ToString::to_string),
                 kind: scope.kind(),
                 display_name: scope.display_name().to_owned(),
-                repository_root: None,
+                workspace_path: None,
             })
             .collect();
 
         let Some(binding) = binding else {
-            return Ok(RepositoryContext {
-                canonical_root,
+            return Ok(WorkspaceContext {
+                canonical_path,
                 binding: None,
                 allocations: Vec::new(),
-                available_repository_scopes,
+                available_workspace_scopes,
             });
         };
         let scope = scopes
@@ -320,8 +331,8 @@ impl QuotaService {
             .find(|scope| scope.id() == binding.scope_id())
             .ok_or_else(|| {
                 inconsistent_reference(
-                    "repository binding",
-                    binding.canonical_root(),
+                    "workspace binding",
+                    binding.canonical_path(),
                     "scope",
                     binding.scope_id(),
                 )
@@ -343,7 +354,7 @@ impl QuotaService {
             {
                 let provider_decision = self.provider_decision(&dashboard.window)?;
                 let allocation_decision = allocation.decision;
-                allocations.push(RepositoryAllocationContext {
+                allocations.push(WorkspaceAllocationContext {
                     provider_id: source.provider_id,
                     provider_display_name: source.provider_display_name,
                     pool_id: source.pool_id,
@@ -364,34 +375,34 @@ impl QuotaService {
             }
         }
 
-        Ok(RepositoryContext {
-            canonical_root: canonical_root.clone(),
-            binding: Some(RepositoryBindingSummary {
-                canonical_root,
+        Ok(WorkspaceContext {
+            canonical_path,
+            binding: Some(WorkspaceBindingSummary {
+                canonical_path: binding.canonical_path().to_owned(),
                 scope_id: scope.id().to_string(),
                 scope_display_name: scope.display_name().to_owned(),
                 bound_at: binding.bound_at().value(),
             }),
             allocations,
-            available_repository_scopes,
+            available_workspace_scopes,
         })
     }
 
-    pub fn evaluate_repository_admission(
+    pub fn evaluate_workspace_admission(
         &mut self,
-        command: EvaluateRepositoryAdmission,
+        command: EvaluateWorkspaceAdmission,
     ) -> ApplicationResult<AdmissionAssessment> {
         let provider_id = required_request_text(command.provider_id, "provider ID")?;
-        let context = self.repository_context(GetRepositoryContext {
-            canonical_root: command.canonical_root,
+        let context = self.workspace_context(GetWorkspaceContext {
+            canonical_path: command.canonical_path,
             at: command.at,
         })?;
         let binding = context
             .binding
             .ok_or_else(|| ApplicationError::InvalidRequest {
                 message: format!(
-                    "repository {} is not bound; run `aqm bind --scope <name-or-id>` first",
-                    context.canonical_root
+                    "workspace {} is not bound; run `aqm bind --scope <name-or-id>` first",
+                    context.canonical_path
                 ),
             })?;
         let mut matching: Vec<_> = context
@@ -426,7 +437,7 @@ impl QuotaService {
         }
 
         Ok(AdmissionAssessment {
-            canonical_root: context.canonical_root,
+            canonical_path: context.canonical_path,
             scope_id: binding.scope_id,
             scope_display_name: binding.scope_display_name,
             provider_id: allocation.provider_id,
@@ -459,6 +470,33 @@ impl QuotaService {
             QuotaAmount::new(0, unit),
         )?;
         Ok(self.policy.evaluate(&balance))
+    }
+
+    pub fn create_allocated_workspace(
+        &mut self,
+        command: CreateAllocatedWorkspace,
+    ) -> ApplicationResult<()> {
+        let scope = Scope::new(
+            ScopeId::new(command.id)?,
+            None,
+            crate::domain::ScopeKind::Workspace,
+            command.display_name,
+        )?;
+        let allocation = Allocation::new(
+            scope.id().clone(),
+            WindowId::new(command.window_id)?,
+            QuotaAmount::new(command.amount, QuotaUnit::new(command.unit)?),
+        );
+        let binding = WorkspaceBinding::new(
+            required_request_text(command.canonical_path, "workspace path")?,
+            scope.id().clone(),
+            UnixMillis::new(command.bound_at),
+        );
+
+        self.database
+            .insert_allocated_workspace(&scope, &allocation, &binding)
+            .map_err(map_input_storage_error)?;
+        Ok(())
     }
 
     pub fn create_allocated_scope(
@@ -668,15 +706,15 @@ impl QuotaService {
         let pools = catalog.list_active_quota_pools()?;
         let windows = catalog.list_quota_windows()?;
         let scopes = catalog.list_scopes()?;
-        let repository_roots: HashMap<_, _> = self
+        let workspace_paths: HashMap<_, _> = self
             .database
-            .repository_bindings()
+            .workspace_bindings()
             .list()?
             .into_iter()
             .map(|binding| {
                 (
                     binding.scope_id().clone(),
-                    binding.canonical_root().to_owned(),
+                    binding.canonical_path().to_owned(),
                 )
             })
             .collect();
@@ -761,7 +799,7 @@ impl QuotaService {
                     parent_id: scope.parent_id().map(ToString::to_string),
                     kind: scope.kind(),
                     display_name: scope.display_name().to_owned(),
-                    repository_root: repository_roots.get(scope.id()).cloned(),
+                    workspace_path: workspace_paths.get(scope.id()).cloned(),
                 })
                 .collect(),
             selected_window_id,
@@ -806,11 +844,11 @@ mod tests {
     use super::*;
     use crate::{
         application::{
-            ArchiveQuotaSource, BindRepository, CreateAccount, CreateAllocatedScope,
-            CreateProvider, CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow, CreateScope,
-            EvaluateRepositoryAdmission, GetLocalState, GetQuotaDashboard, GetRepositoryContext,
-            ProviderQuotaSnapshotInput, RecordUsage, ReserveQuota, SetAllocation,
-            SyncProviderQuota,
+            ArchiveQuotaSource, BindWorkspace, CreateAccount, CreateAllocatedScope,
+            CreateAllocatedWorkspace, CreateProvider, CreateQuotaPool, CreateQuotaSource,
+            CreateQuotaWindow, CreateScope, EvaluateWorkspaceAdmission, GetLocalState,
+            GetQuotaDashboard, GetWorkspaceContext, ProviderQuotaSnapshotInput, RecordUsage,
+            ReserveQuota, SetAllocation, SyncProviderQuota,
         },
         domain::{Confidence, EnforcementDecision, ScopeKind, UsageSource},
         storage::Database,
@@ -910,13 +948,13 @@ mod tests {
         }
     }
 
-    fn add_repository_allocation(service: &mut QuotaService) {
+    fn add_workspace_allocation(service: &mut QuotaService) {
         service
             .create_allocated_scope(CreateAllocatedScope {
-                id: "repository-a".to_owned(),
+                id: "workspace-a".to_owned(),
                 parent_id: None,
-                kind: ScopeKind::Repository,
-                display_name: "Repository A".to_owned(),
+                kind: ScopeKind::Workspace,
+                display_name: "Workspace A".to_owned(),
                 window_id: "week-1".to_owned(),
                 amount: 30,
                 unit: "quota_points".to_owned(),
@@ -1149,38 +1187,41 @@ mod tests {
     }
 
     #[test]
-    fn repository_context_is_unmapped_until_explicitly_bound() {
+    fn workspace_context_is_unmapped_until_explicitly_bound() {
         let mut service = configured_service();
-        add_repository_allocation(&mut service);
+        add_workspace_allocation(&mut service);
 
         let context = service
-            .repository_context(GetRepositoryContext {
-                canonical_root: "/code/repository-a".to_owned(),
+            .workspace_context(GetWorkspaceContext {
+                canonical_path: "/code/workspace-a".to_owned(),
                 at: 3_000,
             })
             .unwrap();
 
         assert!(context.binding.is_none());
         assert!(context.allocations.is_empty());
-        assert_eq!(context.available_repository_scopes.len(), 1);
-        assert_eq!(context.available_repository_scopes[0].id, "repository-a");
+        assert_eq!(context.available_workspace_scopes.len(), 2);
+        assert!(context
+            .available_workspace_scopes
+            .iter()
+            .any(|scope| scope.id == "workspace-a"));
     }
 
     #[test]
-    fn repository_binding_resolves_scope_and_active_allocations() {
+    fn workspace_binding_resolves_descendant_paths_and_active_allocations() {
         let mut service = configured_service();
-        add_repository_allocation(&mut service);
+        add_workspace_allocation(&mut service);
 
         let binding = service
-            .bind_repository(BindRepository {
-                canonical_root: "/code/repository-a".to_owned(),
-                scope_reference: "Repository A".to_owned(),
+            .bind_workspace(BindWorkspace {
+                canonical_path: "/code/workspace-a".to_owned(),
+                scope_reference: "Workspace A".to_owned(),
                 bound_at: 2_000,
             })
             .unwrap();
         let context = service
-            .repository_context(GetRepositoryContext {
-                canonical_root: "/code/repository-a".to_owned(),
+            .workspace_context(GetWorkspaceContext {
+                canonical_path: "/code/workspace-a/frontend/src".to_owned(),
                 at: 3_000,
             })
             .unwrap();
@@ -1191,8 +1232,8 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(binding.scope_id, "repository-a");
-        assert_eq!(context.binding.unwrap().scope_id, "repository-a");
+        assert_eq!(binding.scope_id, "workspace-a");
+        assert_eq!(context.binding.unwrap().scope_id, "workspace-a");
         assert_eq!(context.allocations.len(), 1);
         assert_eq!(context.allocations[0].provider_display_name, "Codex");
         assert_eq!(context.allocations[0].provider_id, "codex");
@@ -1203,22 +1244,51 @@ mod tests {
             state
                 .scopes
                 .iter()
-                .find(|scope| scope.id == "repository-a")
+                .find(|scope| scope.id == "workspace-a")
                 .unwrap()
-                .repository_root
+                .workspace_path
                 .as_deref(),
-            Some("/code/repository-a")
+            Some("/code/workspace-a")
         );
+    }
+
+    #[test]
+    fn nearest_workspace_binding_wins_for_nested_folders() {
+        let mut service = configured_service();
+        add_workspace_allocation(&mut service);
+        service
+            .bind_workspace(BindWorkspace {
+                canonical_path: "/code".to_owned(),
+                scope_reference: "project-a".to_owned(),
+                bound_at: 1_500,
+            })
+            .unwrap();
+        service
+            .bind_workspace(BindWorkspace {
+                canonical_path: "/code/workspace-a".to_owned(),
+                scope_reference: "workspace-a".to_owned(),
+                bound_at: 2_000,
+            })
+            .unwrap();
+
+        let context = service
+            .workspace_context(GetWorkspaceContext {
+                canonical_path: "/code/workspace-a/frontend".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+
+        assert_eq!(context.binding.unwrap().scope_id, "workspace-a");
     }
 
     #[test]
     fn admission_uses_the_more_restrictive_provider_capacity_decision() {
         let mut service = configured_service();
-        add_repository_allocation(&mut service);
+        add_workspace_allocation(&mut service);
         service
-            .bind_repository(BindRepository {
-                canonical_root: "/code/repository-a".to_owned(),
-                scope_reference: "repository-a".to_owned(),
+            .bind_workspace(BindWorkspace {
+                canonical_path: "/code/workspace-a".to_owned(),
+                scope_reference: "workspace-a".to_owned(),
                 bound_at: 2_000,
             })
             .unwrap();
@@ -1237,8 +1307,8 @@ mod tests {
             .unwrap();
 
         let assessment = service
-            .evaluate_repository_admission(EvaluateRepositoryAdmission {
-                canonical_root: "/code/repository-a".to_owned(),
+            .evaluate_workspace_admission(EvaluateWorkspaceAdmission {
+                canonical_path: "/code/workspace-a/src".to_owned(),
                 provider_id: "codex".to_owned(),
                 at: 3_000,
             })
@@ -1258,21 +1328,21 @@ mod tests {
     }
 
     #[test]
-    fn admission_honors_repository_usage_when_it_is_more_restrictive() {
+    fn admission_honors_workspace_usage_when_it_is_more_restrictive() {
         let mut service = configured_service();
-        add_repository_allocation(&mut service);
+        add_workspace_allocation(&mut service);
         service
-            .bind_repository(BindRepository {
-                canonical_root: "/code/repository-a".to_owned(),
-                scope_reference: "repository-a".to_owned(),
+            .bind_workspace(BindWorkspace {
+                canonical_path: "/code/workspace-a".to_owned(),
+                scope_reference: "workspace-a".to_owned(),
                 bound_at: 2_000,
             })
             .unwrap();
         service
             .record_usage(RecordUsage {
-                id: "repository-usage".to_owned(),
+                id: "workspace-usage".to_owned(),
                 window_id: "week-1".to_owned(),
-                scope_id: Some("repository-a".to_owned()),
+                scope_id: Some("workspace-a".to_owned()),
                 amount: 24,
                 unit: "quota_points".to_owned(),
                 observed_at: 2_500,
@@ -1283,8 +1353,8 @@ mod tests {
             .unwrap();
 
         let assessment = service
-            .evaluate_repository_admission(EvaluateRepositoryAdmission {
-                canonical_root: "/code/repository-a".to_owned(),
+            .evaluate_workspace_admission(EvaluateWorkspaceAdmission {
+                canonical_path: "/code/workspace-a".to_owned(),
                 provider_id: "codex".to_owned(),
                 at: 3_000,
             })
@@ -1296,13 +1366,13 @@ mod tests {
     }
 
     #[test]
-    fn admission_requires_an_explicit_repository_binding() {
+    fn admission_requires_an_explicit_workspace_binding() {
         let mut service = configured_service();
-        add_repository_allocation(&mut service);
+        add_workspace_allocation(&mut service);
 
         let error = service
-            .evaluate_repository_admission(EvaluateRepositoryAdmission {
-                canonical_root: "/code/repository-a".to_owned(),
+            .evaluate_workspace_admission(EvaluateWorkspaceAdmission {
+                canonical_path: "/code/workspace-a".to_owned(),
                 provider_id: "codex".to_owned(),
                 at: 3_000,
             })
@@ -1312,36 +1382,83 @@ mod tests {
     }
 
     #[test]
-    fn repository_bindings_reject_duplicate_roots_and_scope_reuse() {
+    fn workspace_bindings_reject_duplicate_paths_and_scope_reuse() {
         let mut service = configured_service();
-        add_repository_allocation(&mut service);
+        add_workspace_allocation(&mut service);
         service
-            .bind_repository(BindRepository {
-                canonical_root: "/code/repository-a".to_owned(),
-                scope_reference: "repository-a".to_owned(),
+            .bind_workspace(BindWorkspace {
+                canonical_path: "/code/workspace-a".to_owned(),
+                scope_reference: "workspace-a".to_owned(),
                 bound_at: 2_000,
             })
             .unwrap();
 
-        let duplicate_root = service.bind_repository(BindRepository {
-            canonical_root: "/code/repository-a".to_owned(),
-            scope_reference: "repository-a".to_owned(),
+        let duplicate_path = service.bind_workspace(BindWorkspace {
+            canonical_path: "/code/workspace-a".to_owned(),
+            scope_reference: "workspace-a".to_owned(),
             bound_at: 3_000,
         });
-        let duplicate_scope = service.bind_repository(BindRepository {
-            canonical_root: "/code/another".to_owned(),
-            scope_reference: "repository-a".to_owned(),
+        let duplicate_scope = service.bind_workspace(BindWorkspace {
+            canonical_path: "/code/another".to_owned(),
+            scope_reference: "workspace-a".to_owned(),
             bound_at: 3_000,
         });
 
         assert!(matches!(
-            duplicate_root,
+            duplicate_path,
             Err(ApplicationError::InvalidRequest { .. })
         ));
         assert!(matches!(
             duplicate_scope,
             Err(ApplicationError::InvalidRequest { .. })
         ));
+    }
+
+    #[test]
+    fn allocated_workspace_creation_saves_scope_allocation_and_binding_atomically() {
+        let mut service = configured_service();
+
+        service
+            .create_allocated_workspace(CreateAllocatedWorkspace {
+                id: "workspace-a".to_owned(),
+                display_name: "Workspace A".to_owned(),
+                canonical_path: "/code/workspace-a".to_owned(),
+                window_id: "week-1".to_owned(),
+                amount: 30,
+                unit: "quota_points".to_owned(),
+                bound_at: 2_000,
+            })
+            .unwrap();
+        let context = service
+            .workspace_context(GetWorkspaceContext {
+                canonical_path: "/code/workspace-a/nested".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+
+        assert_eq!(context.binding.unwrap().scope_id, "workspace-a");
+        assert_eq!(context.allocations[0].limit, 30);
+
+        let duplicate = service.create_allocated_workspace(CreateAllocatedWorkspace {
+            id: "workspace-rolled-back".to_owned(),
+            display_name: "Rolled Back".to_owned(),
+            canonical_path: "/code/workspace-a".to_owned(),
+            window_id: "week-1".to_owned(),
+            amount: 0,
+            unit: "quota_points".to_owned(),
+            bound_at: 3_000,
+        });
+        assert!(duplicate.is_err());
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: None,
+                at: 3_000,
+            })
+            .unwrap();
+        assert!(!state
+            .scopes
+            .iter()
+            .any(|scope| scope.id == "workspace-rolled-back"));
     }
 
     #[test]

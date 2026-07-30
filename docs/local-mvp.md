@@ -29,19 +29,19 @@ Claude adapter is installed.
 For the selected quota window, the UI can:
 
 - show capacity, provider-level usage, remaining quota, and reset time;
-- distinguish root allocations from unallocated capacity;
-- create project, repository, and nested task allocations;
+- distinguish folder allocations from unallocated capacity;
+- choose any local folder and create one workspace allocation for it;
 - update existing allocation limits;
-- show canonical repository roots on explicitly bound repository allocations;
+- show canonical folder paths on explicitly bound workspace allocations;
 - refresh the selected Codex source on startup or on demand;
 - carry allocations into the next provider reset window;
 - prevent duplicate active bindings to the same detected provider limit;
 - archive a quota source without deleting its ledger history;
-- show hierarchical debiting, reservations, and policy decisions; and
+- show folder-level reservations and policy decisions; and
 - switch between locally configured quota sources.
 
-Creating a scope and its first allocation is atomic. An invalid or
-over-capacity allocation leaves neither record behind.
+Creating a workspace, its first allocation, and its folder binding is atomic.
+An invalid or over-capacity allocation leaves none of those records behind.
 
 ## Persistence and privacy
 
@@ -55,16 +55,16 @@ This milestone does not:
 
 - alter or copy coding-agent authentication;
 - launch or stop a managed coding-agent session;
-- attribute a provider-confirmed total to individual projects automatically;
+- attribute a provider-confirmed total to individual folders automatically;
 - accept manual usage estimates as a substitute for automatic attribution;
 - persist per-scope policy or enforce it against a launched process;
 - forecast depletion from session history;
 - archive scopes; or
 - run as a background daemon.
 
-The companion CLI resolves nested working directories to a canonical Git root,
-binds that root explicitly to an existing repository allocation, and reports
-its active allocation context. It can dry-run Codex admission after refreshing
+The companion CLI canonicalizes the current directory, resolves its nearest
+ancestor workspace binding, and reports its active allocation context. It can
+dry-run Codex admission after refreshing
 the provider checkpoint, but does not yet reserve capacity or launch provider
 work.
 See the [CLI guide](cli.md) and [Codex-first roadmap](roadmap.md).

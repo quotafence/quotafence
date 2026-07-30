@@ -7,13 +7,13 @@ use std::{
 
 use agent_quota_manager_lib::{
     application::{
-        AdmissionAssessment, BindRepository, EvaluateRepositoryAdmission, GetRepositoryContext,
-        QuotaService, RepositoryContext,
+        AdmissionAssessment, BindWorkspace, EvaluateWorkspaceAdmission, GetWorkspaceContext,
+        QuotaService, WorkspaceContext,
     },
     domain::EnforcementDecision,
     paths,
     providers::codex::{self, CodexSyncResult, CodexSyncStatus},
-    repository::resolve_git_root,
+    workspace::canonicalize_workspace_path,
 };
 use serde::Serialize;
 
@@ -62,10 +62,10 @@ fn run(args: Vec<String>) -> Result<u8, String> {
             Ok(EXIT_ALLOW)
         }
         CliCommand::Context(options) => {
-            let (mut service, canonical_root) = open_context(&options)?;
+            let (mut service, canonical_path) = open_context(&options)?;
             let context = service
-                .repository_context(GetRepositoryContext {
-                    canonical_root,
+                .workspace_context(GetWorkspaceContext {
+                    canonical_path,
                     at: now_millis()?,
                 })
                 .map_err(|error| error.to_string())?;
@@ -76,17 +76,17 @@ fn run(args: Vec<String>) -> Result<u8, String> {
             options,
             scope_reference,
         } => {
-            let (mut service, canonical_root) = open_context(&options)?;
+            let (mut service, canonical_path) = open_context(&options)?;
             service
-                .bind_repository(BindRepository {
-                    canonical_root: canonical_root.clone(),
+                .bind_workspace(BindWorkspace {
+                    canonical_path: canonical_path.clone(),
                     scope_reference,
                     bound_at: now_millis()?,
                 })
                 .map_err(|error| error.to_string())?;
             let context = service
-                .repository_context(GetRepositoryContext {
-                    canonical_root,
+                .workspace_context(GetWorkspaceContext {
+                    canonical_path,
                     at: now_millis()?,
                 })
                 .map_err(|error| error.to_string())?;
@@ -98,11 +98,11 @@ fn run(args: Vec<String>) -> Result<u8, String> {
             provider_id,
             assume_yes,
         } => {
-            let (mut service, canonical_root) = open_context(&options)?;
+            let (mut service, canonical_path) = open_context(&options)?;
             let now = now_millis()?;
             let context = service
-                .repository_context(GetRepositoryContext {
-                    canonical_root: canonical_root.clone(),
+                .workspace_context(GetWorkspaceContext {
+                    canonical_path: canonical_path.clone(),
                     at: now,
                 })
                 .map_err(|error| error.to_string())?;
@@ -139,8 +139,8 @@ fn run(args: Vec<String>) -> Result<u8, String> {
                 }
             }
             let assessment = service
-                .evaluate_repository_admission(EvaluateRepositoryAdmission {
-                    canonical_root,
+                .evaluate_workspace_admission(EvaluateWorkspaceAdmission {
+                    canonical_path,
                     provider_id,
                     at: now,
                 })
@@ -159,13 +159,13 @@ fn run(args: Vec<String>) -> Result<u8, String> {
 }
 
 fn provider_allocation<'a>(
-    context: &'a RepositoryContext,
+    context: &'a WorkspaceContext,
     provider_id: &str,
-) -> Result<&'a agent_quota_manager_lib::application::RepositoryAllocationContext, String> {
+) -> Result<&'a agent_quota_manager_lib::application::WorkspaceAllocationContext, String> {
     let binding = context.binding.as_ref().ok_or_else(|| {
         format!(
-            "repository {} is not bound; run `aqm bind --scope <name-or-id>` first",
-            context.canonical_root
+            "workspace {} is not bound; run `aqm bind --scope <name-or-id>` first",
+            context.canonical_path
         )
     })?;
     let mut matching = context
@@ -194,14 +194,14 @@ fn open_context(options: &CommonOptions) -> Result<(QuotaService, String), Strin
             env::current_dir().map_err(|error| format!("cannot read current directory: {error}"))?
         }
     };
-    let canonical_root = resolve_git_root(start).map_err(|error| error.to_string())?;
+    let canonical_path = canonicalize_workspace_path(start).map_err(|error| error.to_string())?;
     let database_path = database_path(options)?;
     if let Some(parent) = database_path.parent() {
         fs::create_dir_all(parent)
             .map_err(|error| format!("cannot create app data directory: {error}"))?;
     }
     let service = QuotaService::open(database_path).map_err(|error| error.to_string())?;
-    Ok((service, canonical_root))
+    Ok((service, canonical_path))
 }
 
 fn database_path(options: &CommonOptions) -> Result<PathBuf, String> {
@@ -285,7 +285,7 @@ fn required_value<'a>(args: &'a [String], index: usize, option: &str) -> Result<
         .ok_or_else(|| format!("{option} requires a value"))
 }
 
-fn print_context(context: &RepositoryContext, json: bool) -> Result<(), String> {
+fn print_context(context: &WorkspaceContext, json: bool) -> Result<(), String> {
     if json {
         println!(
             "{}",
@@ -295,13 +295,14 @@ fn print_context(context: &RepositoryContext, json: bool) -> Result<(), String> 
         return Ok(());
     }
 
-    println!("Repository: {}", context.canonical_root);
+    println!("Workspace path: {}", context.canonical_path);
     match &context.binding {
         Some(binding) => {
             println!(
-                "Scope: {} ({})",
+                "Workspace: {} ({})",
                 binding.scope_display_name, binding.scope_id
             );
+            println!("Bound folder: {}", binding.canonical_path);
             if context.allocations.is_empty() {
                 println!("Allocation: none in an active quota window");
             } else {
@@ -320,13 +321,13 @@ fn print_context(context: &RepositoryContext, json: bool) -> Result<(), String> 
             }
         }
         None => {
-            println!("Scope: unmapped");
-            if context.available_repository_scopes.is_empty() {
-                println!("No unbound repository scopes are available.");
-                println!("Create a repository allocation in the desktop app first.");
+            println!("Workspace: unmapped");
+            if context.available_workspace_scopes.is_empty() {
+                println!("No unbound workspace scopes are available.");
+                println!("Create a workspace allocation in the desktop app first.");
             } else {
-                println!("Available repository scopes:");
-                for scope in &context.available_repository_scopes {
+                println!("Available workspace scopes:");
+                for scope in &context.available_workspace_scopes {
                     println!("  {} ({})", scope.display_name, scope.id);
                 }
                 println!("Bind with: aqm bind --scope <name-or-id>");
@@ -387,8 +388,8 @@ fn print_admission(
         decision_label(assessment.decision, override_applied)
     );
     println!(
-        "Repository: {} ({})",
-        assessment.scope_display_name, assessment.canonical_root
+        "Workspace: {} ({})",
+        assessment.scope_display_name, assessment.canonical_path
     );
     println!(
         "Allocation: {} {} remaining of {}",
@@ -440,7 +441,7 @@ Usage:
   aqm admit codex [--path <directory>] [--yes] [--json]
 
 Options:
-  --path <directory>   Resolve a repository from this directory instead of cwd
+  --path <directory>   Resolve a workspace from this directory instead of cwd
   --database <path>    Override the local database (or set AQM_DATABASE_PATH)
   --yes                Explicitly accept a confirmation-required admission
   --json               Print machine-readable output"

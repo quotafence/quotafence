@@ -3,12 +3,13 @@ mod commands;
 pub mod domain;
 pub mod paths;
 pub mod providers;
-pub mod repository;
 pub mod storage;
+pub mod workspace;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(commands::initialize)
         .invoke_handler(tauri::generate_handler![
@@ -18,8 +19,7 @@ pub fn run() {
             commands::create_quota_window,
             commands::create_quota_source,
             commands::archive_quota_source,
-            commands::create_scope,
-            commands::create_allocated_scope,
+            commands::create_allocated_workspace,
             commands::set_allocation,
             commands::reserve_quota,
             commands::release_reservation,

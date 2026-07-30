@@ -1,31 +1,31 @@
 # AQM CLI
 
 The lightweight `aqm` binary shares the Rust application, provider adapter, and
-SQLite storage layers with the desktop app. It implements repository identity,
+SQLite storage layers with the desktop app. It implements workspace identity,
 binding, and Codex admission dry runs. It does not launch or enforce a
 coding-agent session yet.
 
 ## Development usage
 
-From the repository root:
+From any local folder:
 
 ```bash
 npm run aqm -- context
 ```
 
-The command resolves the nearest Git worktree root from the current directory.
-Nested directories and symlinked paths normalize to the same canonical root.
-It reads Git metadata through the fixed command
-`git rev-parse --show-toplevel`; it does not inspect repository source files.
+The command canonicalizes the current directory without invoking Git. If that
+folder is nested under one or more bindings, the most specific ancestor
+workspace wins. Symlinked paths normalize to the same canonical folder.
+Workspace contents are not inspected.
 
-An unmapped repository reports the unbound repository scopes created in the
+An unmapped folder reports the unbound workspace scopes created in the
 desktop app:
 
 ```text
-Repository: /code/example
-Scope: unmapped
-Available repository scopes:
-  Example (repository-...)
+Workspace path: /code/example
+Workspace: unmapped
+Available workspace scopes:
+  Example (workspace-...)
 Bind with: aqm bind --scope <name-or-id>
 ```
 
@@ -36,8 +36,8 @@ npm run aqm -- bind --scope "Example"
 ```
 
 The scope reference may be an exact scope ID or an unambiguous,
-case-insensitive display name. A Git root and a repository scope can each have
-only one active binding.
+case-insensitive display name. A canonical folder and a workspace scope can
+each have only one active binding.
 
 Use `--path <directory>` to resolve a directory other than the current working
 directory, and `--json` for machine-readable output:
@@ -52,7 +52,7 @@ database as the desktop.
 
 ## Admission dry run
 
-After binding the repository, refresh its Codex checkpoint and evaluate policy:
+After binding the workspace, refresh its Codex checkpoint and evaluate policy:
 
 ```bash
 npm run aqm -- admit codex
@@ -60,7 +60,7 @@ npm run aqm -- admit codex
 
 Admission considers both:
 
-- attributed usage and active reservations against the repository allocation;
+- attributed usage and active reservations against the workspace allocation;
 - aggregate provider usage and active reservations against the subscription
   window.
 
@@ -76,7 +76,7 @@ codes:
 | `10` | warn | yes, with a warning |
 | `20` | confirmation required | no, unless explicitly accepted |
 | `30` | stop | no |
-| `1` | configuration, repository, or provider error | no |
+| `1` | configuration, workspace, or provider error | no |
 
 Use `--yes` to explicitly accept only a confirmation-required outcome:
 
@@ -96,18 +96,18 @@ npm run aqm -- admit codex --json
 
 The command starts the official local Codex App Server only long enough to read
 the subscription checkpoint. It does not launch a coding session, reserve
-capacity, or modify repository files.
+capacity, or read or modify workspace files.
 
 ## Current boundary
 
 `aqm context` and `aqm admit codex` now cover:
 
-- canonical Git root;
-- bound repository scope;
+- canonical current folder and nearest bound workspace;
+- bound workspace scope;
 - active provider pool and quota window;
 - allocation limit, remaining capacity, and current policy decision;
 - pre-admission Codex refresh and reset rollover; and
-- effective policy assessment across repository and provider capacity.
+- effective policy assessment across workspace and provider capacity.
 
 The CLI still does not reserve capacity, launch an agent, attribute session
 usage, or enforce a decision against a process. Those behaviors begin with the

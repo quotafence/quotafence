@@ -6,12 +6,12 @@ progress over broad provider coverage or speculative domain rewrites.
 
 ## Product direction
 
-AQM protects capacity for important repository and task work. A managed launch
+AQM protects capacity for important folder-based workspace work. A managed launch
 resolves work to a budget, admits or rejects it under policy, supervises the
 provider process, and reconciles usage afterward. Routing across providers is a
 later extension of this control loop, not part of v0.1.
 
-The initial user is a solo power user running multiple agents or repositories
+The initial user is a solo power user running multiple agents or workspaces
 against one constrained Codex subscription. Team governance may become a paid
 product later, but cloud workspaces, RBAC, billing, and organization policy are
 not current requirements.
@@ -27,8 +27,8 @@ The repository currently has:
 - a Codex adapter using the official local App Server protocol;
 - automatic Codex checkpoint refresh on startup and explicit refresh;
 - absolute snapshots that do not double-count repeated reads; and
-- reset-window rollover that carries allocations without carrying old usage.
-- canonical Git repository bindings and a read-only `aqm context` CLI; and
+- reset-window rollover that carries allocations without carrying old usage;
+- canonical folder workspace bindings and a read-only `aqm context` CLI; and
 - a provider-refreshing `aqm admit codex` dry run with stable policy outcomes.
 
 It does **not** yet have managed-session records, provider process supervision,
@@ -42,7 +42,7 @@ forecasting.
 | --- | --- | --- |
 | Provider checkpoint | Implemented | Reused before and after managed work |
 | Window rollover | Implemented | Covered during session reconciliation |
-| Repository context | Implemented | Reused for admission and managed launch |
+| Workspace context | Implemented | Reused for admission and managed launch |
 | Managed launch | Detection process only | AQM owns the Codex child lifecycle and exit result |
 | Reservation | Domain/storage implemented; not in daily workflow | Admission reserves capacity before spawn |
 | Attribution | Ledger primitives only; no user-entered estimates | Session result produces scoped observed usage |
@@ -65,18 +65,18 @@ Each milestone should ship in one reviewable PR where practical.
 Verification: adapter parsing tests, migration tests, snapshot replacement
 tests, rollover tests, and manual QA against the installed Codex client.
 
-### M1 — Repository identity and binding — complete
+### M1 — Workspace identity and binding — complete
 
-- Add a repository binding from a canonical Git worktree root to a repository
-  scope; keep the binding separate from the scope itself.
-- Resolve nested working directories to the nearest repository root.
+- Add a workspace binding from any canonical local folder to a workspace scope;
+  keep the binding separate from the scope itself.
+- Resolve nested working directories to the nearest ancestor binding.
 - Add a read-only command such as `aqm context` that reports the resolved scope,
   allocation, window, and remaining capacity.
 - Provide an explicit bind command; do not silently create budgets.
 
-Verification: tests for nested directories, symlinks/case normalization where
-supported, unmapped repositories, duplicate bindings, deleted paths, and no
-source-file reads.
+Verification: tests for plain non-Git folders, nested directories,
+symlinks/case normalization where supported, unmapped workspaces, duplicate
+bindings, deleted paths, and no source-file reads.
 
 ### M2 — Admission without process launch — complete
 
@@ -99,7 +99,7 @@ outcomes. `--yes` accepts confirmation but never overrides stop.
 
 - Implement `aqm run codex -- [args]`.
 - Persist a minimal session record before spawning the process.
-- Run Codex in the resolved repository, inherit the user's terminal, forward
+- Run Codex in the resolved workspace, inherit the user's terminal, forward
   termination signals, and preserve the provider exit code.
 - Spawn a resolved executable with an argument vector; never interpolate user
   input into a shell command.
@@ -112,7 +112,7 @@ interrupted, and crash-recovery paths. No real Codex call is required in CI.
 ### M4 — Automatic attribution and reconciliation
 
 - Read a provider checkpoint immediately before and after the managed session.
-- Link the reservation, session, repository scope, and resulting usage event.
+- Link the reservation, session, workspace scope, and resulting usage event.
 - Attribute a provider delta only with `observed` confidence unless a stronger
   provider signal exists.
 - Keep ambiguous external or concurrent consumption unattributed.
@@ -174,13 +174,13 @@ provider exit status plus timestamps. Track reconciliation separately as
 process outcome. Do not add a daemon until the desktop and CLI genuinely need
 shared long-running ownership.
 
-### Repository mapping
+### Workspace mapping
 
-Store an explicit binding from a canonical local repository root to a scope ID.
-The path is local metadata, not the scope's permanent identity. Discover the Git
-root from the current working directory, but do not read repository contents.
-Remote identity or a privacy-preserving fingerprint can be added only when path
-moves become a demonstrated problem.
+Store an explicit binding from a canonical local folder to a scope ID. The path
+is local metadata, not the scope's permanent identity. Resolve a current
+directory through the most specific ancestor binding, but do not read workspace
+contents. Git and remote-host identity are optional metadata only and should be
+added only when path moves become a demonstrated problem.
 
 ### Attribution
 
@@ -207,9 +207,9 @@ Separate policy decision from adapter capability:
 
 An override should be explicit and auditable.
 
-Persist the v0.1 policy on the repository scope so it survives provider-window
-rollover. Resolve the effective policy as scope override, then application
-default. More granular task or provider overrides should wait for evidence.
+Persist the v0.1 policy on the workspace scope so it survives provider-window
+rollover. Resolve the effective policy as workspace override, then application
+default. Provider-specific overrides should wait for evidence.
 
 ### Reservation strategy
 
@@ -241,10 +241,10 @@ second behavior, not in anticipation of one.
 | --- | --- | --- |
 | Daily entry point | `aqm run codex` CLI wrapper | Desktop launch proves materially simpler |
 | Long-running owner | CLI child process; no daemon | Multiple clients need shared background ownership |
-| Repository identity | Explicit canonical local-root binding | Path moves create real user pain |
+| Workspace identity | Explicit canonical folder binding | Path moves create real user pain |
 | Session concurrency | One attributable session per quota pool | Adapter exposes session-level usage |
 | Attribution confidence | `observed` for aggregate pre/post delta | Provider exposes causal session usage |
-| Policy ownership | Repository scope override, then app default | Task/provider-specific policy is required |
+| Policy ownership | Workspace override, then app default | Provider-specific policy is required |
 | Stop semantics | Refuse an AQM-managed launch | Timely live signal supports safe termination |
 | Default reservation | Current scope spendable capacity | Reliable session-size estimates exist |
 | Domain expansion | Keep existing quota model | A second resource behavior is implemented |

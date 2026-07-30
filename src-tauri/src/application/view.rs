@@ -37,13 +37,13 @@ pub struct ScopeSummary {
     pub parent_id: Option<String>,
     pub kind: ScopeKind,
     pub display_name: String,
-    pub repository_root: Option<String>,
+    pub workspace_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RepositoryBindingSummary {
-    pub canonical_root: String,
+pub struct WorkspaceBindingSummary {
+    pub canonical_path: String,
     pub scope_id: String,
     pub scope_display_name: String,
     pub bound_at: i64,
@@ -51,7 +51,7 @@ pub struct RepositoryBindingSummary {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RepositoryAllocationContext {
+pub struct WorkspaceAllocationContext {
     pub provider_id: String,
     pub provider_display_name: String,
     pub pool_id: String,
@@ -72,17 +72,17 @@ pub struct RepositoryAllocationContext {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RepositoryContext {
-    pub canonical_root: String,
-    pub binding: Option<RepositoryBindingSummary>,
-    pub allocations: Vec<RepositoryAllocationContext>,
-    pub available_repository_scopes: Vec<ScopeSummary>,
+pub struct WorkspaceContext {
+    pub canonical_path: String,
+    pub binding: Option<WorkspaceBindingSummary>,
+    pub allocations: Vec<WorkspaceAllocationContext>,
+    pub available_workspace_scopes: Vec<ScopeSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdmissionAssessment {
-    pub canonical_root: String,
+    pub canonical_path: String,
     pub scope_id: String,
     pub scope_display_name: String,
     pub provider_id: String,
