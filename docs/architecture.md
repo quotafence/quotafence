@@ -186,6 +186,12 @@ AQM-managed process. Live termination is a separate capability requiring both
 process ownership and a timely provider signal. It must not be inferred merely
 because AQM can kill a child process.
 
+The effective policy resolves from a persisted workspace-scope override and
+then the application default. This keeps thresholds stable across provider
+window rollover and gives the desktop, dry-run admission, and managed launch
+one precedence rule. Explicit confirmation acceptance is audited only when the
+managed session and reservation are committed.
+
 ## Trust boundaries
 
 - The webview is untrusted input to Rust commands.

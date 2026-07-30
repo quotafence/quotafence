@@ -50,6 +50,38 @@ npm run aqm -- context --path /code/example --json
 testing. Without an override, the CLI opens the same operating-system app-data
 database as the desktop.
 
+## Workspace policy
+
+Inspect the effective policy for the current bound folder:
+
+```bash
+npm run aqm -- policy show
+```
+
+The standard default is warn at 80%, require confirmation at 90%, and stop at
+100% of the workspace allocation consumed. Persist a folder override by
+supplying all three thresholds:
+
+```bash
+npm run aqm -- policy set --warn 75 --confirm 90 --stop 100
+```
+
+Values accept up to two decimal places. Use `off` to disable a threshold while
+still preserving the required ordering among enabled thresholds:
+
+```bash
+npm run aqm -- policy set --warn off --confirm 90 --stop 100
+```
+
+Return to application defaults with:
+
+```bash
+npm run aqm -- policy reset
+```
+
+These commands accept `--path`, `--database`, and `--json`. Policy is stored on
+the workspace, not the current provider window, so it survives quota rollover.
+
 ## Admission dry run
 
 After binding the workspace, refresh its Codex checkpoint and evaluate policy:
@@ -139,6 +171,10 @@ command. AQM resolves Codex from `AGENT_QUOTA_CODEX_BIN`, `PATH`, and supported
 installation locations. It stores folder and process metadata, but does not
 read prompts, source files, transcripts, or provider credentials.
 
+An accepted confirmation is written to the local audit table atomically with
+the managed session and reservation. `aqm admit codex --yes` is only a dry-run
+preview and deliberately does not create that audit record.
+
 The baseline is persisted before spawn. A same-window delta is attributed to
 the workspace at `observed` confidence only when AQM has not seen concurrent
 Codex work. Visible contention keeps the delta unattributed; rollover, a lower
@@ -224,6 +260,7 @@ entrypoint now cover:
 - allocation limit, remaining capacity, and current policy decision;
 - pre-admission Codex refresh and reset rollover;
 - effective policy assessment across workspace and provider capacity;
+- persisted workspace policy configuration through CLI and desktop;
 - persisted managed-session lifecycle and one active reservation per provider
   pool;
 - direct child-process launch, inherited terminal, signal forwarding, exit-code
@@ -235,6 +272,6 @@ entrypoint now cover:
 
 Managed launches now refuse stop decisions and require `--yes` at a
 confirmation boundary. They reconcile their own provider delta at `observed`
-confidence, but do not yet persist per-workspace policy overrides or terminate
-a running process because of live quota movement. Hook attribution remains
-experimental and `inferred`.
+confidence, but do not terminate a running process because the provider does
+not expose a sufficiently timely live quota signal. Unmanaged work remains
+outside hard enforcement. Hook attribution remains experimental and `inferred`.

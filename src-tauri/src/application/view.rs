@@ -68,6 +68,7 @@ pub struct WorkspaceAllocationContext {
     pub allocation_decision: EnforcementDecision,
     pub provider_decision: EnforcementDecision,
     pub decision: EnforcementDecision,
+    pub policy: PolicySummary,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -98,6 +99,26 @@ pub struct AdmissionAssessment {
     pub allocation_decision: EnforcementDecision,
     pub provider_decision: EnforcementDecision,
     pub decision: EnforcementDecision,
+    pub policy: PolicySummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PolicySummary {
+    pub warn_at_basis_points: Option<u16>,
+    pub confirm_at_basis_points: Option<u16>,
+    pub stop_at_basis_points: Option<u16>,
+    pub customized: bool,
+    pub updated_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspacePolicySummary {
+    pub canonical_path: String,
+    pub scope_id: String,
+    pub scope_display_name: String,
+    pub policy: PolicySummary,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -227,4 +248,5 @@ pub struct AllocationSnapshot {
     pub remaining: i64,
     pub spendable: u64,
     pub decision: EnforcementDecision,
+    pub policy: PolicySummary,
 }

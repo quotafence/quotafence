@@ -13,9 +13,10 @@ use std::{
 use agent_quota_manager_lib::{
     application::{
         AdmissionAssessment, BindWorkspace, EvaluateWorkspaceAdmission, FinishManagedSession,
-        GetWorkspaceContext, ManagedSessionOutcome, ManagedSessionReconciliation,
-        ManagedSessionReconciliationStatus, MarkManagedSessionRunning, PrepareManagedSession,
-        QuotaService, WorkspaceContext,
+        GetWorkspaceContext, GetWorkspacePolicy, ManagedSessionOutcome,
+        ManagedSessionReconciliation, ManagedSessionReconciliationStatus,
+        MarkManagedSessionRunning, PrepareManagedSession, QuotaService, ResetWorkspacePolicy,
+        SetWorkspacePolicy, WorkspaceContext, WorkspacePolicySummary,
     },
     domain::EnforcementDecision,
     paths,
@@ -58,6 +59,9 @@ enum CliCommand {
     Hooks {
         action: HooksAction,
     },
+    Policy {
+        action: PolicyAction,
+    },
     Help,
 }
 
@@ -66,6 +70,18 @@ enum HooksAction {
     Install,
     Status,
     Uninstall,
+}
+
+#[derive(Debug)]
+enum PolicyAction {
+    Show(CommonOptions),
+    Set {
+        options: CommonOptions,
+        warn_at_basis_points: Option<u16>,
+        confirm_at_basis_points: Option<u16>,
+        stop_at_basis_points: Option<u16>,
+    },
+    Reset(CommonOptions),
 }
 
 #[derive(Debug, Default)]
@@ -250,7 +266,72 @@ fn run(args: Vec<String>) -> Result<u8, String> {
             }
             Ok(EXIT_ALLOW)
         }
+        CliCommand::Policy { action } => run_policy_command(action),
     }
+}
+
+fn run_policy_command(action: PolicyAction) -> Result<u8, String> {
+    match action {
+        PolicyAction::Show(options) => {
+            let (mut service, canonical_path) = open_context(&options)?;
+            let summary = service
+                .workspace_policy(GetWorkspacePolicy {
+                    canonical_path,
+                    at: now_millis()?,
+                })
+                .map_err(|error| error.to_string())?;
+            print_policy(&summary, options.json)?;
+        }
+        PolicyAction::Set {
+            options,
+            warn_at_basis_points,
+            confirm_at_basis_points,
+            stop_at_basis_points,
+        } => {
+            let (mut service, canonical_path) = open_context(&options)?;
+            let at = now_millis()?;
+            let workspace = service
+                .workspace_policy(GetWorkspacePolicy { canonical_path, at })
+                .map_err(|error| error.to_string())?;
+            service
+                .set_workspace_policy(SetWorkspacePolicy {
+                    scope_id: workspace.scope_id,
+                    warn_at_basis_points,
+                    confirm_at_basis_points,
+                    stop_at_basis_points,
+                    updated_at: at,
+                })
+                .map_err(|error| error.to_string())?;
+            let updated = service
+                .workspace_policy(GetWorkspacePolicy {
+                    canonical_path: workspace.canonical_path,
+                    at,
+                })
+                .map_err(|error| error.to_string())?;
+            print_policy(&updated, options.json)?;
+        }
+        PolicyAction::Reset(options) => {
+            let (mut service, canonical_path) = open_context(&options)?;
+            let at = now_millis()?;
+            let workspace = service
+                .workspace_policy(GetWorkspacePolicy { canonical_path, at })
+                .map_err(|error| error.to_string())?;
+            service
+                .reset_workspace_policy(ResetWorkspacePolicy {
+                    scope_id: workspace.scope_id,
+                })
+                .map_err(|error| error.to_string())?;
+            let reset = service
+                .workspace_policy(GetWorkspacePolicy {
+                    canonical_path: workspace.canonical_path,
+                    at,
+                })
+                .map_err(|error| error.to_string())?;
+            print_policy(&reset, options.json)?;
+        }
+    }
+
+    Ok(EXIT_ALLOW)
 }
 
 fn run_managed_codex(
@@ -721,6 +802,9 @@ fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
     if command == "run" {
         return parse_run_command(&args);
     }
+    if command == "policy" {
+        return parse_policy_command(&args);
+    }
     if !matches!(command, "context" | "bind" | "admit") {
         return Err(format!("unknown command {command:?}; run `aqm --help`"));
     }
@@ -852,6 +936,106 @@ fn parse_hooks_command(args: &[String]) -> Result<CliCommand, String> {
     Ok(CliCommand::Hooks { action })
 }
 
+fn parse_policy_command(args: &[String]) -> Result<CliCommand, String> {
+    let action = args
+        .get(1)
+        .map(String::as_str)
+        .ok_or_else(|| "usage: aqm policy <show|set|reset> [options]".to_owned())?;
+    if !matches!(action, "show" | "set" | "reset") {
+        return Err("usage: aqm policy <show|set|reset> [options]".to_owned());
+    }
+
+    let mut options = CommonOptions::default();
+    let mut warn = None;
+    let mut confirm = None;
+    let mut stop = None;
+    let mut index = 2;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--path" => {
+                index += 1;
+                options.path = Some(PathBuf::from(required_value(args, index, "--path")?));
+            }
+            "--database" => {
+                index += 1;
+                options.database = Some(PathBuf::from(required_value(args, index, "--database")?));
+            }
+            "--json" => options.json = true,
+            "--warn" if action == "set" => {
+                index += 1;
+                warn = Some(parse_policy_threshold(required_value(
+                    args, index, "--warn",
+                )?)?);
+            }
+            "--confirm" if action == "set" => {
+                index += 1;
+                confirm = Some(parse_policy_threshold(required_value(
+                    args,
+                    index,
+                    "--confirm",
+                )?)?);
+            }
+            "--stop" if action == "set" => {
+                index += 1;
+                stop = Some(parse_policy_threshold(required_value(
+                    args, index, "--stop",
+                )?)?);
+            }
+            "-h" | "--help" => return Ok(CliCommand::Help),
+            option => return Err(format!("unknown policy option {option:?}")),
+        }
+        index += 1;
+    }
+
+    let action = match action {
+        "show" => PolicyAction::Show(options),
+        "set" => PolicyAction::Set {
+            options,
+            warn_at_basis_points: warn
+                .ok_or_else(|| "`aqm policy set` requires `--warn <percent|off>`".to_owned())?,
+            confirm_at_basis_points: confirm
+                .ok_or_else(|| "`aqm policy set` requires `--confirm <percent|off>`".to_owned())?,
+            stop_at_basis_points: stop
+                .ok_or_else(|| "`aqm policy set` requires `--stop <percent|off>`".to_owned())?,
+        },
+        "reset" => PolicyAction::Reset(options),
+        _ => unreachable!("policy action was validated"),
+    };
+    Ok(CliCommand::Policy { action })
+}
+
+fn parse_policy_threshold(value: &str) -> Result<Option<u16>, String> {
+    if value.eq_ignore_ascii_case("off") {
+        return Ok(None);
+    }
+
+    let (whole, fraction) = value.split_once('.').unwrap_or((value, ""));
+    if whole.is_empty()
+        || fraction.len() > 2
+        || !whole.bytes().all(|byte| byte.is_ascii_digit())
+        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(format!(
+            "invalid policy threshold {value:?}; use 0.01..100 or off"
+        ));
+    }
+    let whole = whole
+        .parse::<u16>()
+        .map_err(|_| format!("invalid policy threshold {value:?}; use 0.01..100 or off"))?;
+    let fraction = match fraction.len() {
+        0 => 0,
+        1 => fraction.parse::<u16>().unwrap_or(0) * 10,
+        2 => fraction.parse::<u16>().unwrap_or(0),
+        _ => unreachable!("fraction length was validated"),
+    };
+    let basis_points = whole
+        .checked_mul(100)
+        .and_then(|whole| whole.checked_add(fraction))
+        .filter(|value| (1..=10_000).contains(value))
+        .ok_or_else(|| format!("invalid policy threshold {value:?}; use 0.01..100 or off"))?;
+    Ok(Some(basis_points))
+}
+
 fn required_value<'a>(args: &'a [String], index: usize, option: &str) -> Result<&'a str, String> {
     args.get(index)
         .map(String::as_str)
@@ -909,6 +1093,52 @@ fn print_context(context: &WorkspaceContext, json: bool) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn print_policy(summary: &WorkspacePolicySummary, json: bool) -> Result<(), String> {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(summary)
+                .map_err(|error| format!("cannot serialize policy: {error}"))?
+        );
+        return Ok(());
+    }
+
+    println!(
+        "Workspace: {} ({})",
+        summary.scope_display_name, summary.scope_id
+    );
+    println!("Path: {}", summary.canonical_path);
+    println!(
+        "Policy: {}",
+        if summary.policy.customized {
+            "workspace override"
+        } else {
+            "default"
+        }
+    );
+    println!(
+        "Warn: {}",
+        format_policy_threshold(summary.policy.warn_at_basis_points)
+    );
+    println!(
+        "Confirm: {}",
+        format_policy_threshold(summary.policy.confirm_at_basis_points)
+    );
+    println!(
+        "Stop: {}",
+        format_policy_threshold(summary.policy.stop_at_basis_points)
+    );
+    Ok(())
+}
+
+fn format_policy_threshold(value: Option<u16>) -> String {
+    match value {
+        Some(value) if value % 100 == 0 => format!("{}%", value / 100),
+        Some(value) => format!("{}.{:02}%", value / 100, value % 100),
+        None => "off".to_owned(),
+    }
 }
 
 #[derive(Serialize)]
@@ -1014,6 +1244,9 @@ Usage:
   aqm bind --scope <name-or-id> [--path <directory>] [--json]
   aqm admit codex [--path <directory>] [--yes] [--json]
   aqm run codex [--path <directory>] [--yes] -- [codex args]
+  aqm policy show [--path <directory>] [--json]
+  aqm policy set --warn <percent|off> --confirm <percent|off> --stop <percent|off>
+  aqm policy reset [--path <directory>] [--json]
   aqm hook codex [--database <path>]
   aqm hooks <install|status|uninstall> codex
 
@@ -1021,6 +1254,7 @@ Options:
   --path <directory>   Resolve a workspace from this directory instead of cwd
   --database <path>    Override the local database (or set AQM_DATABASE_PATH)
   --yes                Explicitly accept a confirmation-required admission
+  percent|off          Percentage of a workspace allocation consumed, or disabled
   --json               Print machine-readable output"
     );
 }
@@ -1224,5 +1458,51 @@ mod tests {
                 action: HooksAction::Install
             }
         ));
+    }
+
+    #[test]
+    fn policy_set_parses_decimal_percentages_and_disabled_thresholds() {
+        let command = parse_args(vec![
+            "policy".to_owned(),
+            "set".to_owned(),
+            "--warn".to_owned(),
+            "75.5".to_owned(),
+            "--confirm".to_owned(),
+            "off".to_owned(),
+            "--stop".to_owned(),
+            "100".to_owned(),
+            "--path".to_owned(),
+            "/code/project".to_owned(),
+        ])
+        .unwrap();
+        let CliCommand::Policy {
+            action:
+                PolicyAction::Set {
+                    options,
+                    warn_at_basis_points,
+                    confirm_at_basis_points,
+                    stop_at_basis_points,
+                },
+        } = command
+        else {
+            panic!("expected policy set command");
+        };
+
+        assert_eq!(options.path.as_deref(), Some(Path::new("/code/project")));
+        assert_eq!(warn_at_basis_points, Some(7_550));
+        assert_eq!(confirm_at_basis_points, None);
+        assert_eq!(stop_at_basis_points, Some(10_000));
+    }
+
+    #[test]
+    fn policy_threshold_parser_rejects_out_of_range_or_over_precise_values() {
+        for value in ["0", "100.01", "80.001", "-1", "wat"] {
+            assert!(
+                parse_policy_threshold(value).is_err(),
+                "{value} should be invalid"
+            );
+        }
+        assert_eq!(parse_policy_threshold("0.01").unwrap(), Some(1));
+        assert_eq!(parse_policy_threshold("OFF").unwrap(), None);
     }
 }

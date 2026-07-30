@@ -20,6 +20,7 @@ The `src-tauri/src/storage` module provides:
 - capacity-checked reservations;
 - minimal active provider-turn observations for checkpoint reconciliation;
 - persisted managed-session process state linked to its workspace reservation;
+- persisted workspace policy overrides and managed confirmation audit records;
 - atomic usage recording and reservation consumption; and
 - append-only usage events.
 
@@ -56,6 +57,8 @@ providers
             └── usage_events ─ scopes (optional)
 
 workspace_bindings ── workspace scopes
+workspace_policies ── workspace scopes
+managed_session_policy_overrides ── managed_sessions, workspace scopes
 ```
 
 Amounts are stored as non-negative SQLite integers. Their unit is defined by the
@@ -106,6 +109,11 @@ reconciliation-unavailable because no trustworthy baseline was recorded for
 them. A repeated terminal command returns the stored outcome instead of
 inserting a second usage event.
 
+Migration 9 adds one optional policy override per workspace scope. Thresholds
+use integer basis points and may be disabled independently; database checks
+enforce range and warn/confirm/stop ordering. It also adds an association for
+explicit confirmation overrides accepted by managed sessions.
+
 ## Transactions
 
 Allocation writes acquire an immediate transaction before checking capacity:
@@ -121,7 +129,9 @@ only top-level workspace allocations.
 Reservation admission also uses an immediate transaction. It subtracts existing
 attributed usage and active reservations before inserting a new reservation.
 Managed-session admission inserts its reservation and starting record in that
-same transaction. After the final provider refresh, immutable usage insertion,
+same transaction. If a confirmation boundary is explicitly accepted, its audit
+row is inserted there too, so no accepted launch exists without its record.
+After the final provider refresh, immutable usage insertion,
 reconciliation state, terminal process state, and reservation consumption or
 release also commit atomically.
 

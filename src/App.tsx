@@ -12,7 +12,9 @@ import {
   createQuotaSource,
   getErrorMessage,
   getLocalState,
+  resetWorkspacePolicy,
   setAllocation,
+  setWorkspacePolicy,
   syncCodexQuota,
 } from "./lib/api";
 import type {
@@ -21,6 +23,7 @@ import type {
   QuotaSourceSummary,
   ScopeSummary,
   WorkspaceInput,
+  WorkspaceBudgetInput,
 } from "./types";
 
 type ModalState =
@@ -446,12 +449,41 @@ function App() {
           <AllocationForm
             scope={modal.scope}
             currentAmount={editingAllocation?.limit ?? 0}
+            currentPolicy={
+              editingAllocation?.policy ?? {
+                warnAtBasisPoints: 8_000,
+                confirmAtBasisPoints: 9_000,
+                stopAtBasisPoints: 10_000,
+                customized: false,
+                updatedAt: null,
+              }
+            }
             unit={unit}
             submitting={submitting}
-            onSubmit={(amount) =>
-              runMutation(() =>
-                setAllocation(modal.scope.id, dashboard.window.id, amount, unit),
-              )
+            onSubmit={(input: WorkspaceBudgetInput) =>
+              runMutation(async () => {
+                await setAllocation(
+                  modal.scope.id,
+                  dashboard.window.id,
+                  input.amount,
+                  unit,
+                );
+                const currentPolicy = editingAllocation?.policy;
+                const policyChanged =
+                  !currentPolicy ||
+                  currentPolicy.warnAtBasisPoints !== input.warnAtBasisPoints ||
+                  currentPolicy.confirmAtBasisPoints !==
+                    input.confirmAtBasisPoints ||
+                  currentPolicy.stopAtBasisPoints !== input.stopAtBasisPoints;
+                if (policyChanged) {
+                  await setWorkspacePolicy(modal.scope.id, input);
+                }
+              })
+            }
+            onResetPolicy={() =>
+              runMutation(async () => {
+                await resetWorkspacePolicy(modal.scope.id);
+              })
             }
           />
         </Modal>

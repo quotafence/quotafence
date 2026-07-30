@@ -4,6 +4,7 @@ import type {
   CodexSyncResult,
   IpcError,
   LocalState,
+  PolicySummary,
   QuotaSourceInput,
   WorkspaceInput,
 } from "../types";
@@ -81,6 +82,31 @@ export async function setAllocation(
       amount,
       unit,
     },
+  });
+}
+
+export async function setWorkspacePolicy(
+  scopeId: string,
+  policy: {
+    warnAtBasisPoints: number | null;
+    confirmAtBasisPoints: number | null;
+    stopAtBasisPoints: number | null;
+  },
+): Promise<PolicySummary> {
+  return invoke<PolicySummary>("set_workspace_policy", {
+    request: {
+      scopeId,
+      ...policy,
+      updatedAt: Date.now(),
+    },
+  });
+}
+
+export async function resetWorkspacePolicy(
+  scopeId: string,
+): Promise<PolicySummary> {
+  return invoke<PolicySummary>("reset_workspace_policy", {
+    request: { scopeId },
   });
 }
 
