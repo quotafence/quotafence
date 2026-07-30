@@ -118,6 +118,12 @@ experiment associates a lone observed turn at inferred confidence because
 external account usage may still occur between its checkpoints. Overlapping
 observed turns remain unattributed.
 
+Burn rate is not stored as usage or treated as another quota unit. It is a
+window-scoped read model derived from reconciled managed sessions and the
+current provider balance. Its observation interval, sample count, attribution
+coverage, and confidence remain part of the result so a forecast cannot be
+mistaken for confirmed provider data.
+
 ## Enforcement
 
 Policies may define warning, confirmation, and stop thresholds. A hard stop is

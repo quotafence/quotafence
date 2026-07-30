@@ -163,6 +163,40 @@ pub struct ManagedSessionReconciliation {
 pub struct QuotaDashboard {
     pub window: WindowSummary,
     pub allocations: Vec<AllocationSnapshot>,
+    pub forecast: DepletionForecast,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DepletionForecastStatus {
+    InsufficientData,
+    NoManagedBurn,
+    SurvivesToReset,
+    DepletesBeforeReset,
+    WindowEnded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForecastConfidence {
+    Low,
+    Medium,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DepletionForecast {
+    pub status: DepletionForecastStatus,
+    pub confidence: ForecastConfidence,
+    pub sample_count: u32,
+    pub observation_start: Option<i64>,
+    pub observation_end: i64,
+    pub managed_usage: u64,
+    pub attributed_managed_usage: u64,
+    pub coverage_basis_points: u16,
+    pub burn_rate_per_day_milliunits: Option<u64>,
+    pub projected_depletion_at: Option<i64>,
+    pub projected_remaining_at_reset: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

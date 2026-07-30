@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type {
   AllocationSnapshot,
+  DepletionForecast,
   LocalState,
   QuotaSourceSummary,
   ScopeSummary,
@@ -67,6 +68,65 @@ function formatLastSync(timestamp: number | null): string {
     return `Synced ${minutes}m ago`;
   }
   return `Synced ${Math.floor(minutes / 60)}h ago`;
+}
+
+function formatObservationDuration(forecast: DepletionForecast): string {
+  if (forecast.observationStart === null) {
+    return "No observation window";
+  }
+  const hours = Math.max(
+    0,
+    Math.round(
+      (forecast.observationEnd - forecast.observationStart) / 3_600_000,
+    ),
+  );
+  if (hours < 48) {
+    return `${hours}h observed`;
+  }
+  return `${Math.round(hours / 24)}d observed`;
+}
+
+function formatForecast(
+  forecast: DepletionForecast,
+  unit: string,
+): { label: string; detail: string } {
+  const coverage = Math.round(forecast.coverageBasisPoints / 100);
+  const evidence =
+    forecast.sampleCount === 1
+      ? "1 managed session"
+      : `${forecast.sampleCount} managed sessions`;
+  if (forecast.status === "window_ended") {
+    return { label: "Window ended", detail: "Waiting for provider rollover" };
+  }
+  if (forecast.status === "insufficient_data") {
+    return {
+      label: "Forecast not reliable yet",
+      detail: `${evidence} · ${coverage}% coverage · ${forecast.confidence} confidence`,
+    };
+  }
+
+  const rate = forecast.burnRatePerDayMilliunits ?? 0;
+  const rateLabel = `${formatAmount(rate / 1_000, unit)} / day`;
+  const confidence = `${forecast.confidence} confidence`;
+  const detail = `${rateLabel} · ${formatObservationDuration(
+    forecast,
+  )} · ${confidence}`;
+  if (forecast.status === "no_managed_burn") {
+    return { label: "No managed burn observed", detail };
+  }
+  if (
+    forecast.status === "depletes_before_reset" &&
+    forecast.projectedDepletionAt !== null
+  ) {
+    const depletion = new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(forecast.projectedDepletionAt);
+    return { label: `May run out around ${depletion}`, detail };
+  }
+  return { label: "Likely to last until reset", detail };
 }
 
 function orderedScopes(scopes: ScopeSummary[]): ScopeSummary[] {
@@ -215,6 +275,7 @@ export function Dashboard({
     dashboard.allocations.map((allocation) => [allocation.scopeId, allocation]),
   );
   const scopes = orderedScopes(state.scopes);
+  const forecast = formatForecast(dashboard.forecast, quotaWindow.unit);
 
   return (
     <div className="app-layout">
@@ -322,6 +383,14 @@ export function Dashboard({
               aria-valuenow={availablePercent}
             >
               <span style={{ width: `${availablePercent}%` }} />
+            </div>
+            <div className="forecast-line">
+              <span>
+                <Icon name="activity" size={16} />
+                Managed pace
+              </span>
+              <strong>{forecast.label}</strong>
+              <small>{forecast.detail}</small>
             </div>
           </div>
 

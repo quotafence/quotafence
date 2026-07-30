@@ -109,6 +109,25 @@ export type AllocationSnapshot = {
   policy: PolicySummary;
 };
 
+export type DepletionForecast = {
+  status:
+    | "insufficient_data"
+    | "no_managed_burn"
+    | "survives_to_reset"
+    | "depletes_before_reset"
+    | "window_ended";
+  confidence: "low" | "medium";
+  sampleCount: number;
+  observationStart: number | null;
+  observationEnd: number;
+  managedUsage: number;
+  attributedManagedUsage: number;
+  coverageBasisPoints: number;
+  burnRatePerDayMilliunits: number | null;
+  projectedDepletionAt: number | null;
+  projectedRemainingAtReset: number | null;
+};
+
 export type WorkspaceBudgetInput = {
   amount: number;
   warnAtBasisPoints: number | null;
@@ -119,6 +138,7 @@ export type WorkspaceBudgetInput = {
 export type QuotaDashboard = {
   window: WindowSummary;
   allocations: AllocationSnapshot[];
+  forecast: DepletionForecast;
 };
 
 export type LocalState = {

@@ -11,13 +11,15 @@ use crate::{
         WindowId,
     },
     storage::{
-        BeginObservationStatus, Database, ManagedSessionReconciliationResult, ManagedSessionStatus,
-        NewManagedSession, ProviderQuotaSnapshot, ProviderTurnObservation,
-        ReconcileObservationResult, StorageError, WorkspaceBinding, WorkspacePolicy,
+        BeginObservationStatus, Database, ManagedSessionReconciliationOutcome,
+        ManagedSessionReconciliationResult, ManagedSessionStatus, NewManagedSession,
+        ProviderQuotaSnapshot, ProviderTurnObservation, ReconcileObservationResult, StorageError,
+        WorkspaceBinding, WorkspacePolicy,
     },
     workspace::{contains_path, path_depth},
 };
 
+use super::forecast::{calculate_depletion_forecast, ForecastInput, ManagedUsageSample};
 use super::{
     error::to_view_integer, AbandonProviderSessionObservations, AbandonProviderTurnObservation,
     ActiveManagedSession, AdmissionAssessment, AllocationSnapshot, ApplicationError,
@@ -1137,6 +1139,38 @@ impl QuotaService {
         let provider_remaining =
             i128::from(window.capacity().value()) - i128::from(provider_committed);
         let provider_spendable = u64::try_from(provider_remaining).unwrap_or(0);
+        let provider_quota_remaining = window
+            .capacity()
+            .value()
+            .saturating_sub(effective_observed_usage);
+        let forecast_samples = self
+            .database
+            .managed_sessions()
+            .list_reconciled_for_window(&window_id)?
+            .into_iter()
+            .filter_map(|session| {
+                let outcome = session.reconciliation_outcome?;
+                Some(ManagedUsageSample {
+                    created_at: session.created_at,
+                    reconciled_at: session.reconciled_at?,
+                    amount: session.reconciled_amount.unwrap_or(0),
+                    attributed: outcome == ManagedSessionReconciliationOutcome::Attributed,
+                    trustworthy: matches!(
+                        outcome,
+                        ManagedSessionReconciliationOutcome::Attributed
+                            | ManagedSessionReconciliationOutcome::NoUsage
+                    ),
+                })
+            })
+            .collect();
+        let forecast = calculate_depletion_forecast(ForecastInput {
+            window_starts_at: window.starts_at().value(),
+            window_ends_at: window.ends_at().value(),
+            at: command.at,
+            provider_remaining: provider_quota_remaining,
+            provider_observed_usage: effective_observed_usage,
+            samples: forecast_samples,
+        });
 
         Ok(QuotaDashboard {
             window: WindowSummary {
@@ -1156,6 +1190,7 @@ impl QuotaService {
                 provider_spendable,
             },
             allocations: snapshots,
+            forecast,
         })
     }
 
@@ -1345,11 +1380,11 @@ mod tests {
         application::{
             ArchiveQuotaSource, BindWorkspace, CreateAccount, CreateAllocatedScope,
             CreateAllocatedWorkspace, CreateProvider, CreateQuotaPool, CreateQuotaSource,
-            CreateQuotaWindow, CreateScope, EvaluateWorkspaceAdmission, FinishManagedSession,
-            GetLocalState, GetQuotaDashboard, GetWorkspaceContext, GetWorkspacePolicy,
-            ManagedSessionOutcome, MarkManagedSessionRunning, PrepareManagedSession,
-            ProviderQuotaSnapshotInput, RecordUsage, ReserveQuota, ResetWorkspacePolicy,
-            SetAllocation, SetWorkspacePolicy, SyncProviderQuota,
+            CreateQuotaWindow, CreateScope, DepletionForecastStatus, EvaluateWorkspaceAdmission,
+            FinishManagedSession, GetLocalState, GetQuotaDashboard, GetWorkspaceContext,
+            GetWorkspacePolicy, ManagedSessionOutcome, MarkManagedSessionRunning,
+            PrepareManagedSession, ProviderQuotaSnapshotInput, RecordUsage, ReserveQuota,
+            ResetWorkspacePolicy, SetAllocation, SetWorkspacePolicy, SyncProviderQuota,
         },
         domain::{Confidence, EnforcementDecision, ScopeKind, UsageSource},
         storage::Database,
@@ -1572,6 +1607,12 @@ mod tests {
             .unwrap();
         assert_eq!(snapshot(&reconciled, "workspace-a").active_reservations, 0);
         assert_eq!(snapshot(&reconciled, "workspace-a").attributed_usage, 4);
+        assert_eq!(
+            reconciled.forecast.status,
+            DepletionForecastStatus::InsufficientData
+        );
+        assert_eq!(reconciled.forecast.sample_count, 1);
+        assert_eq!(reconciled.forecast.managed_usage, 4);
 
         let retried = service
             .finish_managed_session(FinishManagedSession {
@@ -1941,6 +1982,8 @@ mod tests {
         let allocations = json["allocations"].as_array().unwrap();
 
         assert_eq!(json["window"]["providerRemaining"], 100);
+        assert_eq!(json["forecast"]["status"], "insufficient_data");
+        assert_eq!(json["forecast"]["sampleCount"], 0);
         assert!(allocations
             .iter()
             .any(|allocation| allocation["scopeId"] == "feature-a"));

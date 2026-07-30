@@ -170,6 +170,20 @@ concurrent work marks both observations contended and keeps the managed delta
 **unattributed**. Usage outside AQM without a lifecycle signal cannot be
 detected, so managed attribution remains `observed`, never provider-confirmed.
 
+## Depletion forecast
+
+The forecast is a read model calculated from persisted managed-session
+reconciliation, not provider-dashboard refreshes. For the active window AQM
+uses the interval from the earliest included managed launch to the explicit
+query time. It requires at least two trustworthy reconciliations, at least one
+hour of observation, and managed attribution covering at least half of observed
+provider usage before exposing a daily burn rate or depletion time.
+
+Ambiguous managed deltas count as managed history but not attributed evidence.
+Sparse history, dominant unattributed usage, pre-window queries, and expired
+windows do not produce a precise ETA. Because Codex exposes an aggregate
+integer percentage, current forecast confidence is capped at medium.
+
 ## Enforcement modes
 
 - **Managed hard stop:** the adapter controls the session and can stop new work.

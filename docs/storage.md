@@ -21,6 +21,7 @@ The `src-tauri/src/storage` module provides:
 - minimal active provider-turn observations for checkpoint reconciliation;
 - persisted managed-session process state linked to its workspace reservation;
 - persisted workspace policy overrides and managed confirmation audit records;
+- reconciled managed-session history queries for depletion forecasting;
 - atomic usage recording and reservation consumption; and
 - append-only usage events.
 
@@ -109,10 +110,21 @@ reconciliation-unavailable because no trustworthy baseline was recorded for
 them. A repeated terminal command returns the stored outcome instead of
 inserting a second usage event.
 
+Forecasting adds no derived-state table. The application reads terminal,
+reconciled managed sessions for one window and calculates the signal at query
+time. Zero-usage reconciliation therefore remains evidence even though it does
+not create a zero-valued ledger event.
+
 Migration 9 adds one optional policy override per workspace scope. Thresholds
 use integer basis points and may be disabled independently; database checks
 enforce range and warn/confirm/stop ordering. It also adds an association for
 explicit confirmation overrides accepted by managed sessions.
+
+Migration 10 defensively repairs early development databases that recorded
+migration 8 before its `reconciliation_outcome` column was finalized. It
+inspects the actual `managed_sessions` table, adds and backfills only the missing
+column, and is a no-op for complete schemas. The repair preserves the ledger and
+all managed-session records.
 
 ## Transactions
 

@@ -38,6 +38,7 @@ The current command DTOs cover:
 - usage recording with optional atomic reservation consumption;
 - absolute provider-snapshot synchronization and reset rollover;
 - provider-turn baseline creation, lookup, reconciliation, and cleanup;
+- burn-rate and depletion forecasting from reconciled managed sessions;
 - quota-dashboard queries; and
 - complete local-state queries for application startup and refresh.
 
@@ -91,6 +92,12 @@ The window summary distinguishes:
 - unallocated quota;
 - unattributed provider usage; and
 - provider-level remaining and spendable capacity.
+
+`QuotaDashboard::forecast` uses only terminal managed sessions reconciled in
+the selected window. The pure calculation receives an explicit current time,
+reports its observation interval, sample count, attribution coverage, and
+confidence, and withholds rate/depletion fields when the evidence gate is not
+met. Provider refresh frequency is not an input.
 
 Each current allocation is top-level and maps to one local folder. A provider
 snapshot is reconciled with local observations using the greater total; active
