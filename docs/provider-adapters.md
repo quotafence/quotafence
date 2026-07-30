@@ -1,8 +1,8 @@
 # Provider Adapters
 
 Provider adapters isolate subscription-specific behavior from the quota core.
-Codex is the first implemented discovery adapter; additional providers should
-use the same contract while exposing their real differences.
+Codex is the first implemented adapter. AQM will complete its managed workflow
+before using another provider to generalize the contract.
 
 ## Capability discovery
 
@@ -47,6 +47,19 @@ is unavailable.
 
 ## Codex-first development
 
+Current capability status:
+
+| Capability | Codex status |
+| --- | --- |
+| Quota discovery | Implemented |
+| Checkpoint refresh | Implemented |
+| Reset rollover | Implemented |
+| Repository binding | Not implemented |
+| Managed user session | Not implemented |
+| Automatic attribution | Not implemented |
+| Admission enforcement | Policy model exists; not wired to launch |
+| Live hard stop | Not supported |
+
 The current Codex adapter implements quota discovery and synchronization:
 
 - resolve a Codex executable from `PATH`, common install locations, or the
@@ -67,9 +80,13 @@ Malformed, incomplete, and out-of-range provider responses are rejected.
 The remaining Codex vertical slice is:
 
 1. map a repository to an allocation;
-2. launch one managed session;
-3. attribute and reconcile its usage; and
-4. enforce a visible policy boundary where technically supported.
+2. admit and reserve one managed session;
+3. launch and supervise Codex through the CLI wrapper;
+4. attribute and reconcile its usage; and
+5. enforce a visible policy boundary where technically supported.
 
 Only after that slice is stable should the adapter contract be generalized from
 real implementation evidence for a second provider.
+
+Detailed milestones and attribution constraints are documented in the
+[Codex-first roadmap](roadmap.md).

@@ -1,8 +1,8 @@
 # Quota Model
 
-Subscription providers expose different usage signals: percentages, reset
-times, rolling windows, request classes, or opaque limits. Agent Quota Manager
-therefore models quota without assuming that every provider reports tokens.
+Providers expose percentages, rolling limits, credits, spend, concurrency, or
+opaque capacity signals. AQM therefore models current Codex quota without
+assuming tokens, while keeping unlike resource behaviors explicit.
 
 ## Core concepts
 
@@ -34,6 +34,22 @@ A UI may display normalized **quota points** to make allocation easier inside
 one pool—for example, 100 points representing that pool's full window. Points
 from different providers or different pools are not exchangeable and must not
 be summed as if they were money or tokens.
+
+`QuotaUnit` is intentionally free-form today, but a label alone does not define
+resource behavior. The following distinction guides future extensions:
+
+| Dimension | Semantics | Modeling direction |
+| --- | --- | --- |
+| Rate limit or credit | Consumable capacity over a provider window | Existing pool/window/allocation model |
+| USD spend | Consumable monetary capacity | Integer minor units plus currency metadata |
+| Concurrency | Capacity occupied and later released | Reservation/admission model, not cumulative usage |
+| Priority | Relative importance of proposed work | Workload and policy input |
+| Deadline | Time constraint on proposed work | Workload and routing input |
+
+Priority and deadline are not quota units. Concurrency should not be forced into
+a cumulative percentage model. AQM will introduce a resource-kind abstraction
+only when implementing behavior that needs it; the Codex slice does not require
+a domain rewrite.
 
 ## Allocation hierarchy
 
@@ -94,7 +110,10 @@ Local attribution and provider totals are separate observations:
 5. Attach source and confidence to the new checkpoint.
 
 A window reset creates a new window identity. It does not rewrite historical
-usage.
+usage. When a provider exposes only an aggregate total, a before/after delta is
+an observation rather than proof of causality. AQM may associate it with a lone
+managed session at observed confidence; ambiguous concurrent or external usage
+remains unattributed.
 
 ## Enforcement
 
@@ -103,3 +122,7 @@ only valid for a session controlled by an adapter with the required capability.
 External sessions can consume quota outside local enforcement, so no adapter
 should promise an absolute account-wide limit unless the provider itself offers
 that guarantee.
+
+In v0.1, `stop` may refuse admission to an AQM-managed launch. Stopping an
+already-running process is a distinct capability and requires a timely,
+trustworthy consumption signal.

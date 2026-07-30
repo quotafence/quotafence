@@ -1,74 +1,97 @@
 # Agent Quota Manager
 
-Local-first quota allocation and enforcement for coding-agent subscriptions.
+Local-first budget guard and routing layer for AI coding agents.
 
 > [!IMPORTANT]
 > Agent Quota Manager is an early local MVP with no stable release. Codex quota
-> discovery and manual allocation work locally, but continuous reconciliation
-> and managed enforcement are not implemented yet.
+> discovery, checkpoint refresh, reset rollover, and manual allocations work
+> locally. Repository mapping, managed sessions, automatic attribution, and
+> enforcement at launch are not implemented yet.
 
-Coding-agent subscriptions usually expose one shared usage allowance. When
-several repositories or tasks compete for that allowance, it is difficult to
-reserve capacity for important work or see where the quota went. Agent Quota
-Manager aims to make that budget explicit.
+Solo power users often run several coding agents across multiple repositories
+against the same constrained subscription. Low-priority work can exhaust that
+shared capacity before important work starts, while provider dashboards cannot
+usually explain which repository consumed it or enforce a project budget.
+
+Agent Quota Manager (AQM) aims to protect capacity for important work, attribute
+managed usage to repositories and tasks, and apply policy before or during work
+when the provider integration can honestly support it.
 
 ## What it is
 
-Agent Quota Manager is a desktop application that will let a user:
+AQM is intended to become a local control layer between a user and installed AI
+coding agents. The lightweight daily workflow should be a wrapper such as:
 
-- allocate a subscription's usage allowance to projects, repositories, or tasks;
-- launch managed coding-agent sessions within those allocations;
-- stop, warn, or require confirmation when a scope reaches its limit;
-- reconcile observed provider usage with locally attributed usage; and
-- manage multiple providers through capability-aware adapters.
+```bash
+aqm run codex
+```
 
-It targets subscription usage such as Codex or Claude Code allowances—not
-API-key token billing. Provider quotas are not assumed to be token counts or
-interchangeable currencies.
+That workflow will:
+
+- resolve the current repository to an allocation;
+- reserve capacity for the requested work;
+- warn, require confirmation, or refuse admission at a policy boundary;
+- run a provider session under AQM management; and
+- reconcile the resulting provider usage back to the repository.
+
+The desktop UI remains useful for setup and policy visibility, but dashboard
+analytics alone are not the product. Longer term, the same control layer may
+route work using provider quota, credit, cost, concurrency, priority, and
+deadline. Those dimensions are not assumed to be interchangeable.
 
 ## Product principles
 
-- **Local first:** policy, attribution, and project data stay on the user's machine.
-- **Honest accounting:** estimates and provider-confirmed values are clearly distinguished.
-- **Project scoped:** repositories and tasks receive explicit, reviewable allocations.
-- **Capability aware:** the UI only promises controls a provider adapter can actually enforce.
-- **Provider neutral, Codex first:** the core model is generic, while integrations ship one at a time.
+- **Protect important work:** reserve scarce capacity before lower-priority work
+  consumes it.
+- **Automatic attribution:** managed sessions should not depend on manual usage
+  entry.
+- **Policy in the path:** enforcement belongs in the launch workflow, not only
+  on a dashboard.
+- **Capability honesty:** never claim a hard stop outside sessions AQM controls
+  or without a usable signal.
+- **Local first:** policy, attribution, repository metadata, and session records
+  stay on the device.
+- **Codex first:** complete one end-to-end adapter before adding more providers.
 
-## Planned v0.1 scope
+## Codex v0.1 vertical slice
 
 | Area | Initial scope |
 | --- | --- |
 | Provider | Codex |
-| Allocation | Weekly quota by repository/project |
-| Sessions | Start a managed session from the desktop app |
-| Enforcement | Warning and hard-stop policies where the adapter permits |
-| Accounting | Local ledger plus provider reconciliation |
+| Context | Map the current Git repository to an allocation |
+| Workflow | `aqm run codex` or an equivalent lightweight managed launch |
+| Sessions | Reserve, start, observe, finish, and recover one managed session |
+| Enforcement | Warn, confirm, or refuse launch according to effective capability |
+| Accounting | Automatic session attribution plus provider reconciliation |
+| Forecasting | Evidence-based depletion signal after reliable attribution |
 | Storage | Local database; no hosted account required |
 
-Support for additional subscription agents will follow the adapter contract,
-not a lowest-common-denominator claim that every provider works identically.
+Additional providers, cloud sync, teams, RBAC, billing, and routing are outside
+the current slice. See the [Roadmap](docs/roadmap.md) for implementation gaps,
+milestones, and recommended architecture decisions.
 
 ## Architecture at a glance
 
 ```mermaid
 flowchart LR
-  UI["Desktop UI (React)"] --> IPC["Tauri command boundary"]
-  IPC --> CORE["Quota core and policy engine"]
+  UI["Desktop UI"] --> APP["Application use cases"]
+  CLI["aqm CLI wrapper"] --> APP
+  APP --> CORE["Budget core and policy engine"]
   CORE --> STORE["Local ledger and configuration"]
-  CORE --> ADAPTER["Provider adapter"]
-  ADAPTER --> PROVIDER["Installed coding agent / provider surface"]
+  APP --> ADAPTER["Capability-aware adapter"]
+  ADAPTER --> PROVIDER["Managed Codex process / App Server"]
 ```
 
-The first release is intentionally a modular monolith. A background daemon and
-standalone CLI can be extracted when managed sessions or multiple frontends
-require them. See [Architecture](docs/architecture.md),
+The first release remains a modular monolith. The CLI and desktop should reuse
+the same Rust application layer; a daemon is deferred until concurrent clients
+or background lifecycle management justify it. See
+[Architecture](docs/architecture.md),
 [Quota model](docs/quota-model.md), and
 [Provider adapters](docs/provider-adapters.md). The implemented SQLite layer is
 described in [Storage](docs/storage.md), and use-case orchestration in
 [Application services](docs/application-services.md). The desktop IPC contract
 is documented in [Tauri commands](docs/tauri-commands.md). See
-[Local MVP](docs/local-mvp.md) for the current end-to-end workflow and its
-limitations.
+[Local MVP](docs/local-mvp.md) for the current implemented baseline.
 
 ### Codex detection
 

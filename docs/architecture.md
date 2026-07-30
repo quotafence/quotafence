@@ -2,29 +2,34 @@
 
 This document describes the intended architecture. The repository currently
 contains the provider-neutral domain, local SQLite storage, application
-services, and Tauri command boundary, while provider adapters remain planned.
+services, Tauri command boundary, and a Codex discovery/synchronization adapter.
+Repository mapping and managed-session execution remain planned.
 
 ## Goals
 
-- Allocate subscription quota to projects, repositories, and tasks.
-- Attribute managed coding-agent usage to those scopes.
-- Enforce policy only to the degree supported by a provider integration.
+- Protect capacity for high-priority repository and task work.
+- Attribute managed coding-agent usage to those scopes automatically.
+- Put admission and policy enforcement in the managed execution path.
+- Forecast depletion from trustworthy reconciled history.
 - Keep configuration and usage history local by default.
-- Add providers without leaking their terminology into the core domain.
+- Preserve a path toward capability-aware routing without adding providers
+  early.
 
 ## Non-goals
 
-- Metering API-key billing or replacing a provider's billing system.
+- Replacing a provider's billing, quota, or account-wide enforcement system.
 - Circumventing provider limits or terms of service.
 - Claiming exact token accounting when a subscription exposes only a percentage
   or time-window allowance.
 - Acting as a cloud proxy for prompts or source code.
+- Cloud sync, team workspaces, RBAC, billing, or organization governance in v0.1.
+- Claiming hard enforcement for sessions that AQM did not launch and control.
 
 ## Initial shape: a modular monolith
 
-The desktop process owns the UI boundary, domain services, local persistence,
-and provider adapters. This keeps installation and debugging simple while the
-domain is still evolving.
+The repository remains a modular monolith. The desktop and the planned CLI
+should share domain, application, storage, and adapter code. This keeps
+installation and debugging simple while the managed-session contract evolves.
 
 ```text
 src/                         React presentation and view state
@@ -35,21 +40,20 @@ src-tauri/src/
   storage/                   Local persistence and migrations
   providers/
     codex/                   First provider adapter
+  bin/aqm.rs                 Planned lightweight CLI entry point
 ```
 
-The `commands/`, `domain/`, `storage/`, and `application/` modules now exist.
-The remaining paths are targets, not a reason to create empty modules in
-advance.
+The CLI path is a target, not a reason to create an empty binary in advance.
 
 ## Component responsibilities
 
 ### Desktop UI
 
-Displays allocations, remaining quota, data confidence, provider capabilities,
-and managed-session state. The current local MVP implements onboarding,
-multi-source window selection, project/task allocations, allocation updates,
-and manual usage recording. It does not infer enforcement guarantees from a
-provider name. See [Local MVP](local-mvp.md).
+Displays setup, allocations, remaining capacity, confidence, provider
+capabilities, and eventually managed-session state. The current local MVP
+implements onboarding, multi-source window selection, project/task allocations,
+allocation updates, and manual usage recording. It does not infer enforcement
+guarantees from a provider name. See [Local MVP](local-mvp.md).
 
 ### Tauri command boundary
 
@@ -72,6 +76,12 @@ Owns provider-neutral rules:
 
 The core works with provider-native quota units plus confidence metadata. It
 does not pretend that quota from different providers is fungible.
+
+The current pool/window model is designed for consumable capacity. Future
+resource types have different semantics: concurrency is instantaneous, USD
+should use integer minor units, and priority/deadline belong to workload policy
+rather than an amount. See [Quota model](quota-model.md). No general resource
+rewrite is required for the Codex slice.
 
 ### Application services
 
@@ -96,18 +106,31 @@ Adapters translate provider-specific quota windows, usage signals, and session
 controls into the core model. Each adapter reports capabilities at runtime; see
 [Provider adapters](provider-adapters.md).
 
+The current Codex adapter discovers and synchronizes aggregate quota. It does
+not yet launch a user session or expose session-level consumption.
+
+### CLI wrapper
+
+The first managed workflow should be `aqm run codex`. The CLI resolves the
+current repository, calls the same application services as the desktop, and
+owns the child process lifecycle. It should not duplicate policy or storage
+logic in command handlers.
+
 ## Managed-session flow
 
-1. Resolve the current repository or selected project to a quota scope.
-2. Read the allocation, confirmed usage, reservations, and policy.
-3. Refuse, warn, or reserve capacity before starting work.
-4. Start the provider through a supported local integration.
-5. Observe usage and append immutable attribution events.
-6. Release the reservation and reconcile against the provider's latest total.
+1. Resolve the current Git root through an explicit repository binding.
+2. Refresh the relevant provider checkpoint.
+3. Read the allocation, usage, reservations, policy, and adapter capabilities.
+4. Allow, warn, request confirmation, or refuse admission.
+5. Persist a session record and reserve capacity before spawning.
+6. Start and supervise Codex in the repository working directory.
+7. Persist the exit outcome, refresh the provider checkpoint, and reconcile.
+8. Consume or release the reservation and append immutable attribution events.
 
-Usage outside a managed session can reduce the provider's total without having
-a known project. That delta is recorded as **unattributed usage**, not assigned
-to a convenient project.
+An aggregate provider delta is not automatically proof that one session caused
+it. Usage outside a managed session or concurrent work can reduce the same
+total. Ambiguous consumption remains **unattributed**, and managed attribution
+must carry an honest confidence level.
 
 ## Enforcement modes
 
@@ -119,6 +142,11 @@ to a convenient project.
 
 The effective mode is derived from adapter capabilities and current health, not
 only from user preference.
+
+For the initial Codex slice, a stop can safely mean refusing to launch an
+AQM-managed process. Live termination is a separate capability requiring both
+process ownership and a timely provider signal. It must not be inferred merely
+because AQM can kill a child process.
 
 ## Trust boundaries
 
@@ -142,3 +170,6 @@ A background service becomes justified when one of these is implemented:
 
 Until then, an internal daemon would add deployment and security complexity
 without improving the core model.
+
+The milestone sequence and recommended lifecycle decisions live in the
+[Codex-first roadmap](roadmap.md).
