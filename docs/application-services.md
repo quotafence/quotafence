@@ -30,8 +30,9 @@ The current command DTOs cover:
 - provider-neutral workspace admission assessment;
 - allocation updates;
 - quota reservation and release;
-- usage recording with optional atomic reservation consumption; and
+- usage recording with optional atomic reservation consumption;
 - absolute provider-snapshot synchronization and reset rollover;
+- provider-turn baseline creation, lookup, reconciliation, and cleanup;
 - quota-dashboard queries; and
 - complete local-state queries for application startup and refresh.
 
@@ -44,6 +45,14 @@ workspace and provider. Its effective decision is the more restrictive of the
 workspace allocation balance and account-wide provider capacity. Refreshing a
 provider checkpoint remains an adapter responsibility and happens before this
 use case is evaluated.
+
+Provider-turn observation is deliberately split around that adapter boundary.
+The adapter refreshes a checkpoint, then
+`BeginProviderTurnObservation` stores its absolute baseline. At turn end the
+adapter refreshes again and `ReconcileProviderTurnObservation` atomically
+removes the active observation and appends an inferred, provider-observed usage
+event only when the stored turn is unambiguous. Missing checkpoints, rollover,
+unmapped work, and concurrency produce no scoped event.
 
 Command IDs are supplied by the caller to give retries a stable identity. A
 duplicate currently returns a storage conflict rather than silently succeeding;

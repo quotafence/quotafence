@@ -55,6 +55,10 @@ impl Database {
         super::WorkspaceBindingRepository::new(&self.connection)
     }
 
+    pub fn turn_observations(&mut self) -> super::TurnObservationRepository<'_> {
+        super::TurnObservationRepository::new(&mut self.connection)
+    }
+
     pub fn schema_version(&self) -> StorageResult<i64> {
         Ok(self.connection.query_row(
             "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",

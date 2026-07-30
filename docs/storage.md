@@ -18,6 +18,7 @@ The `src-tauri/src/storage` module provides:
 - atomic workspace, initial allocation, and binding creation;
 - transactional folder-allocation writes;
 - capacity-checked reservations;
+- minimal active provider-turn observations for checkpoint reconciliation;
 - atomic usage recording and reservation consumption; and
 - append-only usage events.
 
@@ -47,6 +48,7 @@ providers
     └── quota_pools
         └── quota_windows
             ├── provider_quota_snapshots
+            ├── provider_turn_observations ── scopes (optional)
             ├── allocations ── scopes
             ├── reservations ─ scopes
             └── usage_events ─ scopes (optional)
@@ -84,6 +86,12 @@ Migration 5 renames the original `repository_bindings` table and path column.
 Existing Git-root bindings remain valid folder bindings; Git is no longer read
 or required.
 
+Migration 6 adds `provider_turn_observations`. Rows contain session and turn
+identifiers, adapter, canonical folder, optional scope, quota window, absolute
+baseline usage, start time, and a contention flag. They are transient
+reconciliation state rather than usage history. Prompt text, assistant output,
+transcript contents, source code, and credentials are not stored.
+
 ## Transactions
 
 Allocation writes acquire an immediate transaction before checking capacity:
@@ -102,6 +110,14 @@ attributed usage and active reservations before inserting a new reservation.
 Recording usage and consuming its reservation happen in one transaction. If the
 reservation is missing, inactive, or belongs to another scope/window, the usage
 insert is rolled back.
+
+Starting an observed turn uses an immediate transaction. Existing active turns
+for the same adapter/window and the new turn are all marked contended. Finishing
+a turn atomically removes its observation and appends usage only when the
+provider snapshot advanced in the same window and the observation is mapped and
+uncontended. Duplicate starts keep their original baseline; duplicate stops
+cannot double-record usage. Old unfinished observations expire before a new
+turn begins.
 
 ## Migrations
 

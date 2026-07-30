@@ -6,8 +6,9 @@ Local-first budget guard and routing layer for AI coding agents.
 > Agent Quota Manager is an early local MVP with no stable release. Codex quota
 > discovery, checkpoint refresh, reset rollover, and manual allocations work
 > locally. Folder-based workspace mapping plus `aqm context` and the provider-refreshing
-> `aqm admit codex` dry run are implemented. Managed sessions, automatic
-> attribution, and enforcement at launch are not implemented yet.
+> `aqm admit codex` dry run are implemented. Experimental Codex lifecycle hooks
+> can infer a single desktop turn's workspace usage from provider checkpoint
+> deltas. Managed sessions and enforcement at launch are not implemented yet.
 
 Solo power users often run several coding agents across multiple workspaces
 against the same constrained subscription. Low-priority work can exhaust that
@@ -103,11 +104,17 @@ adapter imports the selected quota window, reset time, normalized percentage,
 and current provider-confirmed usage. Manual setup remains available when
 detection is unsupported or temporarily unavailable.
 
-The app does not read Codex credential files, session transcripts, prompts, or
-workspace contents. The App Server process is stopped after the snapshot is
-read. The selected Codex source refreshes on startup and on demand. Provider
-totals replace the previous snapshot rather than accumulating as usage events,
-and a new reset window carries allocations forward without old usage.
+Quota detection does not read Codex credential files, session transcripts,
+prompts, or workspace contents. The App Server process is stopped after the
+snapshot is read. The selected Codex source refreshes on startup and on demand.
+Provider totals replace the previous snapshot rather than accumulating as usage
+events, and a new reset window carries allocations forward without old usage.
+
+Experimental Codex hooks receive lifecycle JSON from Codex. AQM deserializes
+only session ID, turn ID, event name, and working folder; prompt, response, and
+transcript fields are ignored and never persisted. A provider delta is assigned
+to a folder only when one mapped turn is active in that quota window. Concurrent
+or otherwise ambiguous consumption remains unattributed.
 
 ## Development
 
@@ -149,6 +156,16 @@ Preview the current policy boundary without launching Codex:
 ```bash
 npm run aqm -- admit codex
 ```
+
+Install the experimental Codex desktop tracking hooks:
+
+```bash
+npm run aqm -- hooks install codex
+```
+
+Codex requires non-managed hooks to be reviewed and trusted. See the
+[CLI guide](docs/cli.md) for the trust step, current precision limits, status,
+and uninstall command.
 
 These development commands use the same local database as the desktop.
 Admission refreshes the matching Codex checkpoint and evaluates both workspace

@@ -1,5 +1,5 @@
 use std::{
-    env, fs,
+    env, fs, io,
     path::PathBuf,
     process::ExitCode,
     time::{SystemTime, UNIX_EPOCH},
@@ -12,7 +12,10 @@ use agent_quota_manager_lib::{
     },
     domain::EnforcementDecision,
     paths,
-    providers::codex::{self, CodexSyncResult, CodexSyncStatus},
+    providers::{
+        codex::{self, CodexSyncResult, CodexSyncStatus},
+        codex_hooks::{self, CodexHookEvent, CodexHookEventKind},
+    },
     workspace::canonicalize_workspace_path,
 };
 use serde::Serialize;
@@ -35,7 +38,18 @@ enum CliCommand {
         provider_id: String,
         assume_yes: bool,
     },
+    HookCodex(CommonOptions),
+    Hooks {
+        action: HooksAction,
+    },
     Help,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HooksAction {
+    Install,
+    Status,
+    Uninstall,
 }
 
 #[derive(Debug, Default)]
@@ -155,7 +169,80 @@ fn run(args: Vec<String>) -> Result<u8, String> {
             )?;
             Ok(exit_code)
         }
+        CliCommand::HookCodex(options) => {
+            // A tracking hook must never break the Codex turn it observes.
+            // Diagnostics are opt-in so normal Codex sessions remain quiet.
+            if let Err(error) = run_codex_hook(&options) {
+                if env::var_os("AQM_HOOK_DEBUG").is_some() {
+                    eprintln!("aqm hook: {error}");
+                }
+            }
+            println!("{{}}");
+            Ok(EXIT_ALLOW)
+        }
+        CliCommand::Hooks { action } => {
+            let config_path = codex_hooks::default_user_hooks_path()?;
+            match action {
+                HooksAction::Install => {
+                    let executable = env::current_exe()
+                        .map_err(|error| format!("cannot resolve aqm executable: {error}"))?;
+                    let changed = codex_hooks::install_user_hooks(&config_path, &executable)?;
+                    if changed {
+                        println!(
+                            "Installed Codex tracking hooks in {}",
+                            config_path.display()
+                        );
+                    } else {
+                        println!(
+                            "Codex tracking hooks are already installed in {}",
+                            config_path.display()
+                        );
+                    }
+                    println!("Review and trust the new hooks with `/hooks` in Codex.");
+                }
+                HooksAction::Status => {
+                    if codex_hooks::user_hooks_installed(&config_path)? {
+                        println!(
+                            "Codex tracking hooks are configured in {}",
+                            config_path.display()
+                        );
+                    } else {
+                        println!(
+                            "Codex tracking hooks are not configured in {}",
+                            config_path.display()
+                        );
+                    }
+                }
+                HooksAction::Uninstall => {
+                    if codex_hooks::uninstall_user_hooks(&config_path)? {
+                        println!(
+                            "Removed Codex tracking hooks from {}",
+                            config_path.display()
+                        );
+                    } else {
+                        println!(
+                            "No Codex tracking hooks were found in {}",
+                            config_path.display()
+                        );
+                    }
+                }
+            }
+            Ok(EXIT_ALLOW)
+        }
     }
+}
+
+fn run_codex_hook(options: &CommonOptions) -> Result<(), String> {
+    let event = CodexHookEvent::from_reader(io::stdin().lock())?;
+    let mut service = open_service(options)?;
+    codex_hooks::handle_event(&mut service, &event, now_millis()?, || {
+        matches!(
+            event.kind(),
+            CodexHookEventKind::UserPromptSubmit | CodexHookEventKind::Stop
+        )
+        .then(codex::detect)
+    })?;
+    Ok(())
 }
 
 fn provider_allocation<'a>(
@@ -195,13 +282,17 @@ fn open_context(options: &CommonOptions) -> Result<(QuotaService, String), Strin
         }
     };
     let canonical_path = canonicalize_workspace_path(start).map_err(|error| error.to_string())?;
+    let service = open_service(options)?;
+    Ok((service, canonical_path))
+}
+
+fn open_service(options: &CommonOptions) -> Result<QuotaService, String> {
     let database_path = database_path(options)?;
     if let Some(parent) = database_path.parent() {
         fs::create_dir_all(parent)
             .map_err(|error| format!("cannot create app data directory: {error}"))?;
     }
-    let service = QuotaService::open(database_path).map_err(|error| error.to_string())?;
-    Ok((service, canonical_path))
+    QuotaService::open(database_path).map_err(|error| error.to_string())
 }
 
 fn database_path(options: &CommonOptions) -> Result<PathBuf, String> {
@@ -220,6 +311,12 @@ fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
     };
     if matches!(command, "-h" | "--help" | "help") {
         return Ok(CliCommand::Help);
+    }
+    if command == "hook" {
+        return parse_hook_command(&args);
+    }
+    if command == "hooks" {
+        return parse_hooks_command(&args);
     }
     if !matches!(command, "context" | "bind" | "admit") {
         return Err(format!("unknown command {command:?}; run `aqm --help`"));
@@ -276,6 +373,39 @@ fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
         }),
         _ => unreachable!("command was validated"),
     }
+}
+
+fn parse_hook_command(args: &[String]) -> Result<CliCommand, String> {
+    if args.get(1).map(String::as_str) != Some("codex") {
+        return Err("usage: aqm hook codex [--database <path>]".to_owned());
+    }
+    let mut options = CommonOptions::default();
+    let mut index = 2;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--database" => {
+                index += 1;
+                options.database = Some(PathBuf::from(required_value(args, index, "--database")?));
+            }
+            "-h" | "--help" => return Ok(CliCommand::Help),
+            option => return Err(format!("unknown option {option:?}")),
+        }
+        index += 1;
+    }
+    Ok(CliCommand::HookCodex(options))
+}
+
+fn parse_hooks_command(args: &[String]) -> Result<CliCommand, String> {
+    let action = match args.get(1).map(String::as_str) {
+        Some("install") => HooksAction::Install,
+        Some("status") => HooksAction::Status,
+        Some("uninstall") => HooksAction::Uninstall,
+        _ => return Err("usage: aqm hooks <install|status|uninstall> codex".to_owned()),
+    };
+    if args.get(2).map(String::as_str) != Some("codex") || args.len() != 3 {
+        return Err("usage: aqm hooks <install|status|uninstall> codex".to_owned());
+    }
+    Ok(CliCommand::Hooks { action })
 }
 
 fn required_value<'a>(args: &'a [String], index: usize, option: &str) -> Result<&'a str, String> {
@@ -439,6 +569,8 @@ Usage:
   aqm context [--path <directory>] [--json]
   aqm bind --scope <name-or-id> [--path <directory>] [--json]
   aqm admit codex [--path <directory>] [--yes] [--json]
+  aqm hook codex [--database <path>]
+  aqm hooks <install|status|uninstall> codex
 
 Options:
   --path <directory>   Resolve a workspace from this directory instead of cwd
@@ -530,5 +662,35 @@ mod tests {
             admission_exit_code(EnforcementDecision::Stop, true),
             EXIT_STOP
         );
+    }
+
+    #[test]
+    fn hook_commands_parse_without_exposing_hook_payload_options() {
+        let command = parse_args(vec![
+            "hook".to_owned(),
+            "codex".to_owned(),
+            "--database".to_owned(),
+            "/tmp/aqm.sqlite3".to_owned(),
+        ])
+        .unwrap();
+        let CliCommand::HookCodex(options) = command else {
+            panic!("expected Codex hook command");
+        };
+        assert_eq!(
+            options.database.as_deref(),
+            Some(Path::new("/tmp/aqm.sqlite3"))
+        );
+
+        assert!(matches!(
+            parse_args(vec![
+                "hooks".to_owned(),
+                "install".to_owned(),
+                "codex".to_owned()
+            ])
+            .unwrap(),
+            CliCommand::Hooks {
+                action: HooksAction::Install
+            }
+        ));
     }
 }

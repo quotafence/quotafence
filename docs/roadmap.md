@@ -26,13 +26,16 @@ The repository currently has:
 - a Tauri/React desktop workflow for source setup and manual allocations;
 - a Codex adapter using the official local App Server protocol;
 - automatic Codex checkpoint refresh on startup and explicit refresh;
-- absolute snapshots that do not double-count repeated reads; and
+- absolute snapshots that do not double-count repeated reads;
 - reset-window rollover that carries allocations without carrying old usage;
-- canonical folder workspace bindings and a read-only `aqm context` CLI; and
-- a provider-refreshing `aqm admit codex` dry run with stable policy outcomes.
+- canonical folder workspace bindings and a read-only `aqm context` CLI;
+- a provider-refreshing `aqm admit codex` dry run with stable policy outcomes;
+  and
+- experimental Codex desktop turn attribution through official lifecycle
+  hooks, with contention and rollover kept unattributed.
 
 It does **not** yet have managed-session records, provider process supervision,
-automatic session attribution,
+automatic attribution for managed launches,
 persisted per-scope policy, process-level admission enforcement, or burn-rate
 forecasting.
 
@@ -45,7 +48,7 @@ forecasting.
 | Workspace context | Implemented | Reused for admission and managed launch |
 | Managed launch | Detection process only | AQM owns the Codex child lifecycle and exit result |
 | Reservation | Domain/storage implemented; not in daily workflow | Admission reserves capacity before spawn |
-| Attribution | Ledger primitives only; no user-entered estimates | Session result produces scoped observed usage |
+| Attribution | Experimental inferred desktop-turn deltas; no user-entered estimates | Managed session result produces scoped observed usage |
 | Reconciliation | Provider total affects dashboard | Pre/post session delta is reconciled without false precision |
 | Policy | In-memory standard thresholds drive dry-run admission | Persisted effective policy drives managed launch |
 | Enforcement | Dry-run result and shell exit code only | Warn, confirm, or refuse an AQM-managed launch |
@@ -94,6 +97,28 @@ Implemented as `aqm admit codex`. The application boundary receives an explicit
 timestamp, the Codex checkpoint application accepts fabricated detection data
 in tests, and the CLI reserves exit codes `0`, `10`, `20`, and `30` for policy
 outcomes. `--yes` accepts confirmation but never overrides stop.
+
+### M2.5 — Observed Codex desktop attribution — experimental
+
+- Install user-level `UserPromptSubmit`, `Stop`, and `SessionEnd` hooks without
+  overwriting unrelated hook configuration.
+- Map the lifecycle event's working folder to its nearest workspace allocation.
+- Refresh before and after a turn and append the aggregate percentage delta at
+  inferred confidence.
+- Mark overlapping turns contended so account-wide consumption is never split
+  by guesswork.
+- Keep provider failures, zero deltas, rollover, and unmapped work out of the
+  scoped ledger.
+- Support status and uninstall for the integration.
+
+Verification: hook-schema parser tests that ignore prompt/transcript fields,
+installer round-trip tests, storage contention/idempotency tests, rollover
+tests, and an end-to-end fake-checkpoint test proving that a 4% provider delta
+reduces the mapped folder allocation by 4%.
+
+This milestone makes ordinary Codex app usage observable but does not make it
+AQM-managed. Hook trust is user-controlled, hooks are fail-open, and aggregate
+integer percentage checkpoints cannot expose exact token consumption.
 
 ### M3 — One managed Codex session
 

@@ -136,6 +136,26 @@ ALTER TABLE repository_bindings RENAME TO workspace_bindings;
 ALTER TABLE workspace_bindings RENAME COLUMN canonical_root TO canonical_path;
 "#;
 
+const PROVIDER_TURN_OBSERVATIONS: &str = r#"
+CREATE TABLE provider_turn_observations (
+    session_id TEXT NOT NULL CHECK (length(trim(session_id)) > 0),
+    turn_id TEXT NOT NULL CHECK (length(trim(turn_id)) > 0),
+    adapter TEXT NOT NULL CHECK (length(trim(adapter)) > 0),
+    canonical_path TEXT NOT NULL CHECK (length(trim(canonical_path)) > 0),
+    scope_id TEXT REFERENCES scopes(id) ON DELETE RESTRICT,
+    window_id TEXT NOT NULL REFERENCES quota_windows(id) ON DELETE CASCADE,
+    baseline_used INTEGER NOT NULL CHECK (baseline_used >= 0),
+    started_at INTEGER NOT NULL,
+    contended INTEGER NOT NULL DEFAULT 0 CHECK (contended IN (0, 1)),
+    PRIMARY KEY (session_id, turn_id)
+);
+
+CREATE INDEX idx_provider_turn_observations_window
+    ON provider_turn_observations(adapter, window_id, started_at);
+CREATE INDEX idx_provider_turn_observations_session
+    ON provider_turn_observations(session_id);
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -161,6 +181,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 5,
         name: "workspace_bindings",
         sql: WORKSPACE_BINDINGS,
+    },
+    Migration {
+        version: 6,
+        name: "provider_turn_observations",
+        sql: PROVIDER_TURN_OBSERVATIONS,
     },
 ];
 

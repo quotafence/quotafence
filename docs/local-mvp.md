@@ -2,7 +2,9 @@
 
 This document describes the implemented baseline, not the full product
 positioning. The desktop application currently configures local budgets and
-observes Codex quota; it is not yet in the coding-agent execution path.
+observes Codex quota. Optional lifecycle hooks can infer folder usage for one
+uncontended Codex desktop turn, but AQM is not yet the owner of the coding-agent
+execution path.
 
 ## First-run workflow
 
@@ -34,6 +36,7 @@ For the selected quota window, the UI can:
 - update existing allocation limits;
 - show canonical folder paths on explicitly bound workspace allocations;
 - refresh the selected Codex source on startup or on demand;
+- display inferred folder usage reconciled by the optional Codex hook adapter;
 - carry allocations into the next provider reset window;
 - prevent duplicate active bindings to the same detected provider limit;
 - archive a quota source without deleting its ledger history;
@@ -55,7 +58,9 @@ This milestone does not:
 
 - alter or copy coding-agent authentication;
 - launch or stop a managed coding-agent session;
-- attribute a provider-confirmed total to individual folders automatically;
+- provide exact per-turn tokens or confirmed causal attribution from an
+  account-wide integer percentage;
+- split concurrent Codex turns across folders;
 - accept manual usage estimates as a substitute for automatic attribution;
 - persist per-scope policy or enforce it against a launched process;
 - forecast depletion from session history;

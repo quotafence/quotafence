@@ -9,20 +9,28 @@ use crate::{
         QuotaBalance, QuotaPool, QuotaPoolId, QuotaUnit, QuotaWindow, Reservation, ReservationId,
         Scope, ScopeId, UnixMillis, UsageAttribution, UsageEvent, UsageEventId, WindowId,
     },
-    storage::{Database, ProviderQuotaSnapshot, StorageError, WorkspaceBinding},
+    storage::{
+        BeginObservationStatus, Database, ProviderQuotaSnapshot, ProviderTurnObservation,
+        ReconcileObservationResult, StorageError, WorkspaceBinding,
+    },
     workspace::{contains_path, path_depth},
 };
 
 use super::{
-    error::to_view_integer, AdmissionAssessment, AllocationSnapshot, ApplicationError,
-    ApplicationResult, ArchiveQuotaSource, BindWorkspace, CreateAccount, CreateAllocatedScope,
-    CreateAllocatedWorkspace, CreateProvider, CreateQuotaPool, CreateQuotaSource,
-    CreateQuotaWindow, CreateScope, EvaluateWorkspaceAdmission, GetLocalState, GetQuotaDashboard,
-    GetWorkspaceContext, LocalState, QuotaDashboard, QuotaSourceSummary, RecordUsage,
-    ReleaseReservation, ReserveQuota, ScopeSummary, SetAllocation, SyncProviderQuota,
-    SyncProviderQuotaResult, WindowSummary, WorkspaceAllocationContext, WorkspaceBindingSummary,
-    WorkspaceContext,
+    error::to_view_integer, AbandonProviderSessionObservations, AbandonProviderTurnObservation,
+    AdmissionAssessment, AllocationSnapshot, ApplicationError, ApplicationResult,
+    ArchiveQuotaSource, BeginProviderTurnObservation, BindWorkspace, CreateAccount,
+    CreateAllocatedScope, CreateAllocatedWorkspace, CreateProvider, CreateQuotaPool,
+    CreateQuotaSource, CreateQuotaWindow, CreateScope, EvaluateWorkspaceAdmission, GetLocalState,
+    GetProviderTurnObservation, GetQuotaDashboard, GetWorkspaceContext, LocalState,
+    ProviderTurnObservationSummary, QuotaDashboard, QuotaSourceSummary,
+    ReconcileProviderTurnObservation, RecordUsage, ReleaseReservation, ReserveQuota, ScopeSummary,
+    SetAllocation, SyncProviderQuota, SyncProviderQuotaResult, TurnObservationStartResult,
+    TurnObservationStartStatus, TurnReconciliationResult, TurnReconciliationStatus, WindowSummary,
+    WorkspaceAllocationContext, WorkspaceBindingSummary, WorkspaceContext,
 };
+
+const TURN_OBSERVATION_STALE_AFTER_MILLIS: i64 = 12 * 60 * 60 * 1_000;
 
 pub struct QuotaService {
     database: Database,
@@ -193,6 +201,171 @@ impl QuotaService {
             window_id: target_window_id.to_string(),
             rolled_over,
         })
+    }
+
+    pub fn begin_provider_turn_observation(
+        &mut self,
+        command: BeginProviderTurnObservation,
+    ) -> ApplicationResult<TurnObservationStartResult> {
+        let session_id = required_request_text(command.session_id, "session ID")?;
+        let turn_id = required_request_text(command.turn_id, "turn ID")?;
+        let adapter = required_request_text(command.adapter, "provider adapter")?;
+        let canonical_path = required_request_text(command.canonical_path, "workspace path")?;
+        let window_id = WindowId::new(command.window_id)?;
+        let scope_id = command.scope_id.map(ScopeId::new).transpose()?;
+        let snapshot = self
+            .database
+            .provider_quota_snapshot(&window_id)?
+            .ok_or_else(|| ApplicationError::InvalidRequest {
+                message: format!(
+                    "quota window {window_id} has no provider checkpoint for turn observation"
+                ),
+            })?;
+        if !snapshot.adapter().eq_ignore_ascii_case(&adapter) {
+            return Err(ApplicationError::InvalidRequest {
+                message: format!(
+                    "quota window {window_id} uses adapter {}, not {adapter}",
+                    snapshot.adapter()
+                ),
+            });
+        }
+
+        if let Some(scope_id) = scope_id.as_ref() {
+            let has_allocation = self
+                .database
+                .allocations()
+                .list_for_window(&window_id)?
+                .iter()
+                .any(|allocation| allocation.scope_id() == scope_id);
+            if !has_allocation {
+                return Err(ApplicationError::InvalidRequest {
+                    message: format!(
+                        "scope {scope_id} has no allocation in quota window {window_id}"
+                    ),
+                });
+            }
+        }
+
+        let observation = ProviderTurnObservation::new(
+            session_id,
+            turn_id,
+            adapter,
+            canonical_path,
+            scope_id.clone(),
+            window_id.clone(),
+            snapshot.used(),
+            UnixMillis::new(command.started_at),
+        );
+        let stale_before = UnixMillis::new(
+            command
+                .started_at
+                .saturating_sub(TURN_OBSERVATION_STALE_AFTER_MILLIS),
+        );
+        let result = self
+            .database
+            .turn_observations()
+            .begin(&observation, stale_before)?;
+
+        Ok(TurnObservationStartResult {
+            status: match result.status {
+                BeginObservationStatus::Started => TurnObservationStartStatus::Started,
+                BeginObservationStatus::AlreadyStarted => {
+                    TurnObservationStartStatus::AlreadyStarted
+                }
+            },
+            contended: result.contended,
+            window_id: window_id.to_string(),
+            scope_id: scope_id.map(|value| value.to_string()),
+        })
+    }
+
+    pub fn provider_turn_observation(
+        &mut self,
+        command: GetProviderTurnObservation,
+    ) -> ApplicationResult<Option<ProviderTurnObservationSummary>> {
+        let session_id = required_request_text(command.session_id, "session ID")?;
+        let turn_id = required_request_text(command.turn_id, "turn ID")?;
+        Ok(self
+            .database
+            .turn_observations()
+            .get(&session_id, &turn_id)?
+            .map(|observation| ProviderTurnObservationSummary {
+                canonical_path: observation.canonical_path().to_owned(),
+                window_id: observation.window_id().to_string(),
+                scope_id: observation.scope_id().map(ToString::to_string),
+                contended: observation.contended(),
+            }))
+    }
+
+    pub fn reconcile_provider_turn_observation(
+        &mut self,
+        command: ReconcileProviderTurnObservation,
+    ) -> ApplicationResult<TurnReconciliationResult> {
+        let session_id = required_request_text(command.session_id, "session ID")?;
+        let turn_id = required_request_text(command.turn_id, "turn ID")?;
+        let current_window_id = WindowId::new(command.current_window_id)?;
+        let usage_event_id = UsageEventId::new(format!("codex-hook:{session_id}:{turn_id}"))?;
+        let result = self.database.turn_observations().reconcile(
+            &session_id,
+            &turn_id,
+            &current_window_id,
+            usage_event_id,
+            UnixMillis::new(command.observed_at),
+        )?;
+
+        Ok(match result {
+            ReconcileObservationResult::Attributed {
+                amount,
+                scope_id,
+                window_id,
+            } => TurnReconciliationResult {
+                status: TurnReconciliationStatus::Attributed,
+                amount: Some(amount),
+                scope_id: Some(scope_id.to_string()),
+                window_id: Some(window_id.to_string()),
+            },
+            ReconcileObservationResult::NoUsage => {
+                empty_reconciliation(TurnReconciliationStatus::NoUsage)
+            }
+            ReconcileObservationResult::Ambiguous => {
+                empty_reconciliation(TurnReconciliationStatus::Ambiguous)
+            }
+            ReconcileObservationResult::Unmapped => {
+                empty_reconciliation(TurnReconciliationStatus::Unmapped)
+            }
+            ReconcileObservationResult::WindowRolledOver => {
+                empty_reconciliation(TurnReconciliationStatus::WindowRolledOver)
+            }
+            ReconcileObservationResult::SnapshotUnavailable => {
+                empty_reconciliation(TurnReconciliationStatus::SnapshotUnavailable)
+            }
+            ReconcileObservationResult::Missing => {
+                empty_reconciliation(TurnReconciliationStatus::Missing)
+            }
+        })
+    }
+
+    pub fn abandon_provider_turn_observation(
+        &mut self,
+        command: AbandonProviderTurnObservation,
+    ) -> ApplicationResult<bool> {
+        let session_id = required_request_text(command.session_id, "session ID")?;
+        let turn_id = required_request_text(command.turn_id, "turn ID")?;
+        Ok(self
+            .database
+            .turn_observations()
+            .abandon(&session_id, &turn_id)?)
+    }
+
+    pub fn abandon_provider_session_observations(
+        &mut self,
+        command: AbandonProviderSessionObservations,
+    ) -> ApplicationResult<usize> {
+        let session_id = required_request_text(command.session_id, "session ID")?;
+        Ok(self
+            .database
+            .turn_observations()
+            .abandon_session(&session_id)?)
     }
 
     pub fn create_scope(&mut self, command: CreateScope) -> ApplicationResult<()> {
@@ -810,6 +983,15 @@ impl QuotaService {
 
 fn arithmetic_overflow() -> ApplicationError {
     crate::domain::DomainError::ArithmeticOverflow.into()
+}
+
+fn empty_reconciliation(status: TurnReconciliationStatus) -> TurnReconciliationResult {
+    TurnReconciliationResult {
+        status,
+        amount: None,
+        scope_id: None,
+        window_id: None,
+    }
 }
 
 fn required_request_text(value: String, field: &str) -> ApplicationResult<String> {

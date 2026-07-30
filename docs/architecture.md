@@ -4,8 +4,9 @@ This document describes the intended architecture. The repository currently
 contains the provider-neutral domain, local SQLite storage, application
 services, Tauri command boundary, and a Codex discovery/synchronization adapter.
 Folder-based workspace mapping and a lightweight context CLI are implemented;
-provider-refreshing admission dry runs are also implemented, while
-managed-session execution remains planned.
+provider-refreshing admission dry runs and experimental Codex lifecycle-hook
+attribution are also implemented, while managed-session execution remains
+planned.
 
 ## Goals
 
@@ -41,8 +42,9 @@ src-tauri/src/
   application/               Use cases and orchestration
   storage/                   Local persistence and migrations
   providers/
-    codex/                   First provider adapter
-  bin/aqm.rs                 Workspace context, binding, and admission dry run
+    codex.rs                 Quota discovery and synchronization
+    codex_hooks.rs           Desktop lifecycle observation and hook config
+  bin/aqm.rs                 Context, admission, and Codex hook entrypoint
 ```
 
 ## Component responsibilities
@@ -110,16 +112,41 @@ controls into the core model. Each adapter reports capabilities at runtime; see
 The current Codex adapter discovers and synchronizes aggregate quota. Its
 checkpoint application is shared by desktop refresh and CLI admission, and can
 be tested with a fabricated detection result without spawning Codex. It does
-not yet launch a user session or expose session-level consumption.
+not yet launch a user session. An experimental lifecycle-hook adapter brackets
+Codex desktop turns with provider checkpoints and records an inferred scoped
+delta only when that turn is the sole active observation for the window.
 
 ### CLI wrapper
 
 The CLI resolves and explicitly binds the current folder through the shared
 application and storage layers. `aqm admit codex` refreshes the relevant
 checkpoint and evaluates the effective admission boundary without launching a
-process. The first managed workflow should be `aqm run codex`, with the CLI
-owning the child process lifecycle without duplicating policy or storage logic
-in command handlers. See [CLI](cli.md).
+process. `aqm hook codex` is a fail-open lifecycle entrypoint used by installed
+Codex hooks; it is not a managed launch. The first managed workflow should still
+be `aqm run codex`, with the CLI owning the child process lifecycle without
+duplicating policy or storage logic in command handlers. See [CLI](cli.md).
+
+## Observed Codex desktop turn
+
+1. `UserPromptSubmit` supplies session ID, turn ID, and working folder.
+2. AQM resolves the nearest folder binding and refreshes the selected Codex
+   checkpoint.
+3. A minimal active-turn row stores the baseline, window, optional scope, and
+   whether another turn overlaps it.
+4. `Stop` refreshes the checkpoint again.
+5. The end checkpoint minus the baseline becomes an immutable scoped usage
+   event only when the window is unchanged, the folder is mapped, and no turn
+   overlapped.
+6. Zero deltas create no event. Rollover, concurrency, missing checkpoints, and
+   unmapped folders remain represented by the aggregate provider total rather
+   than fabricated attribution.
+7. `SessionEnd` cleans unfinished rows; stale rows are also pruned at the next
+   turn start.
+
+The hooks are observation, not enforcement. Codex supplies a complete
+lifecycle event on stdin, but AQM deserializes and persists only session/turn
+identity, event type, and folder metadata. It does not deserialize the prompt,
+assistant response, or transcript path.
 
 ## Managed-session flow
 
