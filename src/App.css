@@ -128,6 +128,15 @@ h3,
   border-color: #d7dcd5;
 }
 
+.button.danger-action {
+  color: white;
+  background: var(--danger);
+}
+
+.button.danger-action:hover:not(:disabled) {
+  background: #b93c3c;
+}
+
 .button.small {
   min-height: 32px;
   padding: 0 11px;
@@ -1052,6 +1061,71 @@ h3,
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 0 3px rgba(200, 247, 107, 0.08);
+}
+
+.source-context-menu {
+  position: fixed;
+  z-index: 80;
+  width: 168px;
+  padding: 5px;
+  border: 1px solid #d9ddd7;
+  border-radius: 10px;
+  background: white;
+  box-shadow: 0 14px 36px rgba(24, 33, 28, 0.2);
+}
+
+.source-context-menu button {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--danger);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.source-context-menu button:hover {
+  background: rgba(211, 76, 76, 0.08);
+}
+
+.delete-source-confirmation {
+  display: grid;
+  gap: 18px;
+}
+
+.delete-source-confirmation > p {
+  color: #69736c;
+  line-height: 1.55;
+}
+
+.delete-source-confirmation > p:first-child {
+  padding: 14px;
+  border: 1px solid #e0e4de;
+  border-radius: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #f7f8f5;
+}
+
+.delete-source-confirmation strong {
+  color: var(--ink);
+}
+
+.delete-source-confirmation span {
+  font-size: 12px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
 }
 
 .local-card {

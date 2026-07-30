@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type {
   AllocationSnapshot,
   LocalState,
@@ -16,7 +17,7 @@ type DashboardProps = {
   onEditAllocation: (scope: ScopeSummary) => void;
   onRecordUsage: (scopeId?: string) => void;
   onRefresh: () => void;
-  onRemoveSource: () => void;
+  onRemoveSource: (source: QuotaSourceSummary) => void;
   removingSource: boolean;
 };
 
@@ -196,6 +197,27 @@ export function Dashboard({
   onRemoveSource,
   removingSource,
 }: DashboardProps) {
+  const [sourceMenu, setSourceMenu] = useState<{
+    source: QuotaSourceSummary;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!sourceMenu) {
+      return;
+    }
+    const close = () => setSourceMenu(null);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("blur", close);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("blur", close);
+      window.removeEventListener("resize", close);
+    };
+  }, [sourceMenu]);
+
   const dashboard = state.dashboard;
   const source = state.sources.find(
     (candidate) => candidate.windowId === state.selectedWindowId,
@@ -205,10 +227,10 @@ export function Dashboard({
     return null;
   }
 
-  const { window } = dashboard;
-  const used = Math.max(0, window.capacity - window.providerRemaining);
-  const usedPercent = window.capacity
-    ? Math.min(100, Math.round((used / window.capacity) * 100))
+  const { window: quotaWindow } = dashboard;
+  const used = Math.max(0, quotaWindow.capacity - quotaWindow.providerRemaining);
+  const usedPercent = quotaWindow.capacity
+    ? Math.min(100, Math.round((used / quotaWindow.capacity) * 100))
     : 0;
   const allocationByScope = new Map(
     dashboard.allocations.map((allocation) => [allocation.scopeId, allocation]),
@@ -265,6 +287,14 @@ export function Dashboard({
                 type="button"
                 key={item.windowId}
                 onClick={() => onSelectSource(item.windowId)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setSourceMenu({
+                    source: item,
+                    x: Math.min(event.clientX, window.innerWidth - 180),
+                    y: Math.min(event.clientY, window.innerHeight - 64),
+                  });
+                }}
               >
                 <span className="source-avatar">
                   {item.providerDisplayName.slice(0, 2).toUpperCase()}
@@ -322,7 +352,7 @@ export function Dashboard({
             <button
               className="icon-button bordered danger"
               type="button"
-              onClick={onRemoveSource}
+              onClick={() => onRemoveSource(source)}
               disabled={removingSource}
               aria-label="Remove quota source"
               title="Remove quota source"
@@ -355,8 +385,8 @@ export function Dashboard({
                 {source.isActive ? "Active window" : "Inactive window"}
                 <small>{formatLastSync(source.lastSyncedAt)}</small>
               </div>
-              <h2>{formatAmount(window.providerSpendable, window.unit)}</h2>
-              <p>available from {formatAmount(window.capacity, window.unit)}</p>
+              <h2>{formatAmount(quotaWindow.providerSpendable, quotaWindow.unit)}</h2>
+              <p>available from {formatAmount(quotaWindow.capacity, quotaWindow.unit)}</p>
               <div className="window-range">
                 <Icon name="calendar" size={17} />
                 {dateRange(source)} · {formatReset(source.endsAt)}
@@ -374,17 +404,17 @@ export function Dashboard({
                 <Icon name="folder" size={19} />
               </span>
               <p>Allocated</p>
-              <strong>{formatAmount(window.allocatedToRootScopes, window.unit)}</strong>
-              <small>{formatAmount(window.unallocated, window.unit)} unallocated</small>
+              <strong>{formatAmount(quotaWindow.allocatedToRootScopes, quotaWindow.unit)}</strong>
+              <small>{formatAmount(quotaWindow.unallocated, quotaWindow.unit)} unallocated</small>
             </article>
             <article className="metric-card">
               <span className="metric-icon violet">
                 <Icon name="activity" size={19} />
               </span>
               <p>Observed usage</p>
-              <strong>{formatAmount(used, window.unit)}</strong>
+              <strong>{formatAmount(used, quotaWindow.unit)}</strong>
               <small>
-                {formatAmount(window.unattributedUsage, window.unit)} unattributed
+                {formatAmount(quotaWindow.unattributedUsage, quotaWindow.unit)} unattributed
               </small>
             </article>
             <article className="metric-card">
@@ -392,8 +422,8 @@ export function Dashboard({
                 <Icon name="calendar" size={19} />
               </span>
               <p>Reset</p>
-              <strong>{formatReset(window.endsAt).split(" ")[0]}</strong>
-              <small>{new Date(window.endsAt).toLocaleString()}</small>
+              <strong>{formatReset(quotaWindow.endsAt).split(" ")[0]}</strong>
+              <small>{new Date(quotaWindow.endsAt).toLocaleString()}</small>
             </article>
             <article className="metric-card">
               <span className="metric-icon blue">
@@ -440,7 +470,7 @@ export function Dashboard({
                   key={scope.id}
                   scope={scope}
                   allocation={allocationByScope.get(scope.id)}
-                  unit={window.unit}
+                  unit={quotaWindow.unit}
                   onEdit={() => onEditAllocation(scope)}
                   onRecord={() => onRecordUsage(scope.id)}
                 />
@@ -472,6 +502,27 @@ export function Dashboard({
           )}
         </section>
       </main>
+      {sourceMenu && (
+        <div
+          className="source-context-menu"
+          role="menu"
+          aria-label={`${sourceMenu.source.providerDisplayName} source actions`}
+          style={{ left: sourceMenu.x, top: sourceMenu.y }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onRemoveSource(sourceMenu.source);
+              setSourceMenu(null);
+            }}
+          >
+            <Icon name="trash" size={16} />
+            Delete source
+          </button>
+        </div>
+      )}
     </div>
   );
 }

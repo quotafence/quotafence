@@ -20,6 +20,7 @@ import {
 import type {
   LocalState,
   QuotaSourceInput,
+  QuotaSourceSummary,
   ScopeInput,
   ScopeSummary,
   UsageInput,
@@ -30,6 +31,7 @@ type ModalState =
   | { type: "scope" }
   | { type: "allocation"; scope: ScopeSummary }
   | { type: "usage"; scopeId?: string }
+  | { type: "remove-source"; source: QuotaSourceSummary }
   | null;
 
 function LoadingScreen() {
@@ -262,22 +264,13 @@ function App() {
     }
   }
 
-  async function handleRemoveSource() {
-    if (!selectedSource) {
-      return;
-    }
-    const confirmed = window.confirm(
-      `Remove ${selectedSource.providerDisplayName} · ${selectedSource.poolDisplayName}?\n\nIts usage history will stay in the local ledger.`,
-    );
-    if (!confirmed) {
-      return;
-    }
-
+  async function handleRemoveSource(source: QuotaSourceSummary) {
     setSubmitting(true);
     setError(null);
     try {
-      await archiveQuotaSource(selectedSource.poolId);
+      await archiveQuotaSource(source.poolId);
       await loadState();
+      setModal(null);
     } catch (reason) {
       setError(getErrorMessage(reason));
     } finally {
@@ -350,7 +343,7 @@ function App() {
         onEditAllocation={(scope) => setModal({ type: "allocation", scope })}
         onRecordUsage={(scopeId) => setModal({ type: "usage", scopeId })}
         onRefresh={handleRefresh}
-        onRemoveSource={handleRemoveSource}
+        onRemoveSource={(source) => setModal({ type: "remove-source", source })}
         removingSource={submitting}
       />
 
@@ -374,6 +367,48 @@ function App() {
             submitting={submitting}
             submitLabel="Add quota source"
           />
+        </Modal>
+      )}
+
+      {modal?.type === "remove-source" && (
+        <Modal
+          eyebrow="Quota source"
+          title="Delete this source?"
+          onClose={() => {
+            if (!submitting) {
+              setModal(null);
+            }
+          }}
+        >
+          <div className="delete-source-confirmation">
+            <p>
+              <strong>{modal.source.providerDisplayName}</strong>
+              <span>{modal.source.poolDisplayName}</span>
+            </p>
+            <p>
+              This removes the source from the active list. Its existing usage
+              history stays in your local ledger.
+            </p>
+            <div className="modal-actions">
+              <button
+                className="button outline"
+                type="button"
+                disabled={submitting}
+                onClick={() => setModal(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="button danger-action"
+                type="button"
+                disabled={submitting}
+                onClick={() => void handleRemoveSource(modal.source)}
+              >
+                <Icon name="trash" size={17} />
+                {submitting ? "Deleting…" : "Delete source"}
+              </button>
+            </div>
+          </div>
         </Modal>
       )}
 
