@@ -108,5 +108,10 @@ snapshot and rolls the local window forward when its reset boundary changes.
 `archive_quota_source` hides a quota pool from active selection while retaining
 its windows, allocations, snapshots, and append-only usage history.
 
+`get_quota_dashboard` also returns a calculated depletion forecast. The signal
+is derived locally from reconciled managed sessions, carries its evidence and
+confidence, and omits a precise rate or timestamp when the minimum evidence
+gate is not met.
+
 ID creation remains a caller concern for now, allowing the frontend to keep a
 stable identity when retrying a request.

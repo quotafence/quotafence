@@ -32,14 +32,16 @@ The repository currently has:
 - a provider-refreshing `aqm admit codex` dry run with stable policy outcomes;
 - a persisted `aqm run codex` managed-session lifecycle with atomic reservation,
   direct process supervision, pre/post checkpoint reconciliation, terminal
-  cleanup, and Unix orphan recovery; and
+  cleanup, and Unix orphan recovery;
 - experimental Codex desktop turn attribution through official lifecycle
-  hooks, with contention and rollover kept unattributed; and
+  hooks, with contention and rollover kept unattributed;
 - persisted workspace policy overrides shared by dashboard, CLI admission, and
-  managed launch, with audited confirmation acceptance.
+  managed launch, with audited confirmation acceptance; and
+- an evidence-gated managed burn rate and depletion signal for the active
+  provider window.
 
 It does **not** yet have in-flight usage enforcement, cross-platform orphan
-recovery, exact token accounting, or burn-rate forecasting.
+recovery, or exact token accounting.
 
 ## Gap to an end-to-end Codex slice
 
@@ -54,7 +56,7 @@ recovery, exact token accounting, or burn-rate forecasting.
 | Reconciliation | Implemented for exact delta, zero, ambiguity, rollover, and failure | Retry/recovery improvements from real usage |
 | Policy | Persisted workspace override, then application default | Add provider-specific policy only with evidence |
 | Enforcement | Warn, confirm, or refuse an AQM-managed launch | Live termination only with a timely signal |
-| Forecasting | None | Depletion estimate based on trustworthy history |
+| Forecasting | Managed-session burn rate with evidence gate | Refine from real history and stronger provider signals |
 | Routing | None | Deferred until one provider loop is reliable |
 
 ## Milestones
@@ -186,7 +188,7 @@ confirmation boundary and starts the managed session. Stop refuses launch.
 Live termination remains intentionally unsupported because the aggregate Codex
 checkpoint is not a timely in-flight signal.
 
-### M6 — Burn rate and depletion signal
+### M6 — Burn rate and depletion signal — complete
 
 - Derive burn rate from reconciled managed-session history, not dashboard
   refresh frequency.
@@ -197,9 +199,16 @@ checkpoint is not a timely in-flight signal.
 Verification: fixed-clock tests for sparse history, no usage, steady usage,
 bursty usage, and reset boundaries.
 
+Implemented as a pure, fixed-clock application calculation over terminal
+managed-session reconciliation in the current window. A precise signal requires
+two trustworthy samples, one hour of observation, and at least 50% attribution
+coverage. The dashboard shows the observation duration and confidence; sparse,
+mostly unattributed, pre-window, and expired-window states omit the burn rate
+and depletion timestamp. Codex aggregate checkpoints cap confidence at medium.
+
 ### Later — Capability-aware routing
 
-Only after M1–M5 work end to end should AQM evaluate another provider. Routing
+Only after M1–M6 work end to end should AQM evaluate another provider. Routing
 will need workload priority/deadline plus comparable provider capabilities,
 quota, credits, cost, and concurrency. It must not sum unlike units into one
 fictional balance.

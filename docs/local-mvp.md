@@ -41,7 +41,8 @@ For the selected quota window, the UI can:
 - prevent duplicate active bindings to the same detected provider limit;
 - archive a quota source without deleting its ledger history;
 - show folder-level reservations and policy decisions;
-- configure per-folder warn, confirmation, and stop thresholds; and
+- configure per-folder warn, confirmation, and stop thresholds;
+- show an evidence-gated managed burn rate and depletion signal; and
 - switch between locally configured quota sources.
 
 Creating a workspace, its first allocation, and its folder binding is atomic.
@@ -66,7 +67,6 @@ This milestone does not:
 - split concurrent Codex turns across folders;
 - accept manual usage estimates as a substitute for automatic attribution;
 - enforce live in-flight quota movement;
-- forecast depletion from session history;
 - archive scopes; or
 - run as a background daemon.
 

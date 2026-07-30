@@ -1,5 +1,6 @@
 mod commands;
 mod error;
+mod forecast;
 mod service;
 mod view;
 
@@ -16,10 +17,11 @@ pub use commands::{
 pub use error::{ApplicationError, ApplicationResult};
 pub use service::QuotaService;
 pub use view::{
-    ActiveManagedSession, AdmissionAssessment, AllocationSnapshot, LocalState,
-    ManagedSessionLaunch, ManagedSessionReconciliation, ManagedSessionReconciliationStatus,
-    PolicySummary, ProviderTurnObservationSummary, QuotaDashboard, QuotaSourceSummary,
-    ScopeSummary, SyncProviderQuotaResult, TurnObservationStartResult, TurnObservationStartStatus,
+    ActiveManagedSession, AdmissionAssessment, AllocationSnapshot, DepletionForecast,
+    DepletionForecastStatus, ForecastConfidence, LocalState, ManagedSessionLaunch,
+    ManagedSessionReconciliation, ManagedSessionReconciliationStatus, PolicySummary,
+    ProviderTurnObservationSummary, QuotaDashboard, QuotaSourceSummary, ScopeSummary,
+    SyncProviderQuotaResult, TurnObservationStartResult, TurnObservationStartStatus,
     TurnReconciliationResult, TurnReconciliationStatus, WindowSummary, WorkspaceAllocationContext,
     WorkspaceBindingSummary, WorkspaceContext, WorkspacePolicySummary,
 };

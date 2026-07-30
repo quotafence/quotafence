@@ -47,6 +47,12 @@ window, the aggregate delta remains unattributed. Each folder can persist its
 own warn, confirmation, and stop thresholds; both the desktop and CLI resolve
 that override before falling back to the application defaults.
 
+The dashboard derives a conservative managed burn rate from reconciled sessions
+in the current window. It shows a depletion signal only after at least two
+trustworthy samples, one hour of observation, and 50% attribution coverage.
+Sparse or mostly unattributed history stays explicitly “insufficient” instead
+of producing a precise-looking ETA.
+
 The desktop UI remains useful for setup and policy visibility, but dashboard
 analytics alone are not the product. Longer term, the same control layer may
 route work using provider quota, credit, cost, concurrency, priority, and

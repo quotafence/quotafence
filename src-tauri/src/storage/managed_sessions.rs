@@ -185,6 +185,31 @@ impl<'connection> ManagedSessionRepository<'connection> {
             .map(validate_row)
             .collect()
     }
+
+    pub fn list_reconciled_for_window(
+        &self,
+        window_id: &WindowId,
+    ) -> StorageResult<Vec<ManagedSession>> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, adapter, pool_id, window_id, scope_id, reservation_id,
+                    canonical_path, status, reconciliation_status, supervisor_pid,
+                    child_pid, created_at, started_at, finished_at, exit_code,
+                    baseline_used, baseline_observed_at, contended,
+                    reconciled_amount, reconciled_at, reconciliation_outcome
+             FROM managed_sessions
+             WHERE window_id = ?1
+               AND status IN ('completed', 'failed', 'interrupted')
+               AND reconciliation_status = 'reconciled'
+               AND reconciliation_outcome IN ('attributed', 'no_usage', 'ambiguous')
+             ORDER BY reconciled_at, id",
+        )?;
+        let rows = statement.query_map([window_id.as_str()], decode_row)?;
+        rows.map(|row| row.map_err(StorageError::from))
+            .collect::<StorageResult<Vec<_>>>()?
+            .into_iter()
+            .map(validate_row)
+            .collect()
+    }
 }
 
 pub(crate) fn insert_starting(
