@@ -13,6 +13,7 @@ The `src-tauri/src/storage` module provides:
 - ordered, transactional schema migrations;
 - catalog repositories for providers, accounts, pools, windows, and scopes;
 - atomic quota-source onboarding;
+- provider-source identity checks and soft archival;
 - atomic scope-and-initial-allocation creation;
 - transactional hierarchical allocation writes;
 - capacity-checked reservations;
@@ -63,6 +64,14 @@ most one absolute provider reading, and a later sync replaces it. Dashboard
 reconciliation takes the greater of that reading and locally observed usage, so
 refreshing cannot double-count the provider total.
 
+Detected sources receive a normalized identity derived from the adapter,
+provider limit, and window kind. Only one active quota pool may own that
+identity. Archiving sets a timestamp on the pool rather than cascading deletes,
+which allows the source to be added again while preserving its historical
+windows and ledger records. The active source list selects one current, or
+otherwise latest, window per pool so rollover history is not presented as a
+second source.
+
 ## Transactions
 
 Allocation writes acquire an immediate transaction before checking capacity:
@@ -96,4 +105,4 @@ Migration rules:
 
 - encryption at rest;
 - backup, export, or restore;
-- pruning or archival policy.
+- automated retention or pruning policy.

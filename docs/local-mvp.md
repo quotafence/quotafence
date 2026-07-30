@@ -35,6 +35,8 @@ For the selected quota window, the UI can:
 - record observed usage against a scope or as unattributed usage;
 - refresh the selected Codex source on startup or on demand;
 - carry allocations into the next provider reset window;
+- prevent duplicate active bindings to the same detected provider limit;
+- archive a quota source without deleting its ledger history;
 - show hierarchical debiting, reservations, and policy decisions; and
 - switch between locally configured quota sources.
 
@@ -57,7 +59,7 @@ This milestone does not:
 - attribute a provider-confirmed total to individual projects automatically;
 - persist per-scope policy or enforce it during admission;
 - forecast depletion from session history;
-- delete or archive sources and scopes; or
+- archive scopes; or
 - run as a background daemon.
 
 The next vertical slice starts with repository binding and a read-only CLI

@@ -8,6 +8,7 @@ import { ScopeForm } from "./components/ScopeForm";
 import { SourceSetupForm } from "./components/SourceSetupForm";
 import { UsageForm } from "./components/UsageForm";
 import {
+  archiveQuotaSource,
   createAllocatedScope,
   createQuotaSource,
   getErrorMessage,
@@ -261,6 +262,29 @@ function App() {
     }
   }
 
+  async function handleRemoveSource() {
+    if (!selectedSource) {
+      return;
+    }
+    const confirmed = window.confirm(
+      `Remove ${selectedSource.providerDisplayName} · ${selectedSource.poolDisplayName}?\n\nIts usage history will stay in the local ledger.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      await archiveQuotaSource(selectedSource.poolId);
+      await loadState();
+    } catch (reason) {
+      setError(getErrorMessage(reason));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   if (initializing) {
     return <LoadingScreen />;
   }
@@ -326,6 +350,8 @@ function App() {
         onEditAllocation={(scope) => setModal({ type: "allocation", scope })}
         onRecordUsage={(scopeId) => setModal({ type: "usage", scopeId })}
         onRefresh={handleRefresh}
+        onRemoveSource={handleRemoveSource}
+        removingSource={submitting}
       />
 
       {error && (

@@ -15,6 +15,7 @@ type IconName =
   | "shield"
   | "spark"
   | "task"
+  | "trash"
   | "x";
 
 type IconProps = SVGProps<SVGSVGElement> & {
@@ -84,6 +85,12 @@ const paths: Record<IconName, ReactNode> = {
     <>
       <rect x="4" y="4" width="16" height="16" rx="3" />
       <path d="m8 12 2.5 2.5L16 9" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13" />
+      <path d="M10 11v5M14 11v5" />
     </>
   ),
   x: <path d="m6 6 12 12M18 6 6 18" />,

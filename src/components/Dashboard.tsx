@@ -16,6 +16,8 @@ type DashboardProps = {
   onEditAllocation: (scope: ScopeSummary) => void;
   onRecordUsage: (scopeId?: string) => void;
   onRefresh: () => void;
+  onRemoveSource: () => void;
+  removingSource: boolean;
 };
 
 const kindIcons: Record<
@@ -191,6 +193,8 @@ export function Dashboard({
   onEditAllocation,
   onRecordUsage,
   onRefresh,
+  onRemoveSource,
+  removingSource,
 }: DashboardProps) {
   const dashboard = state.dashboard;
   const source = state.sources.find(
@@ -314,6 +318,16 @@ export function Dashboard({
               aria-label="Refresh"
             >
               <Icon name="refresh" size={18} className={refreshing ? "spin" : ""} />
+            </button>
+            <button
+              className="icon-button bordered danger"
+              type="button"
+              onClick={onRemoveSource}
+              disabled={removingSource}
+              aria-label="Remove quota source"
+              title="Remove quota source"
+            >
+              <Icon name="trash" size={17} />
             </button>
             <button className="button dark" type="button" onClick={onAddScope}>
               <Icon name="plus" size={18} />

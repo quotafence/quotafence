@@ -15,6 +15,7 @@ pub fn run() {
             commands::create_quota_pool,
             commands::create_quota_window,
             commands::create_quota_source,
+            commands::archive_quota_source,
             commands::create_scope,
             commands::create_allocated_scope,
             commands::set_allocation,

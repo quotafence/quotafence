@@ -57,6 +57,10 @@ impl From<StorageError> for IpcError {
                 Self::new("not_found", format!("{entity} {id} was not found"))
             }
             StorageError::InvalidState { message } => Self::new("inconsistent_data", message),
+            StorageError::DuplicateSource { .. } => Self::new(
+                "duplicate_source",
+                "This provider quota source is already active. Remove the existing source before adding it again.",
+            ),
             StorageError::NumericOutOfRange { field, value } => Self::new(
                 "numeric_out_of_range",
                 format!("{field} value {value} cannot be stored"),

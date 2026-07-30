@@ -158,6 +158,12 @@ h3,
   border: 1px solid #d9ddd7;
 }
 
+.icon-button.danger:hover:not(:disabled) {
+  border-color: rgba(211, 76, 76, 0.45);
+  color: var(--danger);
+  background: rgba(211, 76, 76, 0.08);
+}
+
 .text-button {
   padding: 5px;
   border: 0;

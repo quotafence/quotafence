@@ -26,6 +26,7 @@ The approved product commands are:
 - `create_quota_pool`
 - `create_quota_window`
 - `create_quota_source`
+- `archive_quota_source`
 - `create_scope`
 - `create_allocated_scope`
 - `set_allocation`
@@ -71,6 +72,7 @@ Stable codes currently include:
 - `validation_error`
 - `not_found`
 - `conflict`
+- `duplicate_source`
 - `insufficient_capacity`
 - `inconsistent_data`
 - `invalid_stored_data`
@@ -92,6 +94,8 @@ subscription rate-limit metadata. It does not accept a command string from the
 webview and returns sanitized detection states instead of raw process errors.
 `sync_codex_quota` applies the selected provider window as an absolute local
 snapshot and rolls the local window forward when its reset boundary changes.
+`archive_quota_source` hides a quota pool from active selection while retaining
+its windows, allocations, snapshots, and append-only usage history.
 
 ID creation remains a caller concern for now, allowing the frontend to keep a
 stable identity when retrying a request.

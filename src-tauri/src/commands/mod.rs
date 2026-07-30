@@ -11,9 +11,10 @@ use serde::Serialize;
 use tauri::{Manager, Runtime, State};
 
 use crate::application::{
-    CreateAccount, CreateAllocatedScope, CreateProvider, CreateQuotaPool, CreateQuotaSource,
-    CreateQuotaWindow, CreateScope, GetLocalState, GetQuotaDashboard, LocalState, QuotaDashboard,
-    RecordUsage, ReleaseReservation, ReserveQuota, SetAllocation, SyncProviderQuota,
+    ArchiveQuotaSource, CreateAccount, CreateAllocatedScope, CreateProvider, CreateQuotaPool,
+    CreateQuotaSource, CreateQuotaWindow, CreateScope, GetLocalState, GetQuotaDashboard,
+    LocalState, QuotaDashboard, RecordUsage, ReleaseReservation, ReserveQuota, SetAllocation,
+    SyncProviderQuota,
 };
 use crate::providers::codex::{self, CodexDetection, DetectedQuotaWindow, DetectionStatus};
 
@@ -69,6 +70,14 @@ pub(crate) fn create_quota_source(
     request: CreateQuotaSource,
 ) -> IpcResult<()> {
     state.execute(|service| service.create_quota_source(request))
+}
+
+#[tauri::command]
+pub(crate) fn archive_quota_source(
+    state: State<'_, AppState>,
+    request: ArchiveQuotaSource,
+) -> IpcResult<()> {
+    state.execute(|service| service.archive_quota_source(request))
 }
 
 #[tauri::command]

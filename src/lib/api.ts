@@ -60,6 +60,15 @@ export async function createQuotaSource(
   });
 }
 
+export async function archiveQuotaSource(poolId: string): Promise<void> {
+  await invoke("archive_quota_source", {
+    request: {
+      poolId,
+      archivedAt: Date.now(),
+    },
+  });
+}
+
 export async function createScope(input: ScopeInput): Promise<string> {
   const scopeId = createId(input.kind);
 
