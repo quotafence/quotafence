@@ -130,6 +130,52 @@ pub struct SyncProviderQuotaResult {
     pub rolled_over: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnObservationStartStatus {
+    Started,
+    AlreadyStarted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnObservationStartResult {
+    pub status: TurnObservationStartStatus,
+    pub contended: bool,
+    pub window_id: String,
+    pub scope_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderTurnObservationSummary {
+    pub canonical_path: String,
+    pub window_id: String,
+    pub scope_id: Option<String>,
+    pub contended: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnReconciliationStatus {
+    Attributed,
+    NoUsage,
+    Ambiguous,
+    Unmapped,
+    WindowRolledOver,
+    SnapshotUnavailable,
+    Missing,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnReconciliationResult {
+    pub status: TurnReconciliationStatus,
+    pub amount: Option<u64>,
+    pub scope_id: Option<String>,
+    pub window_id: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AllocationSnapshot {

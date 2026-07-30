@@ -56,7 +56,7 @@ Current capability status:
 | Reset rollover | Implemented |
 | Workspace binding | Implemented for any local folder |
 | Managed user session | Not implemented |
-| Automatic attribution | Not implemented |
+| Automatic attribution | Experimental for one uncontended Codex desktop turn |
 | Admission assessment | Implemented as a dry run; not wired to launch |
 | Live hard stop | Not supported |
 
@@ -75,9 +75,25 @@ The current Codex adapter implements quota discovery and synchronization:
 - carry allocations into a fresh local window after the provider reset; and
 - stop the transient App Server process after the snapshot is returned.
 
-Only structured quota metadata crosses the adapter boundary. It does not read
-`auth.json`, Codex session JSONL, prompts, source files, or account email.
-Malformed, incomplete, and out-of-range provider responses are rejected.
+Only structured quota metadata crosses the quota-detection adapter boundary.
+It does not read `auth.json`, Codex session JSONL, prompts, source files, or
+account email. Malformed, incomplete, and out-of-range provider responses are
+rejected.
+
+The experimental desktop integration uses official Codex lifecycle hooks:
+
+- `UserPromptSubmit` records a provider checkpoint baseline for the event's
+  working folder;
+- `Stop` refreshes and reconciles the provider delta;
+- `SessionEnd` removes unfinished observations; and
+- hook failures are fail-open and never stop a Codex turn.
+
+Codex sends the complete lifecycle JSON to the command hook. AQM's typed input
+intentionally ignores prompt, assistant-message, and transcript fields and
+persists only lifecycle identifiers and folder metadata. Because the provider
+checkpoint is an account-wide integer percentage, the resulting workspace
+attribution is `inferred`, may remain unchanged for a small turn, and is never
+split across concurrent turns.
 
 The remaining Codex vertical slice is:
 

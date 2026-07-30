@@ -124,6 +124,47 @@ pub struct SyncProviderQuota {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BeginProviderTurnObservation {
+    pub session_id: String,
+    pub turn_id: String,
+    pub adapter: String,
+    pub canonical_path: String,
+    pub scope_id: Option<String>,
+    pub window_id: String,
+    pub started_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetProviderTurnObservation {
+    pub session_id: String,
+    pub turn_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReconcileProviderTurnObservation {
+    pub session_id: String,
+    pub turn_id: String,
+    pub current_window_id: String,
+    pub observed_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AbandonProviderTurnObservation {
+    pub session_id: String,
+    pub turn_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AbandonProviderSessionObservations {
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateScope {
     pub id: String,
     pub parent_id: Option<String>,
