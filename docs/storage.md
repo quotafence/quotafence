@@ -19,6 +19,7 @@ The `src-tauri/src/storage` module provides:
 - transactional folder-allocation writes;
 - capacity-checked reservations;
 - minimal active provider-turn observations for checkpoint reconciliation;
+- persisted managed-session process state linked to its workspace reservation;
 - atomic usage recording and reservation consumption; and
 - append-only usage events.
 
@@ -51,6 +52,7 @@ providers
             ├── provider_turn_observations ── scopes (optional)
             ├── allocations ── scopes
             ├── reservations ─ scopes
+            ├── managed_sessions ─ reservations, scopes
             └── usage_events ─ scopes (optional)
 
 workspace_bindings ── workspace scopes
@@ -92,6 +94,13 @@ baseline usage, start time, and a contention flag. They are transient
 reconciliation state rather than usage history. Prompt text, assistant output,
 transcript contents, source code, and credentials are not stored.
 
+Migration 7 adds `managed_sessions`. Each row links one adapter, provider pool,
+quota window, workspace scope, canonical folder, and reservation to minimal
+process lifecycle metadata. A partial unique index permits only one starting or
+running managed session per provider pool. Reconciliation state is separate
+from process outcome so the next milestone can record an unavailable
+checkpoint without rewriting whether the child completed or failed.
+
 ## Transactions
 
 Allocation writes acquire an immediate transaction before checking capacity:
@@ -106,6 +115,9 @@ only top-level workspace allocations.
 
 Reservation admission also uses an immediate transaction. It subtracts existing
 attributed usage and active reservations before inserting a new reservation.
+Managed-session admission inserts its reservation and starting record in that
+same transaction. A terminal session transition and reservation release also
+commit atomically.
 
 Recording usage and consuming its reservation happen in one transaction. If the
 reservation is missing, inactive, or belongs to another scope/window, the usage

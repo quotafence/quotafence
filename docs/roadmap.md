@@ -30,14 +30,14 @@ The repository currently has:
 - reset-window rollover that carries allocations without carrying old usage;
 - canonical folder workspace bindings and a read-only `aqm context` CLI;
 - a provider-refreshing `aqm admit codex` dry run with stable policy outcomes;
-  and
+- a persisted `aqm run codex` managed-session lifecycle with atomic reservation,
+  direct process supervision, terminal cleanup, and Unix orphan recovery; and
 - experimental Codex desktop turn attribution through official lifecycle
   hooks, with contention and rollover kept unattributed.
 
-It does **not** yet have managed-session records, provider process supervision,
-automatic attribution for managed launches,
-persisted per-scope policy, process-level admission enforcement, or burn-rate
-forecasting.
+It does **not** yet have automatic attribution for managed launches, persisted
+per-scope policy, in-flight usage enforcement, cross-platform orphan recovery,
+or burn-rate forecasting.
 
 ## Gap to an end-to-end Codex slice
 
@@ -46,8 +46,8 @@ forecasting.
 | Provider checkpoint | Implemented | Reused before and after managed work |
 | Window rollover | Implemented | Covered during session reconciliation |
 | Workspace context | Implemented | Reused for admission and managed launch |
-| Managed launch | Detection process only | AQM owns the Codex child lifecycle and exit result |
-| Reservation | Domain/storage implemented; not in daily workflow | Admission reserves capacity before spawn |
+| Managed launch | Implemented in `aqm run codex` | Reused by reconciliation and persisted policy |
+| Reservation | Implemented before managed spawn | Consumed or released by reconciliation |
 | Attribution | Experimental inferred desktop-turn deltas; no user-entered estimates | Managed session result produces scoped observed usage |
 | Reconciliation | Provider total affects dashboard | Pre/post session delta is reconciled without false precision |
 | Policy | In-memory standard thresholds drive dry-run admission | Persisted effective policy drives managed launch |
@@ -120,7 +120,7 @@ This milestone makes ordinary Codex app usage observable but does not make it
 AQM-managed. Hook trust is user-controlled, hooks are fail-open, and aggregate
 integer percentage checkpoints cannot expose exact token consumption.
 
-### M3 — One managed Codex session
+### M3 — One managed Codex session — complete
 
 - Implement `aqm run codex -- [args]`.
 - Persist a minimal session record before spawning the process.
@@ -133,6 +133,12 @@ integer percentage checkpoints cannot expose exact token consumption.
 
 Verification: process tests using a fake executable for successful, failed,
 interrupted, and crash-recovery paths. No real Codex call is required in CI.
+
+Implemented as `aqm run codex`. The wrapper owns the child process, inherits
+the terminal, forwards Unix termination signals, preserves the provider exit
+code, and atomically pairs a persisted starting session with its reservation.
+Terminal transitions release that reservation, and the next invocation
+recovers active records whose supervisor process no longer exists on Unix.
 
 ### M4 — Automatic attribution and reconciliation
 

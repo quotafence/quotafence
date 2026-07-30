@@ -25,56 +25,10 @@ impl<'connection> LedgerRepository<'connection> {
     }
 
     pub fn reserve(&mut self, reservation: &Reservation, at: UnixMillis) -> StorageResult<()> {
-        if reservation.status() != ReservationStatus::Active || !reservation.is_active_at(at) {
-            return Err(StorageError::InvalidState {
-                message: format!(
-                    "reservation {} must be active at the admission timestamp",
-                    reservation.id()
-                ),
-            });
-        }
-
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let requested = to_sql_integer(reservation.amount().value(), "reservation amount")?;
-        let lineage = scope_lineage(&transaction, reservation.scope_id())?;
-
-        for budget_scope_id in lineage {
-            let (allocation, unit) = allocation_amount_and_unit(
-                &transaction,
-                &budget_scope_id,
-                reservation.window_id(),
-            )?;
-            ensure_unit(reservation.amount().unit(), &unit)?;
-
-            let usage = attributed_usage_for_scope_tree(
-                &transaction,
-                &budget_scope_id,
-                reservation.window_id(),
-            )?;
-            let active_reservations = active_reservations_for_scope_tree(
-                &transaction,
-                &budget_scope_id,
-                reservation.window_id(),
-                at,
-            )?;
-            let committed = usage
-                .checked_add(active_reservations)
-                .ok_or_else(arithmetic_overflow)?;
-            let available = allocation.saturating_sub(committed);
-
-            if requested > available {
-                return Err(StorageError::InsufficientCapacity {
-                    scope_id: budget_scope_id.to_string(),
-                    requested: reservation.amount().value(),
-                    available: from_sql_integer(available, "available capacity")?,
-                    unit: unit.to_string(),
-                });
-            }
-        }
-
-        insert_reservation(&transaction, reservation)?;
+        reserve_in_transaction(&transaction, reservation, at)?;
         transaction.commit()?;
         Ok(())
     }
@@ -418,6 +372,57 @@ fn window_unit(transaction: &Transaction<'_>, window_id: &WindowId) -> StorageRe
         })?;
 
     Ok(QuotaUnit::new(unit)?)
+}
+
+pub(crate) fn reserve_in_transaction(
+    transaction: &Transaction<'_>,
+    reservation: &Reservation,
+    at: UnixMillis,
+) -> StorageResult<()> {
+    if reservation.status() != ReservationStatus::Active || !reservation.is_active_at(at) {
+        return Err(StorageError::InvalidState {
+            message: format!(
+                "reservation {} must be active at the admission timestamp",
+                reservation.id()
+            ),
+        });
+    }
+
+    let requested = to_sql_integer(reservation.amount().value(), "reservation amount")?;
+    let lineage = scope_lineage(transaction, reservation.scope_id())?;
+
+    for budget_scope_id in lineage {
+        let (allocation, unit) =
+            allocation_amount_and_unit(transaction, &budget_scope_id, reservation.window_id())?;
+        ensure_unit(reservation.amount().unit(), &unit)?;
+
+        let usage = attributed_usage_for_scope_tree(
+            transaction,
+            &budget_scope_id,
+            reservation.window_id(),
+        )?;
+        let active_reservations = active_reservations_for_scope_tree(
+            transaction,
+            &budget_scope_id,
+            reservation.window_id(),
+            at,
+        )?;
+        let committed = usage
+            .checked_add(active_reservations)
+            .ok_or_else(arithmetic_overflow)?;
+        let available = allocation.saturating_sub(committed);
+
+        if requested > available {
+            return Err(StorageError::InsufficientCapacity {
+                scope_id: budget_scope_id.to_string(),
+                requested: reservation.amount().value(),
+                available: from_sql_integer(available, "available capacity")?,
+                unit: unit.to_string(),
+            });
+        }
+    }
+
+    insert_reservation(transaction, reservation)
 }
 
 fn insert_reservation(

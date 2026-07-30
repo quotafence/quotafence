@@ -2,8 +2,8 @@
 
 The lightweight `aqm` binary shares the Rust application, provider adapter, and
 SQLite storage layers with the desktop app. It implements workspace identity,
-binding, Codex admission dry runs, and an experimental Codex lifecycle-hook
-entrypoint. It does not launch or enforce a coding-agent session yet.
+binding, Codex admission dry runs, one managed Codex process, and an
+experimental Codex lifecycle-hook entrypoint.
 
 ## Development usage
 
@@ -98,6 +98,49 @@ The command starts the official local Codex App Server only long enough to read
 the subscription checkpoint. It does not launch a coding session, reserve
 capacity, or read or modify workspace files.
 
+## Managed Codex session
+
+Run Codex through the allocation bound to the current folder:
+
+```bash
+npm run aqm -- run codex
+```
+
+The wrapper:
+
+1. on Unix, recovers orphaned managed sessions whose supervisor process no
+   longer exists;
+2. resolves the nearest bound workspace and refreshes its Codex checkpoint;
+3. evaluates the workspace and provider policy boundary;
+4. reserves the workspace's current spendable capacity;
+5. starts the resolved Codex executable directly in that folder with inherited
+   stdin, stdout, and stderr;
+6. forwards `SIGINT` and `SIGTERM` on Unix and preserves ordinary Codex exit
+   codes; and
+7. atomically marks the session terminal and releases its reservation.
+
+Confirmation-required launches need an explicit override:
+
+```bash
+npm run aqm -- run codex --yes
+```
+
+`--yes` never overrides a stop decision. Pass Codex arguments after a separator
+so they cannot be confused with AQM options:
+
+```bash
+npm run aqm -- run codex -- --model gpt-5
+```
+
+The child is spawned with an argument vector, never an interpolated shell
+command. AQM resolves Codex from `AGENT_QUOTA_CODEX_BIN`, `PATH`, and supported
+installation locations. It stores folder and process metadata, but does not
+read prompts, source files, transcripts, or provider credentials.
+
+This milestone owns admission and process lifecycle, but does not yet attribute
+the post-session provider delta. The reservation is released at exit; M4 will
+replace it with observed usage when reconciliation is unambiguous.
+
 ## Experimental Codex desktop tracking
 
 Install user-level lifecycle hooks with the development CLI:
@@ -164,8 +207,8 @@ path remains future work.
 
 ## Current boundary
 
-`aqm context`, `aqm admit codex`, and the experimental hook entrypoint now
-cover:
+`aqm context`, `aqm admit codex`, `aqm run codex`, and the experimental hook
+entrypoint now cover:
 
 - canonical current folder and nearest bound workspace;
 - bound workspace scope;
@@ -173,9 +216,14 @@ cover:
 - allocation limit, remaining capacity, and current policy decision;
 - pre-admission Codex refresh and reset rollover;
 - effective policy assessment across workspace and provider capacity;
+- persisted managed-session lifecycle and one active reservation per provider
+  pool;
+- direct child-process launch, inherited terminal, signal forwarding, exit-code
+  preservation, and orphan recovery;
 - per-turn provider baselines and rollover-safe reconciliation; and
 - inferred attribution for one uncontended mapped Codex desktop turn.
 
-The CLI still does not reserve capacity, launch an agent, or enforce a decision
-against a process. Hook attribution is observed rather than managed. Those
-behaviors begin with the managed-session milestone.
+Managed launches now refuse stop decisions and require `--yes` at a
+confirmation boundary. They do not yet reconcile their own provider delta,
+persist per-workspace policy overrides, or terminate a running process because
+of live quota movement. Hook attribution remains observed rather than managed.

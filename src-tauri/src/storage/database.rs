@@ -5,10 +5,12 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use crate::domain::{Account, Allocation, Provider, QuotaPool, QuotaWindow, Scope, WindowId};
 
 use super::{
-    allocations::set_in_transaction, migrations, provider_snapshots,
+    allocations::set_in_transaction, ledger::reserve_in_transaction, managed_sessions, migrations,
+    provider_snapshots,
     workspace_bindings::insert_in_transaction as insert_workspace_binding_in_transaction,
-    AllocationRepository, CatalogRepository, LedgerRepository, ProviderQuotaSnapshot,
-    StorageResult, WorkspaceBinding,
+    AllocationRepository, CatalogRepository, LedgerRepository, ManagedSessionRepository,
+    ManagedSessionStatus, NewManagedSession, ProviderQuotaSnapshot, StorageResult,
+    WorkspaceBinding,
 };
 
 pub struct Database {
@@ -59,6 +61,10 @@ impl Database {
         super::TurnObservationRepository::new(&mut self.connection)
     }
 
+    pub fn managed_sessions(&self) -> ManagedSessionRepository<'_> {
+        ManagedSessionRepository::new(&self.connection)
+    }
+
     pub fn schema_version(&self) -> StorageResult<i64> {
         Ok(self.connection.query_row(
             "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
@@ -89,6 +95,45 @@ impl Database {
         CatalogRepository::new(&transaction).insert_scope(scope)?;
         set_in_transaction(&transaction, allocation)?;
         insert_workspace_binding_in_transaction(&transaction, binding)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn start_managed_session(
+        &mut self,
+        reservation: &crate::domain::Reservation,
+        session: &NewManagedSession,
+        admitted_at: crate::domain::UnixMillis,
+    ) -> StorageResult<()> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        reserve_in_transaction(&transaction, reservation, admitted_at)?;
+        managed_sessions::insert_starting(&transaction, session)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn mark_managed_session_running(
+        &self,
+        id: &str,
+        child_pid: u32,
+        started_at: i64,
+    ) -> StorageResult<()> {
+        managed_sessions::mark_running(&self.connection, id, child_pid, started_at)
+    }
+
+    pub fn finish_managed_session(
+        &mut self,
+        id: &str,
+        status: ManagedSessionStatus,
+        finished_at: i64,
+        exit_code: Option<i32>,
+    ) -> StorageResult<()> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        managed_sessions::finish_and_release(&transaction, id, status, finished_at, exit_code)?;
         transaction.commit()?;
         Ok(())
     }

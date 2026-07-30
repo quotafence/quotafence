@@ -10,24 +10,27 @@ use crate::{
         Scope, ScopeId, UnixMillis, UsageAttribution, UsageEvent, UsageEventId, WindowId,
     },
     storage::{
-        BeginObservationStatus, Database, ProviderQuotaSnapshot, ProviderTurnObservation,
-        ReconcileObservationResult, StorageError, WorkspaceBinding,
+        BeginObservationStatus, Database, ManagedSessionStatus, NewManagedSession,
+        ProviderQuotaSnapshot, ProviderTurnObservation, ReconcileObservationResult, StorageError,
+        WorkspaceBinding,
     },
     workspace::{contains_path, path_depth},
 };
 
 use super::{
     error::to_view_integer, AbandonProviderSessionObservations, AbandonProviderTurnObservation,
-    AdmissionAssessment, AllocationSnapshot, ApplicationError, ApplicationResult,
-    ArchiveQuotaSource, BeginProviderTurnObservation, BindWorkspace, CreateAccount,
-    CreateAllocatedScope, CreateAllocatedWorkspace, CreateProvider, CreateQuotaPool,
-    CreateQuotaSource, CreateQuotaWindow, CreateScope, EvaluateWorkspaceAdmission, GetLocalState,
-    GetProviderTurnObservation, GetQuotaDashboard, GetWorkspaceContext, LocalState,
-    ProviderTurnObservationSummary, QuotaDashboard, QuotaSourceSummary,
-    ReconcileProviderTurnObservation, RecordUsage, ReleaseReservation, ReserveQuota, ScopeSummary,
-    SetAllocation, SyncProviderQuota, SyncProviderQuotaResult, TurnObservationStartResult,
-    TurnObservationStartStatus, TurnReconciliationResult, TurnReconciliationStatus, WindowSummary,
-    WorkspaceAllocationContext, WorkspaceBindingSummary, WorkspaceContext,
+    ActiveManagedSession, AdmissionAssessment, AllocationSnapshot, ApplicationError,
+    ApplicationResult, ArchiveQuotaSource, BeginProviderTurnObservation, BindWorkspace,
+    CreateAccount, CreateAllocatedScope, CreateAllocatedWorkspace, CreateProvider, CreateQuotaPool,
+    CreateQuotaSource, CreateQuotaWindow, CreateScope, EvaluateWorkspaceAdmission,
+    FinishManagedSession, GetLocalState, GetProviderTurnObservation, GetQuotaDashboard,
+    GetWorkspaceContext, LocalState, ManagedSessionLaunch, ManagedSessionOutcome,
+    MarkManagedSessionRunning, PrepareManagedSession, ProviderTurnObservationSummary,
+    QuotaDashboard, QuotaSourceSummary, ReconcileProviderTurnObservation, RecordUsage,
+    ReleaseReservation, ReserveQuota, ScopeSummary, SetAllocation, SyncProviderQuota,
+    SyncProviderQuotaResult, TurnObservationStartResult, TurnObservationStartStatus,
+    TurnReconciliationResult, TurnReconciliationStatus, WindowSummary, WorkspaceAllocationContext,
+    WorkspaceBindingSummary, WorkspaceContext,
 };
 
 const TURN_OBSERVATION_STALE_AFTER_MILLIS: i64 = 12 * 60 * 60 * 1_000;
@@ -629,6 +632,141 @@ impl QuotaService {
         })
     }
 
+    pub fn prepare_managed_session(
+        &mut self,
+        command: PrepareManagedSession,
+    ) -> ApplicationResult<ManagedSessionLaunch> {
+        let session_id = required_request_text(command.id, "managed session ID")?;
+        let reservation_id = required_request_text(command.reservation_id, "reservation ID")?;
+        let provider_id = required_request_text(command.provider_id, "provider ID")?;
+        if command.supervisor_pid == 0 {
+            return Err(ApplicationError::InvalidRequest {
+                message: "managed session supervisor PID must be greater than zero".to_owned(),
+            });
+        }
+
+        let assessment = self.evaluate_workspace_admission(EvaluateWorkspaceAdmission {
+            canonical_path: command.canonical_path,
+            provider_id: provider_id.clone(),
+            at: command.admitted_at,
+        })?;
+        match assessment.decision {
+            crate::domain::EnforcementDecision::Stop => {
+                return Err(ApplicationError::InvalidRequest {
+                    message: format!(
+                        "AQM refused to launch {} because the workspace or provider budget is exhausted",
+                        assessment.provider_display_name
+                    ),
+                });
+            }
+            crate::domain::EnforcementDecision::RequireConfirmation if !command.assume_yes => {
+                return Err(ApplicationError::InvalidRequest {
+                    message: "managed launch requires confirmation; re-run with --yes".to_owned(),
+                });
+            }
+            _ => {}
+        }
+
+        let reserved_amount = u64::try_from(assessment.allocation_remaining).map_err(|_| {
+            ApplicationError::InvalidRequest {
+                message: format!(
+                    "workspace {} has no spendable quota to reserve",
+                    assessment.scope_display_name
+                ),
+            }
+        })?;
+        if reserved_amount == 0 {
+            return Err(ApplicationError::InvalidRequest {
+                message: format!(
+                    "workspace {} has no spendable quota to reserve",
+                    assessment.scope_display_name
+                ),
+            });
+        }
+
+        let admitted_at = UnixMillis::new(command.admitted_at);
+        let reservation = Reservation::new(
+            ReservationId::new(reservation_id.clone())?,
+            ScopeId::new(assessment.scope_id.clone())?,
+            WindowId::new(assessment.window_id.clone())?,
+            QuotaAmount::new(reserved_amount, QuotaUnit::new(assessment.unit.clone())?),
+            admitted_at,
+            UnixMillis::new(command.expires_at),
+        )?;
+        let session = NewManagedSession {
+            id: session_id.clone(),
+            adapter: provider_id,
+            pool_id: assessment.pool_id.clone(),
+            window_id: assessment.window_id.clone(),
+            scope_id: assessment.scope_id.clone(),
+            reservation_id: reservation_id.clone(),
+            canonical_path: assessment.canonical_path.clone(),
+            supervisor_pid: command.supervisor_pid,
+            created_at: command.admitted_at,
+        };
+        self.database
+            .start_managed_session(&reservation, &session, admitted_at)?;
+
+        Ok(ManagedSessionLaunch {
+            session_id,
+            reservation_id,
+            reserved_amount,
+            assessment,
+        })
+    }
+
+    pub fn mark_managed_session_running(
+        &mut self,
+        command: MarkManagedSessionRunning,
+    ) -> ApplicationResult<()> {
+        if command.child_pid == 0 {
+            return Err(ApplicationError::InvalidRequest {
+                message: "managed session child PID must be greater than zero".to_owned(),
+            });
+        }
+        self.database.mark_managed_session_running(
+            &required_request_text(command.id, "managed session ID")?,
+            command.child_pid,
+            command.started_at,
+        )?;
+        Ok(())
+    }
+
+    pub fn finish_managed_session(
+        &mut self,
+        command: FinishManagedSession,
+    ) -> ApplicationResult<()> {
+        let status = match command.outcome {
+            ManagedSessionOutcome::Completed => ManagedSessionStatus::Completed,
+            ManagedSessionOutcome::Failed => ManagedSessionStatus::Failed,
+            ManagedSessionOutcome::Interrupted => ManagedSessionStatus::Interrupted,
+        };
+        self.database.finish_managed_session(
+            &required_request_text(command.id, "managed session ID")?,
+            status,
+            command.finished_at,
+            command.exit_code,
+        )?;
+        Ok(())
+    }
+
+    pub fn active_managed_sessions(&self) -> ApplicationResult<Vec<ActiveManagedSession>> {
+        self.database
+            .managed_sessions()
+            .list_active()?
+            .into_iter()
+            .map(|session| {
+                Ok(ActiveManagedSession {
+                    session_id: session.id,
+                    reservation_id: session.reservation_id,
+                    pool_id: session.pool_id,
+                    canonical_path: session.canonical_path,
+                    supervisor_pid: session.supervisor_pid,
+                })
+            })
+            .collect()
+    }
+
     fn provider_decision(
         &self,
         window: &WindowSummary,
@@ -1035,9 +1173,10 @@ mod tests {
         application::{
             ArchiveQuotaSource, BindWorkspace, CreateAccount, CreateAllocatedScope,
             CreateAllocatedWorkspace, CreateProvider, CreateQuotaPool, CreateQuotaSource,
-            CreateQuotaWindow, CreateScope, EvaluateWorkspaceAdmission, GetLocalState,
-            GetQuotaDashboard, GetWorkspaceContext, ProviderQuotaSnapshotInput, RecordUsage,
-            ReserveQuota, SetAllocation, SyncProviderQuota,
+            CreateQuotaWindow, CreateScope, EvaluateWorkspaceAdmission, FinishManagedSession,
+            GetLocalState, GetQuotaDashboard, GetWorkspaceContext, ManagedSessionOutcome,
+            MarkManagedSessionRunning, PrepareManagedSession, ProviderQuotaSnapshotInput,
+            RecordUsage, ReserveQuota, SetAllocation, SyncProviderQuota,
         },
         domain::{Confidence, EnforcementDecision, ScopeKind, UsageSource},
         storage::Database,
@@ -1157,6 +1296,131 @@ mod tests {
             .iter()
             .find(|snapshot| snapshot.scope_id == scope_id)
             .unwrap()
+    }
+
+    fn managed_workspace_service() -> QuotaService {
+        let mut service = configured_service();
+        service
+            .create_allocated_workspace(CreateAllocatedWorkspace {
+                id: "workspace-a".to_owned(),
+                display_name: "Workspace A".to_owned(),
+                canonical_path: "/code/workspace-a".to_owned(),
+                window_id: "week-1".to_owned(),
+                amount: 30,
+                unit: "quota_points".to_owned(),
+                bound_at: 1_500,
+            })
+            .unwrap();
+        service
+    }
+
+    fn prepare_session(
+        service: &mut QuotaService,
+        id: &str,
+        reservation_id: &str,
+    ) -> ManagedSessionLaunch {
+        service
+            .prepare_managed_session(PrepareManagedSession {
+                id: id.to_owned(),
+                reservation_id: reservation_id.to_owned(),
+                canonical_path: "/code/workspace-a".to_owned(),
+                provider_id: "codex".to_owned(),
+                assume_yes: false,
+                admitted_at: 2_000,
+                expires_at: 8_000,
+                supervisor_pid: 42,
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn managed_session_reserves_before_start_and_releases_on_completion() {
+        let mut service = managed_workspace_service();
+        let launch = prepare_session(&mut service, "session-1", "session-1-reservation");
+
+        assert_eq!(launch.reserved_amount, 30);
+        assert_eq!(service.active_managed_sessions().unwrap().len(), 1);
+        let reserved = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+        assert_eq!(snapshot(&reserved, "workspace-a").active_reservations, 30);
+
+        service
+            .mark_managed_session_running(MarkManagedSessionRunning {
+                id: "session-1".to_owned(),
+                child_pid: 84,
+                started_at: 2_100,
+            })
+            .unwrap();
+        service
+            .finish_managed_session(FinishManagedSession {
+                id: "session-1".to_owned(),
+                outcome: ManagedSessionOutcome::Completed,
+                finished_at: 4_000,
+                exit_code: Some(0),
+            })
+            .unwrap();
+
+        assert!(service.active_managed_sessions().unwrap().is_empty());
+        let released = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 4_000,
+            })
+            .unwrap();
+        assert_eq!(snapshot(&released, "workspace-a").active_reservations, 0);
+    }
+
+    #[test]
+    fn active_managed_reservation_prevents_a_competing_launch() {
+        let mut service = managed_workspace_service();
+        prepare_session(&mut service, "session-1", "session-1-reservation");
+
+        let error = service
+            .prepare_managed_session(PrepareManagedSession {
+                id: "session-2".to_owned(),
+                reservation_id: "session-2-reservation".to_owned(),
+                canonical_path: "/code/workspace-a".to_owned(),
+                provider_id: "codex".to_owned(),
+                assume_yes: false,
+                admitted_at: 2_100,
+                expires_at: 8_000,
+                supervisor_pid: 43,
+            })
+            .unwrap_err();
+
+        let message = error.to_string();
+        assert!(
+            message.contains("refused") || message.contains("spendable"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn interrupted_starting_session_releases_its_reservation() {
+        let mut service = managed_workspace_service();
+        prepare_session(&mut service, "session-1", "session-1-reservation");
+
+        service
+            .finish_managed_session(FinishManagedSession {
+                id: "session-1".to_owned(),
+                outcome: ManagedSessionOutcome::Interrupted,
+                finished_at: 3_000,
+                exit_code: None,
+            })
+            .unwrap();
+
+        assert!(service.active_managed_sessions().unwrap().is_empty());
+        let dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+        assert_eq!(snapshot(&dashboard, "workspace-a").active_reservations, 0);
     }
 
     #[test]

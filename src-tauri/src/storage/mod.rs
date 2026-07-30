@@ -4,6 +4,7 @@ mod codec;
 mod database;
 mod error;
 mod ledger;
+mod managed_sessions;
 mod migrations;
 mod provider_snapshots;
 mod turn_observations;
@@ -17,6 +18,10 @@ pub use catalog::CatalogRepository;
 pub use database::Database;
 pub use error::{StorageError, StorageResult};
 pub use ledger::LedgerRepository;
+pub use managed_sessions::{
+    ManagedSession, ManagedSessionRepository, ManagedSessionStatus, NewManagedSession,
+    ReconciliationStatus,
+};
 pub use provider_snapshots::ProviderQuotaSnapshot;
 pub use turn_observations::{
     BeginObservationResult, BeginObservationStatus, ProviderTurnObservation,

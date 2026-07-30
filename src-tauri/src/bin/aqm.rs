@@ -1,14 +1,20 @@
 use std::{
     env, fs, io,
     path::PathBuf,
-    process::ExitCode,
-    time::{SystemTime, UNIX_EPOCH},
+    process::{Child, Command, ExitCode, ExitStatus, Stdio},
+    sync::{
+        atomic::{AtomicI32, Ordering},
+        Mutex,
+    },
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use agent_quota_manager_lib::{
     application::{
-        AdmissionAssessment, BindWorkspace, EvaluateWorkspaceAdmission, GetWorkspaceContext,
-        QuotaService, WorkspaceContext,
+        AdmissionAssessment, BindWorkspace, EvaluateWorkspaceAdmission, FinishManagedSession,
+        GetWorkspaceContext, ManagedSessionOutcome, MarkManagedSessionRunning,
+        PrepareManagedSession, QuotaService, WorkspaceContext,
     },
     domain::EnforcementDecision,
     paths,
@@ -25,6 +31,9 @@ const EXIT_ERROR: u8 = 1;
 const EXIT_WARN: u8 = 10;
 const EXIT_CONFIRM: u8 = 20;
 const EXIT_STOP: u8 = 30;
+const SESSION_RESERVATION_MILLIS: i64 = 24 * 60 * 60 * 1_000;
+static FORWARDED_SIGNAL: AtomicI32 = AtomicI32::new(0);
+static SIGNAL_HANDLER_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug)]
 enum CliCommand {
@@ -37,6 +46,11 @@ enum CliCommand {
         options: CommonOptions,
         provider_id: String,
         assume_yes: bool,
+    },
+    RunCodex {
+        options: CommonOptions,
+        assume_yes: bool,
+        agent_args: Vec<String>,
     },
     HookCodex(CommonOptions),
     Hooks {
@@ -169,6 +183,11 @@ fn run(args: Vec<String>) -> Result<u8, String> {
             )?;
             Ok(exit_code)
         }
+        CliCommand::RunCodex {
+            options,
+            assume_yes,
+            agent_args,
+        } => run_managed_codex(options, assume_yes, agent_args),
         CliCommand::HookCodex(options) => {
             // A tracking hook must never break the Codex turn it observes.
             // Diagnostics are opt-in so normal Codex sessions remain quiet.
@@ -230,6 +249,325 @@ fn run(args: Vec<String>) -> Result<u8, String> {
             Ok(EXIT_ALLOW)
         }
     }
+}
+
+fn run_managed_codex(
+    options: CommonOptions,
+    assume_yes: bool,
+    agent_args: Vec<String>,
+) -> Result<u8, String> {
+    let executable = codex::resolve_executable().ok_or_else(|| {
+        "Codex CLI was not found; install Codex or set AGENT_QUOTA_CODEX_BIN".to_owned()
+    })?;
+    let (mut service, canonical_path) = open_context(&options)?;
+    let now = now_millis()?;
+    recover_orphaned_sessions(&mut service, now)?;
+
+    let context = service
+        .workspace_context(GetWorkspaceContext {
+            canonical_path: canonical_path.clone(),
+            at: now,
+        })
+        .map_err(|error| error.to_string())?;
+    let allocation = provider_allocation(&context, "codex")?;
+    let checkpoint = codex::sync_detection(
+        &mut service,
+        allocation.window_id.clone(),
+        now,
+        codex::detect(),
+    );
+    match checkpoint.status {
+        CodexSyncStatus::Synced => {}
+        CodexSyncStatus::NotApplicable => {
+            return Err(format!(
+                "{} is not a provider-managed Codex percentage source",
+                allocation.pool_display_name
+            ));
+        }
+        CodexSyncStatus::Unavailable => {
+            return Err(format!(
+                "cannot refresh Codex checkpoint: {}",
+                checkpoint
+                    .message
+                    .as_deref()
+                    .unwrap_or("provider temporarily unavailable")
+            ));
+        }
+    }
+
+    let identity = managed_session_identity(now);
+    let expires_at = now
+        .checked_add(SESSION_RESERVATION_MILLIS)
+        .ok_or_else(|| "managed session reservation expiry overflowed".to_owned())?;
+    let launch = service
+        .prepare_managed_session(PrepareManagedSession {
+            id: identity.0.clone(),
+            reservation_id: identity.1,
+            canonical_path: canonical_path.clone(),
+            provider_id: "codex".to_owned(),
+            assume_yes,
+            admitted_at: now,
+            expires_at,
+            supervisor_pid: std::process::id(),
+        })
+        .map_err(|error| error.to_string())?;
+
+    println!(
+        "AQM: launching Codex for {} with {} {} reserved",
+        launch.assessment.scope_display_name, launch.reserved_amount, launch.assessment.unit
+    );
+    if launch.assessment.decision == EnforcementDecision::Warn {
+        println!("AQM warning: this workspace is approaching its policy boundary.");
+    }
+
+    let mut child = match Command::new(&executable)
+        .args(agent_args)
+        .current_dir(&canonical_path)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(error) => {
+            finish_session_after_error(
+                &mut service,
+                &launch.session_id,
+                ManagedSessionOutcome::Failed,
+                None,
+            )?;
+            return Err(format!(
+                "cannot launch Codex from {}: {error}",
+                executable.display()
+            ));
+        }
+    };
+
+    let started_at = match now_millis() {
+        Ok(started_at) => started_at,
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            finish_session_after_error(
+                &mut service,
+                &launch.session_id,
+                ManagedSessionOutcome::Interrupted,
+                None,
+            )?;
+            return Err(error);
+        }
+    };
+    if let Err(error) = service.mark_managed_session_running(MarkManagedSessionRunning {
+        id: launch.session_id.clone(),
+        child_pid: child.id(),
+        started_at,
+    }) {
+        let _ = child.kill();
+        let _ = child.wait();
+        finish_session_after_error(
+            &mut service,
+            &launch.session_id,
+            ManagedSessionOutcome::Interrupted,
+            None,
+        )?;
+        return Err(format!(
+            "cannot mark managed Codex session as running: {error}"
+        ));
+    }
+
+    let process = match wait_for_managed_child(&mut child) {
+        Ok(process) => process,
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            finish_session_after_error(
+                &mut service,
+                &launch.session_id,
+                ManagedSessionOutcome::Interrupted,
+                None,
+            )?;
+            return Err(error);
+        }
+    };
+    service
+        .finish_managed_session(FinishManagedSession {
+            id: launch.session_id,
+            outcome: process.outcome,
+            finished_at: now_millis()?,
+            exit_code: process.provider_exit_code,
+        })
+        .map_err(|error| error.to_string())?;
+    Ok(process.shell_exit_code)
+}
+
+fn finish_session_after_error(
+    service: &mut QuotaService,
+    session_id: &str,
+    outcome: ManagedSessionOutcome,
+    exit_code: Option<i32>,
+) -> Result<(), String> {
+    service
+        .finish_managed_session(FinishManagedSession {
+            id: session_id.to_owned(),
+            outcome,
+            finished_at: now_millis()?,
+            exit_code,
+        })
+        .map_err(|error| error.to_string())
+}
+
+fn recover_orphaned_sessions(service: &mut QuotaService, recovered_at: i64) -> Result<(), String> {
+    for session in service
+        .active_managed_sessions()
+        .map_err(|error| error.to_string())?
+    {
+        if process_is_running(session.supervisor_pid) {
+            continue;
+        }
+        service
+            .finish_managed_session(FinishManagedSession {
+                id: session.session_id,
+                outcome: ManagedSessionOutcome::Interrupted,
+                finished_at: recovered_at,
+                exit_code: None,
+            })
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+struct ManagedProcessResult {
+    outcome: ManagedSessionOutcome,
+    provider_exit_code: Option<i32>,
+    shell_exit_code: u8,
+}
+
+fn wait_for_managed_child(child: &mut Child) -> Result<ManagedProcessResult, String> {
+    let _signal_guard = SIGNAL_HANDLER_LOCK
+        .lock()
+        .map_err(|_| "managed process signal handler lock is poisoned".to_owned())?;
+    install_signal_forwarding();
+    loop {
+        let status = match child.try_wait() {
+            Ok(status) => status,
+            Err(error) => {
+                reset_signal_forwarding();
+                return Err(format!("cannot read Codex process status: {error}"));
+            }
+        };
+        if let Some(status) = status {
+            reset_signal_forwarding();
+            return Ok(process_result(status, None));
+        }
+
+        let signal = FORWARDED_SIGNAL.swap(0, Ordering::SeqCst);
+        if signal != 0 {
+            forward_signal(child, signal);
+            let status = match child.wait() {
+                Ok(status) => status,
+                Err(error) => {
+                    reset_signal_forwarding();
+                    return Err(format!(
+                        "cannot wait for interrupted Codex process: {error}"
+                    ));
+                }
+            };
+            reset_signal_forwarding();
+            return Ok(process_result(status, Some(signal)));
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn process_result(status: ExitStatus, forwarded_signal: Option<i32>) -> ManagedProcessResult {
+    if let Some(signal) = forwarded_signal {
+        return ManagedProcessResult {
+            outcome: ManagedSessionOutcome::Interrupted,
+            provider_exit_code: status.code(),
+            shell_exit_code: u8::try_from(128_i32.saturating_add(signal)).unwrap_or(EXIT_ERROR),
+        };
+    }
+    match status.code() {
+        Some(0) => ManagedProcessResult {
+            outcome: ManagedSessionOutcome::Completed,
+            provider_exit_code: Some(0),
+            shell_exit_code: EXIT_ALLOW,
+        },
+        Some(code) => ManagedProcessResult {
+            outcome: ManagedSessionOutcome::Failed,
+            provider_exit_code: Some(code),
+            shell_exit_code: u8::try_from(code).unwrap_or(EXIT_ERROR),
+        },
+        None => ManagedProcessResult {
+            outcome: ManagedSessionOutcome::Interrupted,
+            provider_exit_code: None,
+            shell_exit_code: 130,
+        },
+    }
+}
+
+extern "C" fn capture_signal(signal: i32) {
+    FORWARDED_SIGNAL.store(signal, Ordering::SeqCst);
+}
+
+#[cfg(unix)]
+fn install_signal_forwarding() {
+    FORWARDED_SIGNAL.store(0, Ordering::SeqCst);
+    unsafe {
+        libc::signal(
+            libc::SIGINT,
+            capture_signal as *const () as libc::sighandler_t,
+        );
+        libc::signal(
+            libc::SIGTERM,
+            capture_signal as *const () as libc::sighandler_t,
+        );
+    }
+}
+
+#[cfg(not(unix))]
+fn install_signal_forwarding() {
+    FORWARDED_SIGNAL.store(0, Ordering::SeqCst);
+}
+
+#[cfg(unix)]
+fn reset_signal_forwarding() {
+    unsafe {
+        libc::signal(libc::SIGINT, libc::SIG_DFL);
+        libc::signal(libc::SIGTERM, libc::SIG_DFL);
+    }
+}
+
+#[cfg(not(unix))]
+fn reset_signal_forwarding() {}
+
+#[cfg(unix)]
+fn forward_signal(child: &Child, signal: i32) {
+    unsafe {
+        libc::kill(child.id() as i32, signal);
+    }
+}
+
+#[cfg(not(unix))]
+fn forward_signal(child: &mut Child, _signal: i32) {
+    let _ = child.kill();
+}
+
+#[cfg(unix)]
+fn process_is_running(pid: u32) -> bool {
+    let result = unsafe { libc::kill(pid as i32, 0) };
+    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(not(unix))]
+fn process_is_running(_pid: u32) -> bool {
+    true
+}
+
+fn managed_session_identity(now: i64) -> (String, String) {
+    let session_id = format!("managed-codex-{}-{now}", std::process::id());
+    let reservation_id = format!("{session_id}-reservation");
+    (session_id, reservation_id)
 }
 
 fn run_codex_hook(options: &CommonOptions) -> Result<(), String> {
@@ -318,6 +656,9 @@ fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
     if command == "hooks" {
         return parse_hooks_command(&args);
     }
+    if command == "run" {
+        return parse_run_command(&args);
+    }
     if !matches!(command, "context" | "bind" | "admit") {
         return Err(format!("unknown command {command:?}; run `aqm --help`"));
     }
@@ -373,6 +714,47 @@ fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
         }),
         _ => unreachable!("command was validated"),
     }
+}
+
+fn parse_run_command(args: &[String]) -> Result<CliCommand, String> {
+    if args.get(1).map(String::as_str) != Some("codex") {
+        return Err("usage: aqm run codex [--path <directory>] [--yes] -- [codex args]".to_owned());
+    }
+    let mut options = CommonOptions::default();
+    let mut assume_yes = false;
+    let mut index = 2;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--" => {
+                return Ok(CliCommand::RunCodex {
+                    options,
+                    assume_yes,
+                    agent_args: args[index + 1..].to_vec(),
+                });
+            }
+            "--path" => {
+                index += 1;
+                options.path = Some(PathBuf::from(required_value(args, index, "--path")?));
+            }
+            "--database" => {
+                index += 1;
+                options.database = Some(PathBuf::from(required_value(args, index, "--database")?));
+            }
+            "--yes" => assume_yes = true,
+            "-h" | "--help" => return Ok(CliCommand::Help),
+            option => {
+                return Err(format!(
+                    "unknown aqm run option {option:?}; place Codex arguments after --"
+                ))
+            }
+        }
+        index += 1;
+    }
+    Ok(CliCommand::RunCodex {
+        options,
+        assume_yes,
+        agent_args: Vec::new(),
+    })
 }
 
 fn parse_hook_command(args: &[String]) -> Result<CliCommand, String> {
@@ -569,6 +951,7 @@ Usage:
   aqm context [--path <directory>] [--json]
   aqm bind --scope <name-or-id> [--path <directory>] [--json]
   aqm admit codex [--path <directory>] [--yes] [--json]
+  aqm run codex [--path <directory>] [--yes] -- [codex args]
   aqm hook codex [--database <path>]
   aqm hooks <install|status|uninstall> codex
 
@@ -662,6 +1045,93 @@ mod tests {
             admission_exit_code(EnforcementDecision::Stop, true),
             EXIT_STOP
         );
+    }
+
+    #[test]
+    fn managed_run_parses_aqm_options_and_preserves_codex_arguments() {
+        let command = parse_args(vec![
+            "run".to_owned(),
+            "codex".to_owned(),
+            "--path".to_owned(),
+            "/code/project".to_owned(),
+            "--yes".to_owned(),
+            "--".to_owned(),
+            "--model".to_owned(),
+            "gpt-5".to_owned(),
+            "fix the tests".to_owned(),
+        ])
+        .unwrap();
+        let CliCommand::RunCodex {
+            options,
+            assume_yes,
+            agent_args,
+        } = command
+        else {
+            panic!("expected managed Codex run");
+        };
+
+        assert_eq!(options.path.as_deref(), Some(Path::new("/code/project")));
+        assert!(assume_yes);
+        assert_eq!(
+            agent_args,
+            ["--model", "gpt-5", "fix the tests"].map(str::to_owned)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn managed_process_preserves_success_and_failure_exit_codes() {
+        let mut successful = Command::new("/bin/sh")
+            .args(["-c", "exit 0"])
+            .spawn()
+            .unwrap();
+        let success = wait_for_managed_child(&mut successful).unwrap();
+        assert_eq!(success.outcome, ManagedSessionOutcome::Completed);
+        assert_eq!(success.provider_exit_code, Some(0));
+        assert_eq!(success.shell_exit_code, 0);
+
+        let mut failed = Command::new("/bin/sh")
+            .args(["-c", "exit 7"])
+            .spawn()
+            .unwrap();
+        let failure = wait_for_managed_child(&mut failed).unwrap();
+        assert_eq!(failure.outcome, ManagedSessionOutcome::Failed);
+        assert_eq!(failure.provider_exit_code, Some(7));
+        assert_eq!(failure.shell_exit_code, 7);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn managed_process_reports_signal_termination_as_interrupted() {
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "sleep 5"])
+            .spawn()
+            .unwrap();
+        let signal = thread::spawn(|| {
+            thread::sleep(Duration::from_millis(100));
+            FORWARDED_SIGNAL.store(libc::SIGTERM, Ordering::SeqCst);
+        });
+
+        let result = wait_for_managed_child(&mut child).unwrap();
+        signal.join().unwrap();
+
+        assert_eq!(result.outcome, ManagedSessionOutcome::Interrupted);
+        assert_eq!(result.provider_exit_code, None);
+        assert_eq!(result.shell_exit_code, 143);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn orphan_detection_distinguishes_running_and_finished_supervisors() {
+        let mut supervisor = Command::new("/bin/sh")
+            .args(["-c", "sleep 1"])
+            .spawn()
+            .unwrap();
+        let supervisor_pid = supervisor.id();
+
+        assert!(process_is_running(supervisor_pid));
+        supervisor.wait().unwrap();
+        assert!(!process_is_running(supervisor_pid));
     }
 
     #[test]

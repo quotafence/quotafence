@@ -5,8 +5,8 @@ contains the provider-neutral domain, local SQLite storage, application
 services, Tauri command boundary, and a Codex discovery/synchronization adapter.
 Folder-based workspace mapping and a lightweight context CLI are implemented;
 provider-refreshing admission dry runs and experimental Codex lifecycle-hook
-attribution are also implemented, while managed-session execution remains
-planned.
+attribution are also implemented. `aqm run codex` owns one admitted child
+process and reservation; managed usage reconciliation remains planned.
 
 ## Goals
 
@@ -112,7 +112,8 @@ controls into the core model. Each adapter reports capabilities at runtime; see
 The current Codex adapter discovers and synchronizes aggregate quota. Its
 checkpoint application is shared by desktop refresh and CLI admission, and can
 be tested with a fabricated detection result without spawning Codex. It does
-not yet launch a user session. An experimental lifecycle-hook adapter brackets
+not launch user work through the App Server; the CLI wrapper starts the resolved
+Codex executable directly. An experimental lifecycle-hook adapter brackets
 Codex desktop turns with provider checkpoints and records an inferred scoped
 delta only when that turn is the sole active observation for the window.
 
@@ -121,10 +122,10 @@ delta only when that turn is the sole active observation for the window.
 The CLI resolves and explicitly binds the current folder through the shared
 application and storage layers. `aqm admit codex` refreshes the relevant
 checkpoint and evaluates the effective admission boundary without launching a
-process. `aqm hook codex` is a fail-open lifecycle entrypoint used by installed
-Codex hooks; it is not a managed launch. The first managed workflow should still
-be `aqm run codex`, with the CLI owning the child process lifecycle without
-duplicating policy or storage logic in command handlers. See [CLI](cli.md).
+process. `aqm run codex` reuses that application boundary, persists and reserves
+before spawn, supervises the child, and commits its terminal outcome with
+reservation release. `aqm hook codex` is a fail-open lifecycle entrypoint used
+by installed Codex hooks; it is not a managed launch. See [CLI](cli.md).
 
 ## Observed Codex desktop turn
 
@@ -158,6 +159,11 @@ assistant response, or transcript path.
 6. Start and supervise Codex in the workspace working directory.
 7. Persist the exit outcome, refresh the provider checkpoint, and reconcile.
 8. Consume or release the reservation and append immutable attribution events.
+
+Steps 1–6 and the terminal process outcome are implemented. The current M3
+path releases its reservation at exit. M4 will add the post-session checkpoint
+and replace that reservation with observed usage when attribution is
+unambiguous.
 
 An aggregate provider delta is not automatically proof that one session caused
 it. Usage outside a managed session or concurrent work can reduce the same
