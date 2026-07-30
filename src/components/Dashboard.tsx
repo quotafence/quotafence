@@ -31,14 +31,6 @@ function formatAmount(value: number, unit: string): string {
   return `${value.toLocaleString()} ${labelUnit(unit)}`;
 }
 
-function formatShare(value: number, total: number): string {
-  if (total === 0) {
-    return "0%";
-  }
-  const percentage = (value / total) * 100;
-  return `${Number.isInteger(percentage) ? percentage : percentage.toFixed(1)}%`;
-}
-
 function formatReset(endsAt: number): string {
   const remaining = endsAt - Date.now();
   if (remaining <= 0) {
@@ -100,14 +92,12 @@ function AllocationRow({
   scope,
   allocation,
   unit,
-  providerCapacity,
   providerSpendable,
   onEdit,
 }: {
   scope: ScopeSummary;
   allocation?: AllocationSnapshot;
   unit: string;
-  providerCapacity: number;
   providerSpendable: number;
   onEdit: () => void;
 }) {
@@ -140,8 +130,8 @@ function AllocationRow({
         {allocation ? (
           <>
             <div className="progress-meta">
-              <span>{formatAmount(usableNow, unit)} usable now</span>
-              <span>{remainingPercent}% of folder cap</span>
+              <strong>{formatAmount(usableNow, unit)} left</strong>
+              <span>of {formatAmount(allocation.limit, unit)}</span>
             </div>
             <div
               className="progress-track"
@@ -160,15 +150,6 @@ function AllocationRow({
         ) : (
           <span className="unallocated-label">Not allocated in this window</span>
         )}
-      </div>
-
-      <div className="allocation-limit">
-        <strong>{allocation ? formatAmount(allocation.limit, unit) : "—"}</strong>
-        <span>
-          {allocation
-            ? `${formatShare(allocation.limit, providerCapacity)} of total quota`
-            : "No limit"}
-        </span>
       </div>
 
       <div className="row-actions">
@@ -248,17 +229,6 @@ export function Dashboard({
           </div>
         </div>
 
-        <nav className="nav-list" aria-label="Primary">
-          <button className="nav-item active" type="button">
-            <Icon name="gauge" size={19} />
-            Overview
-          </button>
-          <button className="nav-item" type="button" onClick={onAddScope}>
-            <Icon name="folder" size={19} />
-            New allocation
-          </button>
-        </nav>
-
         <div className="sidebar-section">
           <div className="sidebar-label">
             <span>Quota sources</span>
@@ -310,24 +280,10 @@ export function Dashboard({
       <main className="main-content">
         <header className="topbar">
           <div>
-            <p className="eyebrow">Local subscription budget</p>
-            <h1>{source.providerDisplayName} overview</h1>
+            <h1>{source.providerDisplayName}</h1>
+            <p className="topbar-subtitle">{source.poolDisplayName}</p>
           </div>
           <div className="topbar-actions">
-            <label className="source-select">
-              <select
-                value={source.windowId}
-                onChange={(event) => onSelectSource(event.currentTarget.value)}
-                aria-label="Selected quota window"
-              >
-                {state.sources.map((item) => (
-                  <option value={item.windowId} key={item.windowId}>
-                    {item.providerDisplayName} · {item.poolDisplayName}
-                  </option>
-                ))}
-              </select>
-              <Icon name="chevron-down" size={16} />
-            </label>
             <button
               className="icon-button bordered"
               type="button"
@@ -338,110 +294,67 @@ export function Dashboard({
             >
               <Icon name="refresh" size={18} className={refreshing ? "spin" : ""} />
             </button>
-            <button
-              className="icon-button bordered danger"
-              type="button"
-              onClick={() => onRemoveSource(source)}
-              disabled={removingSource}
-              aria-label="Remove quota source"
-              title="Remove quota source"
-            >
-              <Icon name="trash" size={17} />
-            </button>
-            <button className="button dark" type="button" onClick={onAddScope}>
-              <Icon name="plus" size={18} />
-              New allocation
-            </button>
           </div>
         </header>
 
-        <section className="overview-grid">
-          <article className="quota-hero">
+        <section className="quota-summary">
+          <div className="quota-summary-main">
+            <div className="status-line">
+              <span className={`status-dot ${source.isActive ? "active" : ""}`} />
+              {source.isActive ? "Active window" : "Inactive window"}
+              <small>{formatLastSync(source.lastSyncedAt)}</small>
+            </div>
+            <div className="quota-amount">
+              <strong>
+                {formatAmount(
+                  quotaWindow.providerSpendable,
+                  quotaWindow.unit,
+                )}
+              </strong>
+              <span>quota left</span>
+            </div>
             <div
-              className="quota-ring"
+              className="provider-progress"
               role="progressbar"
               aria-label="Provider quota remaining"
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={availablePercent}
-              style={{
-                background: `conic-gradient(var(--accent) ${availablePercent * 3.6}deg, var(--ring-track) 0deg)`,
-              }}
             >
-              <div>
-                <strong>{availablePercent}%</strong>
-                <span>left</span>
-              </div>
+              <span style={{ width: `${availablePercent}%` }} />
             </div>
-            <div className="quota-hero-copy">
-              <div className="status-line">
-                <span className={`status-dot ${source.isActive ? "active" : ""}`} />
-                {source.isActive ? "Active window" : "Inactive window"}
-                <small>{formatLastSync(source.lastSyncedAt)}</small>
-              </div>
-              <h2>{formatAmount(quotaWindow.providerSpendable, quotaWindow.unit)}</h2>
-              <p>available from {formatAmount(quotaWindow.capacity, quotaWindow.unit)}</p>
-              <div className="window-range">
-                <Icon name="calendar" size={17} />
-                {dateRange(source)} · {formatReset(source.endsAt)}
-              </div>
-            </div>
-          </article>
-
-          <div className="metric-grid">
-            <article className="metric-card">
-              <span className="metric-icon green">
-                <Icon name="folder" size={19} />
-              </span>
-              <p>Allocated</p>
-              <strong>{formatAmount(quotaWindow.allocatedToRootScopes, quotaWindow.unit)}</strong>
-              <small>
-                {formatShare(
-                  quotaWindow.allocatedToRootScopes,
-                  quotaWindow.capacity,
-                )}{" "}
-                of total quota · {formatAmount(quotaWindow.unallocated, quotaWindow.unit)}{" "}
-                unallocated
-              </small>
-            </article>
-            <article className="metric-card">
-              <span className="metric-icon violet">
-                <Icon name="activity" size={19} />
-              </span>
-              <p>Unattributed</p>
-              <strong>
-                {formatAmount(quotaWindow.unattributedUsage, quotaWindow.unit)}
-              </strong>
-              <small>not assigned to a workspace</small>
-            </article>
-            <article className="metric-card">
-              <span className="metric-icon amber">
-                <Icon name="calendar" size={19} />
-              </span>
-              <p>Reset</p>
-              <strong>{formatReset(quotaWindow.endsAt).split(" ")[0]}</strong>
-              <small>{new Date(quotaWindow.endsAt).toLocaleString()}</small>
-            </article>
-            <article className="metric-card">
-              <span className="metric-icon blue">
-                <Icon name="shield" size={19} />
-              </span>
-              <p>Enforcement</p>
-              <strong>Policy ready</strong>
-              <small>80 / 90 / 100 thresholds</small>
-            </article>
           </div>
+
+          <dl className="quota-facts">
+            <div>
+              <dt>
+                <Icon name="calendar" size={18} />
+                Resets
+              </dt>
+              <dd>{formatReset(quotaWindow.endsAt)}</dd>
+              <small>{dateRange(source)}</small>
+            </div>
+            <div>
+              <dt>
+                <Icon name="activity" size={18} />
+                Unattributed
+              </dt>
+              <dd>
+                {formatAmount(
+                  quotaWindow.unattributedUsage,
+                  quotaWindow.unit,
+                )}
+              </dd>
+              <small>Not assigned to a workspace</small>
+            </div>
+          </dl>
         </section>
 
         <section className="allocations-section">
           <header className="section-header">
             <div>
-              <p className="eyebrow">Budget map</p>
               <h2>Workspace allocations</h2>
-              <span>
-                Limits are shares of the full provider window; availability also
-                respects the provider quota left now.
-              </span>
+              <span>Quota limits for local folders.</span>
             </div>
             <div className="section-actions">
               <button className="button outline" type="button" onClick={onAddScope}>
@@ -452,9 +365,8 @@ export function Dashboard({
           </header>
 
           <div className="allocation-table-header" aria-hidden="true">
-            <span>Scope</span>
-            <span>Available now</span>
-            <span>Share of total</span>
+            <span>Workspace</span>
+            <span>Remaining</span>
             <span />
           </div>
 
@@ -466,7 +378,6 @@ export function Dashboard({
                   scope={scope}
                   allocation={allocationByScope.get(scope.id)}
                   unit={quotaWindow.unit}
-                  providerCapacity={quotaWindow.capacity}
                   providerSpendable={quotaWindow.providerSpendable}
                   onEdit={() => onEditAllocation(scope)}
                 />
@@ -477,18 +388,15 @@ export function Dashboard({
                   <Icon name="spark" size={24} />
                 </span>
                 <div>
-                  <strong>Start allocating your shared allowance</strong>
-                  <p>
-                    Choose a folder, then give that workspace a clear quota limit.
-                  </p>
+                  <strong>Allocate quota to your first workspace</strong>
+                  <p>Choose a local folder and set its quota limit.</p>
                 </div>
                 <button className="button dark" type="button" onClick={onAddScope}>
-                  Create first allocation
+                  Add workspace
                 </button>
               </div>
             )}
           </div>
-
         </section>
       </main>
       {sourceMenu && (
@@ -502,6 +410,7 @@ export function Dashboard({
           <button
             type="button"
             role="menuitem"
+            disabled={removingSource}
             onClick={() => {
               onRemoveSource(sourceMenu.source);
               setSourceMenu(null);
