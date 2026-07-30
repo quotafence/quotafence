@@ -14,9 +14,9 @@ The `src-tauri/src/storage` module provides:
 - catalog repositories for providers, accounts, pools, windows, and scopes;
 - atomic quota-source onboarding;
 - provider-source identity checks and soft archival;
-- canonical Git-root to repository-scope bindings;
-- atomic scope-and-initial-allocation creation;
-- transactional hierarchical allocation writes;
+- canonical folder to workspace-scope bindings;
+- atomic workspace, initial allocation, and binding creation;
+- transactional folder-allocation writes;
 - capacity-checked reservations;
 - atomic usage recording and reservation consumption; and
 - append-only usage events.
@@ -51,11 +51,11 @@ providers
             ├── reservations ─ scopes
             └── usage_events ─ scopes (optional)
 
-repository_bindings ── repository scopes
+workspace_bindings ── workspace scopes
 ```
 
 Amounts are stored as non-negative SQLite integers. Their unit is defined by the
-quota pool and checked when domain values cross the repository boundary.
+quota pool and checked when domain values cross the storage boundary.
 Timestamps are Unix milliseconds.
 
 Usage events allow a null scope for unattributed provider consumption. Update
@@ -75,18 +75,26 @@ windows and ledger records. The active source list selects one current, or
 otherwise latest, window per pool so rollover history is not presented as a
 second source.
 
-Repository bindings are separate from scopes. The canonical Git worktree root
-is unique, and a repository scope can be bound only once. Binding never creates
-an allocation implicitly, and restrictive foreign keys prevent a bound scope
-from being deleted behind the mapping.
+Workspace bindings are separate from scopes. The canonical folder path is
+unique, and a workspace scope can be bound only once. Folder selection,
+top-level allocation, and binding are committed atomically. Restrictive foreign
+keys prevent a bound scope from being deleted behind the mapping.
+
+Migration 5 renames the original `repository_bindings` table and path column.
+Existing Git-root bindings remain valid folder bindings; Git is no longer read
+or required.
 
 ## Transactions
 
 Allocation writes acquire an immediate transaction before checking capacity:
 
-- top-level allocations share the quota-window capacity;
-- child allocations share their parent allocation; and
-- a missing parent allocation rejects child allocation.
+- folder allocations share the quota-window capacity; and
+- an over-capacity write rolls back without creating a partial workspace or
+  binding.
+
+The existing parent column and hierarchical checks remain readable for
+pre-folder-only databases. The current UI and Tauri command boundary create
+only top-level workspace allocations.
 
 Reservation admission also uses an immediate transaction. It subtracts existing
 attributed usage and active reservations before inserting a new reservation.

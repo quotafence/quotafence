@@ -8,7 +8,7 @@ import { ScopeForm } from "./components/ScopeForm";
 import { SourceSetupForm } from "./components/SourceSetupForm";
 import {
   archiveQuotaSource,
-  createAllocatedScope,
+  createAllocatedWorkspace,
   createQuotaSource,
   getErrorMessage,
   getLocalState,
@@ -19,8 +19,8 @@ import type {
   LocalState,
   QuotaSourceInput,
   QuotaSourceSummary,
-  ScopeInput,
   ScopeSummary,
+  WorkspaceInput,
 } from "./types";
 
 type ModalState =
@@ -66,13 +66,13 @@ function WelcomeScreen({
         <div className="welcome-copy">
           <p className="eyebrow light">Make shared quota intentional</p>
           <h1>
-            Give every project
+            Give every workspace
             <br />
             its <em>fair share.</em>
           </h1>
           <p>
-            Allocate a coding-agent subscription across projects and tasks,
-            then see exactly how much room remains.
+            Allocate a coding-agent subscription across local folders, then
+            see exactly how much room remains.
           </p>
         </div>
 
@@ -82,7 +82,7 @@ function WelcomeScreen({
               <Icon name="folder" size={19} />
             </span>
             <p>
-              <strong>Project-scoped budgets</strong>
+              <strong>Folder-scoped budgets</strong>
               Keep important work from losing quota to everything else.
             </p>
           </div>
@@ -141,6 +141,7 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>(null);
   const initialSyncStarted = useRef(false);
 
@@ -183,19 +184,6 @@ function App() {
     [localState],
   );
 
-  const allocatedParents = useMemo(() => {
-    if (!localState?.dashboard) {
-      return [];
-    }
-    const allocatedIds = new Set(
-      localState.dashboard.allocations.map((allocation) => allocation.scopeId),
-    );
-    return localState.scopes.filter(
-      (scope) =>
-        !scope.parentId && scope.kind !== "task" && allocatedIds.has(scope.id),
-    );
-  }, [localState]);
-
   async function runMutation(operation: () => Promise<void>, close = true) {
     setSubmitting(true);
     setError(null);
@@ -229,18 +217,33 @@ function App() {
   async function handleRefresh() {
     setRefreshing(true);
     setError(null);
+    setNotice(null);
     try {
       const windowId = localState?.selectedWindowId ?? null;
-      if (!windowId || selectedSource?.providerDisplayName.toLowerCase() !== "codex") {
+      if (!windowId) {
+        setError("No quota window is selected.");
+        return;
+      }
+      if (selectedSource?.providerDisplayName.toLowerCase() !== "codex") {
         await loadState(windowId);
+        setNotice("Local quota state refreshed.");
         return;
       }
 
       const sync = await syncCodexQuota(windowId);
       await loadState(sync.windowId ?? windowId);
-      if (sync.status === "unavailable" && sync.message) {
-        setError(sync.message);
+      if (sync.status !== "synced") {
+        setError(
+          sync.message ??
+            "Codex did not return a new subscription quota checkpoint.",
+        );
+        return;
       }
+      setNotice(
+        sync.rolledOver
+          ? "Codex quota synced. A new quota window is now active."
+          : "Codex quota synced to the latest checkpoint.",
+      );
     } catch (reason) {
       setError(getErrorMessage(reason));
     } finally {
@@ -350,6 +353,15 @@ function App() {
           </button>
         </div>
       )}
+      {notice && (
+        <div className="error-toast success" role="status">
+          <Icon name="check" size={17} />
+          <span>{notice}</span>
+          <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss">
+            <Icon name="x" size={17} />
+          </button>
+        </div>
+      )}
 
       {modal?.type === "source" && (
         <Modal
@@ -409,17 +421,16 @@ function App() {
 
       {modal?.type === "scope" && dashboard && (
         <Modal
-          eyebrow="Project budget"
+          eyebrow="Workspace budget"
           title="Create an allocation"
           onClose={() => setModal(null)}
         >
           <ScopeForm
-            parents={allocatedParents}
             unit={unit}
             submitting={submitting}
-            onSubmit={(input: ScopeInput) =>
+            onSubmit={(input: WorkspaceInput) =>
               runMutation(() =>
-                createAllocatedScope(input, dashboard.window.id, unit),
+                createAllocatedWorkspace(input, dashboard.window.id, unit),
               )
             }
           />

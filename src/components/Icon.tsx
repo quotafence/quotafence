@@ -11,10 +11,8 @@ type IconName =
   | "gauge"
   | "plus"
   | "refresh"
-  | "repository"
   | "shield"
   | "spark"
-  | "task"
   | "trash"
   | "x";
 
@@ -66,12 +64,6 @@ const paths: Record<IconName, ReactNode> = {
       <path d="M18.5 9A7 7 0 0 0 6 6.5L4 9M5.5 15A7 7 0 0 0 18 17.5l2-2.5" />
     </>
   ),
-  repository: (
-    <>
-      <path d="M5 4h12a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2z" />
-      <path d="M7 4v16M10 8h6" />
-    </>
-  ),
   shield: (
     <>
       <path d="M12 3 20 6v5c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10V6z" />
@@ -80,12 +72,6 @@ const paths: Record<IconName, ReactNode> = {
   ),
   spark: (
     <path d="m12 3 1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5z" />
-  ),
-  task: (
-    <>
-      <rect x="4" y="4" width="16" height="16" rx="3" />
-      <path d="m8 12 2.5 2.5L16 9" />
-    </>
   ),
   trash: (
     <>

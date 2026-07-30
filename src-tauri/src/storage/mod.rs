@@ -6,7 +6,7 @@ mod error;
 mod ledger;
 mod migrations;
 mod provider_snapshots;
-mod repository_bindings;
+mod workspace_bindings;
 
 #[cfg(test)]
 mod test_support;
@@ -17,4 +17,4 @@ pub use database::Database;
 pub use error::{StorageError, StorageResult};
 pub use ledger::LedgerRepository;
 pub use provider_snapshots::ProviderQuotaSnapshot;
-pub use repository_bindings::{RepositoryBinding, RepositoryBindingRepository};
+pub use workspace_bindings::{WorkspaceBinding, WorkspaceBindingRepository};

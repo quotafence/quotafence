@@ -24,11 +24,10 @@ The current command DTOs cover:
 
 - provider, account, quota-pool, and quota-window creation;
 - atomic quota-source onboarding;
-- scope creation;
-- atomic scope-and-allocation creation;
-- explicit canonical-root to repository-scope binding;
-- repository context and active-allocation queries;
-- provider-neutral repository admission assessment;
+- atomic folder selection, workspace allocation, and binding;
+- explicit canonical-folder to workspace-scope binding;
+- nearest-ancestor workspace context and active-allocation queries;
+- provider-neutral workspace admission assessment;
 - allocation updates;
 - quota reservation and release;
 - usage recording with optional atomic reservation consumption; and
@@ -36,13 +35,13 @@ The current command DTOs cover:
 - quota-dashboard queries; and
 - complete local-state queries for application startup and refresh.
 
-The CLI resolves Git metadata outside this layer, then passes a canonical root
-to these use cases. Application services never scan repository contents and do
-not silently create a scope or budget for an unmapped path.
+The CLI and Tauri boundary canonicalize folders outside this layer, then pass a
+canonical path to these use cases. Application services never scan workspace
+contents and do not silently create a scope or budget for an unmapped path.
 
-`EvaluateRepositoryAdmission` selects the active allocation for a bound
-repository and provider. Its effective decision is the more restrictive of the
-repository allocation balance and account-wide provider capacity. Refreshing a
+`EvaluateWorkspaceAdmission` selects the active allocation for a bound
+workspace and provider. Its effective decision is the more restrictive of the
+workspace allocation balance and account-wide provider capacity. Refreshing a
 provider checkpoint remains an adapter responsibility and happens before this
 use case is evaluated.
 
@@ -55,9 +54,9 @@ entities.
 ## Dashboard
 
 `QuotaDashboard` contains a window summary and one snapshot per allocation.
-Each allocation snapshot includes:
+Each workspace allocation snapshot includes:
 
-- scope identity, kind, hierarchy, and display name;
+- workspace identity, canonical folder, and display name;
 - limit, attributed usage, active reservations, remaining, and spendable quota;
 - provider-native unit; and
 - the effective allow/warn/confirm/stop decision.
@@ -70,11 +69,11 @@ The window summary distinguishes:
 - unattributed provider usage; and
 - provider-level remaining and spendable capacity.
 
-Child usage and reservations debit both their own allocation and every ancestor
-allocation. The provider summary only sums root scopes, avoiding double-counting
-child activity. A provider snapshot is reconciled with local observations using
-the greater total; active reservations remain additional committed capacity
-because they have not yet appeared in provider usage.
+Each current allocation is top-level and maps to one local folder. A provider
+snapshot is reconciled with local observations using the greater total; active
+reservations remain additional committed capacity because they have not yet
+appeared in provider usage. Legacy nested rows remain readable for migration
+compatibility but cannot be created through the desktop IPC boundary.
 
 ## Policy
 

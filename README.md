@@ -5,18 +5,18 @@ Local-first budget guard and routing layer for AI coding agents.
 > [!IMPORTANT]
 > Agent Quota Manager is an early local MVP with no stable release. Codex quota
 > discovery, checkpoint refresh, reset rollover, and manual allocations work
-> locally. Repository mapping plus `aqm context` and the provider-refreshing
+> locally. Folder-based workspace mapping plus `aqm context` and the provider-refreshing
 > `aqm admit codex` dry run are implemented. Managed sessions, automatic
 > attribution, and enforcement at launch are not implemented yet.
 
-Solo power users often run several coding agents across multiple repositories
+Solo power users often run several coding agents across multiple workspaces
 against the same constrained subscription. Low-priority work can exhaust that
 shared capacity before important work starts, while provider dashboards cannot
-usually explain which repository consumed it or enforce a project budget.
+usually explain which workspace consumed it or enforce a project budget.
 
 Agent Quota Manager (AQM) aims to protect capacity for important work, attribute
-managed usage to repositories and tasks, and apply policy before or during work
-when the provider integration can honestly support it.
+managed usage to local folder workspaces, and apply policy before or during
+work when the provider integration can honestly support it.
 
 ## What it is
 
@@ -29,11 +29,11 @@ aqm run codex
 
 That workflow will:
 
-- resolve the current repository to an allocation;
+- resolve the current folder to a workspace allocation;
 - reserve capacity for the requested work;
 - warn, require confirmation, or refuse admission at a policy boundary;
 - run a provider session under AQM management; and
-- reconcile the resulting provider usage back to the repository.
+- reconcile the resulting provider usage back to the workspace.
 
 The desktop UI remains useful for setup and policy visibility, but dashboard
 analytics alone are not the product. Longer term, the same control layer may
@@ -50,7 +50,7 @@ deadline. Those dimensions are not assumed to be interchangeable.
   on a dashboard.
 - **Capability honesty:** never claim a hard stop outside sessions AQM controls
   or without a usable signal.
-- **Local first:** policy, attribution, repository metadata, and session records
+- **Local first:** policy, attribution, workspace metadata, and session records
   stay on the device.
 - **Codex first:** complete one end-to-end adapter before adding more providers.
 
@@ -59,7 +59,7 @@ deadline. Those dimensions are not assumed to be interchangeable.
 | Area | Initial scope |
 | --- | --- |
 | Provider | Codex |
-| Context | Map the current Git repository to an allocation |
+| Context | Map any local folder to a workspace allocation |
 | Workflow | `aqm run codex` or an equivalent lightweight managed launch |
 | Sessions | Reserve, start, observe, finish, and recover one managed session |
 | Enforcement | Warn, confirm, or refuse launch according to effective capability |
@@ -91,8 +91,8 @@ or background lifecycle management justify it. See
 [Provider adapters](docs/provider-adapters.md). The implemented SQLite layer is
 described in [Storage](docs/storage.md), and use-case orchestration in
 [Application services](docs/application-services.md). The desktop IPC contract
-is documented in [Tauri commands](docs/tauri-commands.md), and repository
-binding in the [AQM CLI guide](docs/cli.md). See
+is documented in [Tauri commands](docs/tauri-commands.md), and folder-based
+workspace binding in the [AQM CLI guide](docs/cli.md). See
 [Local MVP](docs/local-mvp.md) for the current implemented baseline.
 
 ### Codex detection
@@ -104,7 +104,7 @@ and current provider-confirmed usage. Manual setup remains available when
 detection is unsupported or temporarily unavailable.
 
 The app does not read Codex credential files, session transcripts, prompts, or
-repository contents. The App Server process is stopped after the snapshot is
+workspace contents. The App Server process is stopped after the snapshot is
 read. The selected Codex source refreshes on startup and on demand. Provider
 totals replace the previous snapshot rather than accumulating as usage events,
 and a new reset window carries allocations forward without old usage.
@@ -134,13 +134,14 @@ npm run check
 This builds the frontend, checks Rust formatting and compilation, runs Clippy
 with warnings denied, and runs the Rust tests.
 
-### Resolve or bind the current repository
+### Resolve or bind the current workspace
 
-Create a repository allocation in the desktop app, then run:
+Choose a folder and create a workspace allocation in the desktop app, or bind
+an existing top-level allocation from the CLI:
 
 ```bash
 npm run aqm -- context
-npm run aqm -- bind --scope "Repository allocation name"
+npm run aqm -- bind --scope "Workspace allocation name"
 ```
 
 Preview the current policy boundary without launching Codex:
@@ -150,7 +151,7 @@ npm run aqm -- admit codex
 ```
 
 These development commands use the same local database as the desktop.
-Admission refreshes the matching Codex checkpoint and evaluates both repository
+Admission refreshes the matching Codex checkpoint and evaluates both workspace
 allocation and provider capacity. See the [CLI guide](docs/cli.md) for its exit
 codes, explicit confirmation override, JSON, path, and isolated-database
 options.

@@ -5,7 +5,7 @@ import type {
   IpcError,
   LocalState,
   QuotaSourceInput,
-  ScopeInput,
+  WorkspaceInput,
 } from "../types";
 
 function createId(prefix: string): string {
@@ -68,21 +68,6 @@ export async function archiveQuotaSource(poolId: string): Promise<void> {
   });
 }
 
-export async function createScope(input: ScopeInput): Promise<string> {
-  const scopeId = createId(input.kind);
-
-  await invoke("create_scope", {
-    request: {
-      id: scopeId,
-      parentId: input.parentId,
-      kind: input.kind,
-      displayName: input.displayName,
-    },
-  });
-
-  return scopeId;
-}
-
 export async function setAllocation(
   scopeId: string,
   windowId: string,
@@ -99,20 +84,20 @@ export async function setAllocation(
   });
 }
 
-export async function createAllocatedScope(
-  input: ScopeInput,
+export async function createAllocatedWorkspace(
+  input: WorkspaceInput,
   windowId: string,
   unit: string,
 ): Promise<void> {
-  await invoke("create_allocated_scope", {
+  await invoke("create_allocated_workspace", {
     request: {
-      id: createId(input.kind),
-      parentId: input.parentId,
-      kind: input.kind,
+      id: createId("workspace"),
       displayName: input.displayName,
+      canonicalPath: input.workspacePath,
       windowId,
       amount: input.allocation,
       unit,
+      boundAt: Date.now(),
     },
   });
 }

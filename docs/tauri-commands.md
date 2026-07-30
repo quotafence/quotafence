@@ -27,8 +27,7 @@ The approved product commands are:
 - `create_quota_window`
 - `create_quota_source`
 - `archive_quota_source`
-- `create_scope`
-- `create_allocated_scope`
+- `create_allocated_workspace`
 - `set_allocation`
 - `reserve_quota`
 - `release_reservation`
@@ -53,7 +52,9 @@ await invoke("create_provider", {
 
 Application DTOs remain the source of truth for request fields. Domain
 constructors validate every request after deserialization, so the webview
-cannot bypass identifier, amount, hierarchy, or lifecycle invariants.
+cannot bypass identifier, amount, capacity, or lifecycle invariants. New
+allocations enter through `create_allocated_workspace`, which atomically binds
+one selected folder.
 
 ## Errors
 
@@ -69,6 +70,7 @@ type IpcError = {
 Stable codes currently include:
 
 - `validation_error`
+- `invalid_workspace`
 - `not_found`
 - `conflict`
 - `duplicate_source`
@@ -87,7 +89,13 @@ database details are not exposed to the webview.
 ## Trust boundary
 
 Commands expose fixed use cases only. There is no arbitrary SQL, shell, or
-filesystem command. `detect_codex_quota` may start the fixed
+filesystem command. The desktop has only the Tauri dialog plugin's
+`allow-open` permission, used to choose one folder. The selected path is passed
+to `create_allocated_workspace`, canonicalized and verified as a directory in
+Rust, then saved atomically with its scope and allocation. Folder contents are
+not read.
+
+`detect_codex_quota` may start the fixed
 `codex app-server --stdio` process, perform its documented handshake, and read
 subscription rate-limit metadata. It does not accept a command string from the
 webview and returns sanitized detection states instead of raw process errors.

@@ -12,7 +12,7 @@ assuming tokens, while keeping unlike resource behaviors explicit.
 | Account | A locally available signed-in identity for one provider |
 | Quota pool | One provider-defined allowance, such as a weekly usage window |
 | Window | The period, reset boundary, and capacity applied to a quota pool |
-| Scope | A project, repository, task, or reserved system bucket |
+| Workspace | One explicitly selected local folder |
 | Allocation | The maximum share assigned to a scope for a window |
 | Reservation | Capacity held temporarily for work in progress |
 | Usage event | An immutable local record that debits a scope |
@@ -51,28 +51,26 @@ a cumulative percentage model. AQM will introduce a resource-kind abstraction
 only when implementing behavior that needs it; the Codex slice does not require
 a domain rewrite.
 
-## Allocation hierarchy
+## Folder allocations
 
-A pool may be divided into project allocations, then optional task allocations.
-Usage attributed to a task also debits its parent project and provider pool.
+A pool is divided directly into independent folder allocations. AQM does not
+ask users to create a second project or task hierarchy inside a folder.
 
 ```text
 Codex weekly pool (100)
-├── Project A (50)
-│   ├── Feature work (30)
-│   └── Maintenance (20)
-├── Project B (30)
+├── /code/product-a (50)
+├── /code/product-b (30)
 └── Unallocated reserve (20)
 ```
 
-The parent allocation is always the upper bound. Unused child quota is not
-automatically borrowed by siblings unless an explicit borrowing policy allows
-it.
+The domain validates that the sum of active folder allocations does not exceed
+the window capacity. Each managed session is attributed to the nearest bound
+folder, and therefore debits exactly one workspace allocation plus the shared
+provider pool.
 
-The domain validates that top-level allocations do not exceed a window's
-capacity and that child allocations do not exceed their parent allocation.
-Application services remain responsible for supplying the correct scope
-ancestry when applying the child validator.
+The persisted scope codec still reads legacy project/task rows so an older
+local database can be opened without deleting history. Those legacy kinds are
+not exposed as new allocation choices.
 
 ## Available capacity
 

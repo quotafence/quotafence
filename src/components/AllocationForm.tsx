@@ -45,8 +45,8 @@ export function AllocationForm({
         </div>
       </label>
       <p className="form-help">
-        Root allocations share the provider allowance. Task allocations share
-        their parent limit.
+        This limit is a share of the full provider window. Actual availability
+        is also capped by the provider quota remaining now.
       </p>
       <button className="button primary wide" type="submit" disabled={submitting}>
         {submitting ? "Saving…" : "Save allocation"}

@@ -5,7 +5,9 @@ use super::{StorageError, StorageResult};
 pub(crate) fn scope_kind_to_str(kind: ScopeKind) -> &'static str {
     match kind {
         ScopeKind::Project => "project",
-        ScopeKind::Repository => "repository",
+        // Keep the v1 storage encoding so existing databases do not need a
+        // destructive scopes-table rebuild.
+        ScopeKind::Workspace => "repository",
         ScopeKind::Task => "task",
         ScopeKind::Reserve => "reserve",
     }
@@ -14,7 +16,7 @@ pub(crate) fn scope_kind_to_str(kind: ScopeKind) -> &'static str {
 pub(crate) fn scope_kind_from_str(value: &str) -> StorageResult<ScopeKind> {
     match value {
         "project" => Ok(ScopeKind::Project),
-        "repository" => Ok(ScopeKind::Repository),
+        "repository" | "workspace" => Ok(ScopeKind::Workspace),
         "task" => Ok(ScopeKind::Task),
         "reserve" => Ok(ScopeKind::Reserve),
         _ => Err(invalid_enum("scope kind", value)),

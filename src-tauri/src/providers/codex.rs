@@ -169,13 +169,18 @@ pub fn sync_detection(
         };
     };
 
-    if !source.provider_id.eq_ignore_ascii_case("codex") || source.unit != "percent" {
+    if !source.provider_managed
+        || !source.provider_display_name.eq_ignore_ascii_case("codex")
+        || source.unit != "percent"
+    {
         return CodexSyncResult {
             status: CodexSyncStatus::NotApplicable,
             window_id: Some(source.window_id),
             rolled_over: false,
             synced_at: None,
-            message: None,
+            message: Some(
+                "This source is not connected to automatic Codex quota detection.".to_owned(),
+            ),
         };
     }
     if detection.status != DetectionStatus::Detected {
@@ -600,7 +605,7 @@ mod tests {
         let mut service = QuotaService::new(Database::open_in_memory().unwrap());
         service
             .create_quota_source(CreateQuotaSource {
-                provider_id: "codex".to_owned(),
+                provider_id: "local-source-provider".to_owned(),
                 provider_display_name: "Codex".to_owned(),
                 account_id: "codex-subscription".to_owned(),
                 account_display_name: "Subscription".to_owned(),
