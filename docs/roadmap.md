@@ -42,7 +42,7 @@ persisted per-scope policy, admission enforcement, or burn-rate forecasting.
 | Repository context | Scope kind exists; no path binding | Current Git root resolves deterministically to one scope |
 | Managed launch | Detection process only | AQM owns the Codex child lifecycle and exit result |
 | Reservation | Domain/storage implemented; not in daily workflow | Admission reserves capacity before spawn |
-| Attribution | Manual events only | Session result produces scoped observed usage |
+| Attribution | Ledger primitives only; no user-entered estimates | Session result produces scoped observed usage |
 | Reconciliation | Provider total affects dashboard | Pre/post session delta is reconciled without false precision |
 | Policy | In-memory standard thresholds; read-only decision | Persisted effective policy drives CLI behavior |
 | Enforcement | None | Warn, confirm, or refuse an AQM-managed launch |

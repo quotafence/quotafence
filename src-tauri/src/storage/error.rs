@@ -15,6 +15,9 @@ pub enum StorageError {
     InvalidState {
         message: String,
     },
+    DuplicateSource {
+        source_key: String,
+    },
     NumericOutOfRange {
         field: &'static str,
         value: u64,
@@ -38,6 +41,9 @@ impl fmt::Display for StorageError {
             Self::Domain(error) => write!(formatter, "invalid domain data: {error}"),
             Self::NotFound { entity, id } => write!(formatter, "{entity} {id} was not found"),
             Self::InvalidState { message } => formatter.write_str(message),
+            Self::DuplicateSource { source_key } => {
+                write!(formatter, "quota source {source_key} is already active")
+            }
             Self::NumericOutOfRange { field, value } => {
                 write!(
                     formatter,

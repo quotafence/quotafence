@@ -56,6 +56,13 @@ pub struct CreateQuotaSource {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ArchiveQuotaSource {
+    pub pool_id: String,
+    pub archived_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderQuotaSnapshotInput {
     pub adapter: String,
     pub remote_limit_id: String,

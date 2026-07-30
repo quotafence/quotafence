@@ -111,6 +111,18 @@ CREATE TABLE provider_quota_snapshots (
 );
 "#;
 
+const QUOTA_SOURCE_LIFECYCLE: &str = r#"
+ALTER TABLE quota_pools ADD COLUMN source_key TEXT;
+ALTER TABLE quota_pools ADD COLUMN archived_at INTEGER;
+
+CREATE UNIQUE INDEX active_quota_pool_source_key
+ON quota_pools(source_key)
+WHERE source_key IS NOT NULL AND archived_at IS NULL;
+
+CREATE INDEX active_quota_pools
+ON quota_pools(archived_at, display_name, id);
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -121,6 +133,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 2,
         name: "provider_quota_snapshots",
         sql: PROVIDER_QUOTA_SNAPSHOTS,
+    },
+    Migration {
+        version: 3,
+        name: "quota_source_lifecycle",
+        sql: QUOTA_SOURCE_LIFECYCLE,
     },
 ];
 
@@ -165,4 +182,72 @@ pub(crate) fn migrate(connection: &mut Connection) -> StorageResult<()> {
 #[cfg(test)]
 pub(crate) fn latest_version() -> i64 {
     MIGRATIONS.last().map_or(0, |migration| migration.version)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lifecycle_migration_accepts_preexisting_duplicate_sources() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE schema_migrations (
+                    version INTEGER PRIMARY KEY NOT NULL,
+                    name TEXT NOT NULL,
+                    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );",
+            )
+            .unwrap();
+        connection.execute_batch(INITIAL_SCHEMA).unwrap();
+        connection.execute_batch(PROVIDER_QUOTA_SNAPSHOTS).unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO schema_migrations (version, name)
+                 VALUES (1, 'initial_schema'), (2, 'provider_quota_snapshots');
+
+                 INSERT INTO providers (id, display_name)
+                 VALUES ('provider-1', 'Codex'), ('provider-2', 'Codex');
+                 INSERT INTO accounts (id, provider_id, display_name)
+                 VALUES
+                    ('account-1', 'provider-1', 'Subscription'),
+                    ('account-2', 'provider-2', 'Subscription');
+                 INSERT INTO quota_pools (id, account_id, display_name, unit)
+                 VALUES
+                    ('pool-1', 'account-1', 'Weekly allowance', 'percent'),
+                    ('pool-2', 'account-2', 'Weekly allowance', 'percent');
+                 INSERT INTO quota_windows (id, pool_id, starts_at, ends_at, capacity)
+                 VALUES
+                    ('window-1', 'pool-1', 1000, 2000, 100),
+                    ('window-2', 'pool-2', 1000, 2000, 100);
+                 INSERT INTO provider_quota_snapshots (
+                    window_id, adapter, remote_limit_id, remote_window_kind,
+                    used, observed_at, resets_at
+                 )
+                 VALUES
+                    ('window-1', 'codex_app_server', 'codex', 'secondary', 10, 1500, 2000),
+                    ('window-2', 'codex_app_server', 'codex', 'secondary', 10, 1500, 2000);",
+            )
+            .unwrap();
+
+        migrate(&mut connection).unwrap();
+
+        let active_pools: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM quota_pools WHERE archived_at IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(active_pools, 2);
+        assert_eq!(
+            connection
+                .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            3
+        );
+    }
 }

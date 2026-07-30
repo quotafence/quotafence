@@ -6,7 +6,6 @@ import type {
   LocalState,
   QuotaSourceInput,
   ScopeInput,
-  UsageInput,
 } from "../types";
 
 function createId(prefix: string): string {
@@ -60,6 +59,15 @@ export async function createQuotaSource(
   });
 }
 
+export async function archiveQuotaSource(poolId: string): Promise<void> {
+  await invoke("archive_quota_source", {
+    request: {
+      poolId,
+      archivedAt: Date.now(),
+    },
+  });
+}
+
 export async function createScope(input: ScopeInput): Promise<string> {
   const scopeId = createId(input.kind);
 
@@ -105,26 +113,6 @@ export async function createAllocatedScope(
       windowId,
       amount: input.allocation,
       unit,
-    },
-  });
-}
-
-export async function recordUsage(
-  input: UsageInput,
-  windowId: string,
-  unit: string,
-): Promise<void> {
-  await invoke("record_usage", {
-    request: {
-      id: createId("usage"),
-      windowId,
-      scopeId: input.scopeId,
-      amount: input.amount,
-      unit,
-      observedAt: Date.now(),
-      source: "local_measured",
-      confidence: "observed",
-      reservationId: null,
     },
   });
 }

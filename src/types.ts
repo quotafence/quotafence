@@ -131,8 +131,3 @@ export type ScopeInput = {
   parentId: string | null;
   allocation: number;
 };
-
-export type UsageInput = {
-  scopeId: string | null;
-  amount: number;
-};

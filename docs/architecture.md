@@ -52,7 +52,7 @@ The CLI path is a target, not a reason to create an empty binary in advance.
 Displays setup, allocations, remaining capacity, confidence, provider
 capabilities, and eventually managed-session state. The current local MVP
 implements onboarding, multi-source window selection, project/task allocations,
-allocation updates, and manual usage recording. It does not infer enforcement
+and allocation updates. It does not accept manual usage estimates or infer enforcement
 guarantees from a provider name. See [Local MVP](local-mvp.md).
 
 ### Tauri command boundary

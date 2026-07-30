@@ -1,6 +1,6 @@
 use std::{path::Path, time::Duration};
 
-use rusqlite::{Connection, TransactionBehavior};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
 use crate::domain::{Account, Allocation, Provider, QuotaPool, QuotaWindow, Scope, WindowId};
 
@@ -78,11 +78,44 @@ impl Database {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let source_key = snapshot.map(provider_source_key);
+        if let (Some(source_key), Some(snapshot)) = (source_key.as_deref(), snapshot) {
+            let existing: Option<String> = transaction
+                .query_row(
+                    "SELECT p.id
+                     FROM quota_pools p
+                     JOIN quota_windows w ON w.pool_id = p.id
+                     JOIN provider_quota_snapshots s ON s.window_id = w.id
+                     WHERE p.archived_at IS NULL
+                       AND lower(trim(s.adapter)) = lower(trim(?1))
+                       AND lower(trim(s.remote_limit_id)) = lower(trim(?2))
+                       AND lower(trim(s.remote_window_kind)) = lower(trim(?3))
+                    LIMIT 1",
+                    params![
+                        snapshot.adapter(),
+                        snapshot.remote_limit_id(),
+                        snapshot.remote_window_kind()
+                    ],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if existing.is_some() {
+                return Err(super::StorageError::DuplicateSource {
+                    source_key: source_key.to_owned(),
+                });
+            }
+        }
         {
             let catalog = CatalogRepository::new(&transaction);
             catalog.insert_provider(provider)?;
             catalog.insert_account(account)?;
             catalog.insert_quota_pool(pool)?;
+            if let Some(source_key) = source_key.as_deref() {
+                transaction.execute(
+                    "UPDATE quota_pools SET source_key = ?2 WHERE id = ?1",
+                    params![pool.id().as_str(), source_key],
+                )?;
+            }
             catalog.insert_quota_window(window)?;
         }
         if let Some(snapshot) = snapshot {
@@ -143,6 +176,15 @@ impl Database {
         transaction.commit()?;
         Ok(())
     }
+}
+
+fn provider_source_key(snapshot: &ProviderQuotaSnapshot) -> String {
+    format!(
+        "{}:{}:{}",
+        snapshot.adapter().trim().to_lowercase(),
+        snapshot.remote_limit_id().trim().to_lowercase(),
+        snapshot.remote_window_kind().trim().to_lowercase()
+    )
 }
 
 #[cfg(test)]

@@ -10,11 +10,11 @@ use crate::{
 };
 
 use super::{
-    error::to_view_integer, AllocationSnapshot, ApplicationError, ApplicationResult, CreateAccount,
-    CreateAllocatedScope, CreateProvider, CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow,
-    CreateScope, GetLocalState, GetQuotaDashboard, LocalState, QuotaDashboard, QuotaSourceSummary,
-    RecordUsage, ReleaseReservation, ReserveQuota, ScopeSummary, SetAllocation, SyncProviderQuota,
-    SyncProviderQuotaResult, WindowSummary,
+    error::to_view_integer, AllocationSnapshot, ApplicationError, ApplicationResult,
+    ArchiveQuotaSource, CreateAccount, CreateAllocatedScope, CreateProvider, CreateQuotaPool,
+    CreateQuotaSource, CreateQuotaWindow, CreateScope, GetLocalState, GetQuotaDashboard,
+    LocalState, QuotaDashboard, QuotaSourceSummary, RecordUsage, ReleaseReservation, ReserveQuota,
+    ScopeSummary, SetAllocation, SyncProviderQuota, SyncProviderQuotaResult, WindowSummary,
 };
 
 pub struct QuotaService {
@@ -117,6 +117,14 @@ impl QuotaService {
             &pool,
             &window,
             snapshot.as_ref(),
+        )?;
+        Ok(())
+    }
+
+    pub fn archive_quota_source(&mut self, command: ArchiveQuotaSource) -> ApplicationResult<()> {
+        self.database.catalog().archive_quota_pool(
+            &QuotaPoolId::new(command.pool_id)?,
+            UnixMillis::new(command.archived_at),
         )?;
         Ok(())
     }
@@ -395,19 +403,25 @@ impl QuotaService {
             .into_iter()
             .map(|account| (account.id().clone(), account))
             .collect();
-        let pools: HashMap<_, _> = catalog
-            .list_quota_pools()?
-            .into_iter()
-            .map(|pool| (pool.id().clone(), pool))
-            .collect();
+        let pools = catalog.list_active_quota_pools()?;
         let windows = catalog.list_quota_windows()?;
         let scopes = catalog.list_scopes()?;
-        let mut sources = Vec::with_capacity(windows.len());
+        let mut sources = Vec::with_capacity(pools.len());
 
-        for window in windows {
-            let pool = pools.get(window.pool_id()).ok_or_else(|| {
-                inconsistent_reference("quota window", window.id(), "quota pool", window.pool_id())
-            })?;
+        for pool in pools {
+            let window = windows
+                .iter()
+                .filter(|window| window.pool_id() == pool.id())
+                .find(|window| window.contains(at))
+                .or_else(|| {
+                    windows
+                        .iter()
+                        .filter(|window| window.pool_id() == pool.id())
+                        .max_by_key(|window| (window.ends_at().value(), window.starts_at().value()))
+                });
+            let Some(window) = window else {
+                continue;
+            };
             let account = accounts.get(pool.account_id()).ok_or_else(|| {
                 inconsistent_reference("quota pool", pool.id(), "account", pool.account_id())
             })?;
@@ -508,10 +522,10 @@ mod tests {
     use super::*;
     use crate::{
         application::{
-            CreateAccount, CreateAllocatedScope, CreateProvider, CreateQuotaPool,
-            CreateQuotaSource, CreateQuotaWindow, CreateScope, GetLocalState, GetQuotaDashboard,
-            ProviderQuotaSnapshotInput, RecordUsage, ReserveQuota, SetAllocation,
-            SyncProviderQuota,
+            ArchiveQuotaSource, CreateAccount, CreateAllocatedScope, CreateProvider,
+            CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow, CreateScope, GetLocalState,
+            GetQuotaDashboard, ProviderQuotaSnapshotInput, RecordUsage, ReserveQuota,
+            SetAllocation, SyncProviderQuota,
         },
         domain::{Confidence, EnforcementDecision, ScopeKind, UsageSource},
         storage::Database,
@@ -585,6 +599,30 @@ mod tests {
             .unwrap();
 
         service
+    }
+
+    fn detected_codex_source(suffix: &str) -> CreateQuotaSource {
+        CreateQuotaSource {
+            provider_id: format!("codex-{suffix}"),
+            provider_display_name: "Codex".to_owned(),
+            account_id: format!("codex-subscription-{suffix}"),
+            account_display_name: "Subscription".to_owned(),
+            pool_id: format!("codex-weekly-{suffix}"),
+            pool_display_name: "Weekly allowance".to_owned(),
+            window_id: format!("week-{suffix}"),
+            starts_at: 1_000,
+            ends_at: 10_000,
+            capacity: 100,
+            unit: "percent".to_owned(),
+            provider_snapshot: Some(ProviderQuotaSnapshotInput {
+                adapter: "codex_app_server".to_owned(),
+                remote_limit_id: "codex".to_owned(),
+                remote_window_kind: "secondary".to_owned(),
+                used: 24,
+                observed_at: 2_000,
+                resets_at: 10_000,
+            }),
+        }
     }
 
     fn snapshot<'a>(dashboard: &'a QuotaDashboard, scope_id: &str) -> &'a AllocationSnapshot {
@@ -816,27 +854,7 @@ mod tests {
         let mut service = QuotaService::new(Database::open_in_memory().unwrap());
 
         service
-            .create_quota_source(CreateQuotaSource {
-                provider_id: "codex".to_owned(),
-                provider_display_name: "Codex".to_owned(),
-                account_id: "codex-subscription".to_owned(),
-                account_display_name: "Subscription".to_owned(),
-                pool_id: "codex-weekly".to_owned(),
-                pool_display_name: "Weekly allowance".to_owned(),
-                window_id: "week-1".to_owned(),
-                starts_at: 1_000,
-                ends_at: 10_000,
-                capacity: 100,
-                unit: "percent".to_owned(),
-                provider_snapshot: Some(ProviderQuotaSnapshotInput {
-                    adapter: "codex_app_server".to_owned(),
-                    remote_limit_id: "codex".to_owned(),
-                    remote_window_kind: "secondary".to_owned(),
-                    used: 24,
-                    observed_at: 2_000,
-                    resets_at: 10_000,
-                }),
-            })
+            .create_quota_source(detected_codex_source("1"))
             .unwrap();
 
         let state = service
@@ -851,6 +869,80 @@ mod tests {
         let dashboard = state.dashboard.unwrap();
         assert_eq!(dashboard.window.unattributed_usage, 24);
         assert_eq!(dashboard.window.provider_remaining, 76);
+    }
+
+    #[test]
+    fn provider_managed_source_cannot_be_added_twice() {
+        let mut service = QuotaService::new(Database::open_in_memory().unwrap());
+        service
+            .create_quota_source(detected_codex_source("first"))
+            .unwrap();
+
+        let error = service
+            .create_quota_source(detected_codex_source("duplicate"))
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            ApplicationError::Storage(StorageError::DuplicateSource { .. })
+        ));
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: None,
+                at: 3_000,
+            })
+            .unwrap();
+        assert_eq!(state.sources.len(), 1);
+    }
+
+    #[test]
+    fn archived_source_is_hidden_but_history_remains_and_source_can_be_added_again() {
+        let mut service = QuotaService::new(Database::open_in_memory().unwrap());
+        let source = detected_codex_source("first");
+        let archived_pool_id = source.pool_id.clone();
+        let archived_window_id = source.window_id.clone();
+        service.create_quota_source(source).unwrap();
+
+        service
+            .archive_quota_source(ArchiveQuotaSource {
+                pool_id: archived_pool_id,
+                archived_at: 4_000,
+            })
+            .unwrap();
+
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: None,
+                at: 4_000,
+            })
+            .unwrap();
+        assert!(state.sources.is_empty());
+        assert_eq!(
+            service
+                .dashboard(GetQuotaDashboard {
+                    window_id: archived_window_id,
+                    at: 4_000,
+                })
+                .unwrap()
+                .window
+                .provider_remaining,
+            76
+        );
+
+        service
+            .create_quota_source(detected_codex_source("replacement"))
+            .unwrap();
+        assert_eq!(
+            service
+                .local_state(GetLocalState {
+                    selected_window_id: None,
+                    at: 4_000,
+                })
+                .unwrap()
+                .sources
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -925,6 +1017,18 @@ mod tests {
         assert_eq!(dashboard.window.provider_remaining, 96);
         assert_eq!(snapshot(&dashboard, "project-a").limit, 70);
         assert_eq!(snapshot(&dashboard, "feature-a").limit, 50);
+
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: None,
+                at: 11_000,
+            })
+            .unwrap();
+        assert_eq!(state.sources.len(), 1);
+        assert_eq!(
+            state.selected_window_id.as_deref(),
+            Some("codex-weekly-window-20000")
+        );
     }
 
     #[test]

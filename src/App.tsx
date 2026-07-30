@@ -6,29 +6,28 @@ import { Icon } from "./components/Icon";
 import { Modal } from "./components/Modal";
 import { ScopeForm } from "./components/ScopeForm";
 import { SourceSetupForm } from "./components/SourceSetupForm";
-import { UsageForm } from "./components/UsageForm";
 import {
+  archiveQuotaSource,
   createAllocatedScope,
   createQuotaSource,
   getErrorMessage,
   getLocalState,
-  recordUsage,
   setAllocation,
   syncCodexQuota,
 } from "./lib/api";
 import type {
   LocalState,
   QuotaSourceInput,
+  QuotaSourceSummary,
   ScopeInput,
   ScopeSummary,
-  UsageInput,
 } from "./types";
 
 type ModalState =
   | { type: "source" }
   | { type: "scope" }
   | { type: "allocation"; scope: ScopeSummary }
-  | { type: "usage"; scopeId?: string }
+  | { type: "remove-source"; source: QuotaSourceSummary }
   | null;
 
 function LoadingScreen() {
@@ -261,6 +260,20 @@ function App() {
     }
   }
 
+  async function handleRemoveSource(source: QuotaSourceSummary) {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await archiveQuotaSource(source.poolId);
+      await loadState();
+      setModal(null);
+    } catch (reason) {
+      setError(getErrorMessage(reason));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   if (initializing) {
     return <LoadingScreen />;
   }
@@ -324,8 +337,9 @@ function App() {
         onAddSource={() => setModal({ type: "source" })}
         onAddScope={() => setModal({ type: "scope" })}
         onEditAllocation={(scope) => setModal({ type: "allocation", scope })}
-        onRecordUsage={(scopeId) => setModal({ type: "usage", scopeId })}
         onRefresh={handleRefresh}
+        onRemoveSource={(source) => setModal({ type: "remove-source", source })}
+        removingSource={submitting}
       />
 
       {error && (
@@ -348,6 +362,48 @@ function App() {
             submitting={submitting}
             submitLabel="Add quota source"
           />
+        </Modal>
+      )}
+
+      {modal?.type === "remove-source" && (
+        <Modal
+          eyebrow="Quota source"
+          title="Delete this source?"
+          onClose={() => {
+            if (!submitting) {
+              setModal(null);
+            }
+          }}
+        >
+          <div className="delete-source-confirmation">
+            <p>
+              <strong>{modal.source.providerDisplayName}</strong>
+              <span>{modal.source.poolDisplayName}</span>
+            </p>
+            <p>
+              This removes the source from the active list. Its existing usage
+              history stays in your local ledger.
+            </p>
+            <div className="modal-actions">
+              <button
+                className="button outline"
+                type="button"
+                disabled={submitting}
+                onClick={() => setModal(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="button danger-action"
+                type="button"
+                disabled={submitting}
+                onClick={() => void handleRemoveSource(modal.source)}
+              >
+                <Icon name="trash" size={17} />
+                {submitting ? "Deleting…" : "Delete source"}
+              </button>
+            </div>
+          </div>
         </Modal>
       )}
 
@@ -390,29 +446,6 @@ function App() {
         </Modal>
       )}
 
-      {modal?.type === "usage" && dashboard && (
-        <Modal
-          eyebrow="Local observation"
-          title="Record usage"
-          onClose={() => setModal(null)}
-        >
-          <UsageForm
-            scopes={localState.scopes.filter((scope) =>
-              dashboard.allocations.some(
-                (allocation) => allocation.scopeId === scope.id,
-              ),
-            )}
-            initialScopeId={modal.scopeId}
-            unit={unit}
-            submitting={submitting}
-            onSubmit={(input: UsageInput) =>
-              runMutation(() =>
-                recordUsage(input, dashboard.window.id, unit),
-              )
-            }
-          />
-        </Modal>
-      )}
     </>
   );
 }

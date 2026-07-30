@@ -195,6 +195,55 @@ impl<'connection> CatalogRepository<'connection> {
         .collect()
     }
 
+    pub fn list_active_quota_pools(&self) -> StorageResult<Vec<QuotaPool>> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, account_id, display_name, unit
+             FROM quota_pools
+             WHERE archived_at IS NULL
+             ORDER BY display_name, id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?;
+
+        rows.map(|row| {
+            let (id, account_id, display_name, unit) = row?;
+            QuotaPool::new(
+                QuotaPoolId::new(id)?,
+                AccountId::new(account_id)?,
+                display_name,
+                QuotaUnit::new(unit)?,
+            )
+            .map_err(StorageError::from)
+        })
+        .collect()
+    }
+
+    pub fn archive_quota_pool(
+        &self,
+        id: &QuotaPoolId,
+        archived_at: UnixMillis,
+    ) -> StorageResult<()> {
+        let updated = self.connection.execute(
+            "UPDATE quota_pools
+             SET archived_at = ?2
+             WHERE id = ?1 AND archived_at IS NULL",
+            params![id.as_str(), archived_at.value()],
+        )?;
+        if updated == 0 {
+            return Err(StorageError::NotFound {
+                entity: "active quota pool",
+                id: id.to_string(),
+            });
+        }
+        Ok(())
+    }
+
     pub fn insert_quota_window(&self, window: &QuotaWindow) -> StorageResult<()> {
         let expected_unit = self.pool_unit(window.pool_id())?;
         ensure_unit(window.capacity().unit(), &expected_unit)?;
