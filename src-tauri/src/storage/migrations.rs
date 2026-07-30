@@ -317,6 +317,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "workspace_policies",
         sql: WORKSPACE_POLICIES,
     },
+    Migration {
+        version: 10,
+        name: "managed_session_reconciliation_schema_repair",
+        sql: "",
+    },
 ];
 
 pub(crate) fn migrate(connection: &mut Connection) -> StorageResult<()> {
@@ -346,7 +351,11 @@ pub(crate) fn migrate(connection: &mut Connection) -> StorageResult<()> {
         .filter(|migration| migration.version > current)
     {
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        transaction.execute_batch(migration.sql)?;
+        if migration.version == 10 {
+            repair_managed_session_reconciliation_schema(&transaction)?;
+        } else {
+            transaction.execute_batch(migration.sql)?;
+        }
         transaction.execute(
             "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
             params![migration.version, migration.name],
@@ -354,6 +363,57 @@ pub(crate) fn migrate(connection: &mut Connection) -> StorageResult<()> {
         transaction.commit()?;
     }
 
+    Ok(())
+}
+
+fn repair_managed_session_reconciliation_schema(
+    transaction: &rusqlite::Transaction<'_>,
+) -> StorageResult<()> {
+    let mut statement = transaction.prepare("PRAGMA table_info(managed_sessions)")?;
+    let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+    let mut has_reconciliation_outcome = false;
+    for column in columns {
+        if column? == "reconciliation_outcome" {
+            has_reconciliation_outcome = true;
+            break;
+        }
+    }
+
+    if has_reconciliation_outcome {
+        return Ok(());
+    }
+
+    transaction.execute_batch(
+        "ALTER TABLE managed_sessions
+            ADD COLUMN reconciliation_outcome TEXT CHECK (
+                reconciliation_outcome IS NULL OR reconciliation_outcome IN (
+                    'attributed',
+                    'no_usage',
+                    'ambiguous',
+                    'window_rolled_over',
+                    'snapshot_unavailable'
+                )
+            );
+
+         UPDATE managed_sessions
+         SET reconciliation_outcome = CASE
+             WHEN reconciliation_status = 'reconciled'
+                  AND reconciled_amount = 0
+                 THEN 'no_usage'
+             WHEN reconciliation_status = 'reconciled'
+                  AND contended = 1
+                  AND reconciled_amount > 0
+                 THEN 'ambiguous'
+             WHEN reconciliation_status = 'reconciled'
+                  AND contended = 0
+                  AND reconciled_amount > 0
+                 THEN 'attributed'
+             WHEN reconciliation_status = 'unavailable'
+                 THEN 'snapshot_unavailable'
+             ELSE NULL
+         END
+         WHERE reconciliation_outcome IS NULL;",
+    )?;
     Ok(())
 }
 
@@ -443,6 +503,108 @@ mod tests {
                 })
                 .unwrap(),
             latest_version()
+        );
+    }
+
+    #[test]
+    fn repair_migration_recovers_a_partially_applied_reconciliation_schema() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys = ON;
+                 CREATE TABLE schema_migrations (
+                    version INTEGER PRIMARY KEY NOT NULL,
+                    name TEXT NOT NULL,
+                    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );",
+            )
+            .unwrap();
+        for migration in MIGRATIONS.iter().filter(|migration| migration.version <= 7) {
+            connection.execute_batch(migration.sql).unwrap();
+            connection
+                .execute(
+                    "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+                    params![migration.version, migration.name],
+                )
+                .unwrap();
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO providers (id, display_name) VALUES ('codex', 'Codex');
+                 INSERT INTO accounts (id, provider_id, display_name)
+                 VALUES ('account', 'codex', 'Subscription');
+                 INSERT INTO quota_pools (id, account_id, display_name, unit)
+                 VALUES ('pool', 'account', 'Weekly', 'percent');
+                 INSERT INTO quota_windows (id, pool_id, starts_at, ends_at, capacity)
+                 VALUES ('window', 'pool', 1000, 10000, 100);
+                 INSERT INTO scopes (id, parent_id, kind, display_name)
+                 VALUES ('workspace', NULL, 'repository', 'Workspace');
+                 INSERT INTO reservations (
+                    id, scope_id, window_id, amount, created_at, expires_at, status
+                 ) VALUES (
+                    'reservation', 'workspace', 'window', 20, 2000, 8000, 'released'
+                 );
+                 INSERT INTO managed_sessions (
+                    id, adapter, pool_id, window_id, scope_id, reservation_id,
+                    canonical_path, status, reconciliation_status, supervisor_pid,
+                    child_pid, created_at, started_at, finished_at, exit_code
+                 ) VALUES (
+                    'session', 'codex', 'pool', 'window', 'workspace', 'reservation',
+                    '/code/workspace', 'completed', 'pending', 42,
+                    84, 2000, 2100, 3000, 0
+                 );
+
+                 ALTER TABLE managed_sessions
+                    ADD COLUMN baseline_used INTEGER CHECK (
+                        baseline_used IS NULL OR baseline_used >= 0
+                    );
+                 ALTER TABLE managed_sessions ADD COLUMN baseline_observed_at INTEGER;
+                 ALTER TABLE managed_sessions
+                    ADD COLUMN contended INTEGER NOT NULL DEFAULT 0 CHECK (
+                        contended IN (0, 1)
+                    );
+                 ALTER TABLE managed_sessions
+                    ADD COLUMN reconciled_amount INTEGER CHECK (
+                        reconciled_amount IS NULL OR reconciled_amount >= 0
+                    );
+                 ALTER TABLE managed_sessions ADD COLUMN reconciled_at INTEGER;
+                 UPDATE managed_sessions
+                 SET reconciliation_status = 'unavailable'
+                 WHERE status IN ('completed', 'failed', 'interrupted')
+                   AND reconciliation_status = 'pending';
+                 INSERT INTO schema_migrations (version, name)
+                 VALUES (8, 'managed_session_reconciliation');",
+            )
+            .unwrap();
+        connection.execute_batch(WORKSPACE_POLICIES).unwrap();
+        connection
+            .execute(
+                "INSERT INTO schema_migrations (version, name) VALUES (9, 'workspace_policies')",
+                [],
+            )
+            .unwrap();
+
+        migrate(&mut connection).unwrap();
+
+        let repaired: (String, String) = connection
+            .query_row(
+                "SELECT reconciliation_status, reconciliation_outcome
+                 FROM managed_sessions WHERE id = 'session'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            repaired,
+            ("unavailable".to_owned(), "snapshot_unavailable".to_owned())
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            10
         );
     }
 

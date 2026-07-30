@@ -120,6 +120,12 @@ use integer basis points and may be disabled independently; database checks
 enforce range and warn/confirm/stop ordering. It also adds an association for
 explicit confirmation overrides accepted by managed sessions.
 
+Migration 10 defensively repairs early development databases that recorded
+migration 8 before its `reconciliation_outcome` column was finalized. It
+inspects the actual `managed_sessions` table, adds and backfills only the missing
+column, and is a no-op for complete schemas. The repair preserves the ledger and
+all managed-session records.
+
 ## Transactions
 
 Allocation writes acquire an immediate transaction before checking capacity:
