@@ -17,6 +17,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@fontsource-variable/outfit": "^5.3.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-opener": "^2",
