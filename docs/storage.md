@@ -12,6 +12,8 @@ The `src-tauri/src/storage` module provides:
 - isolated in-memory databases for tests;
 - ordered, transactional schema migrations;
 - catalog repositories for providers, accounts, pools, windows, and scopes;
+- atomic quota-source onboarding;
+- atomic scope-and-initial-allocation creation;
 - transactional hierarchical allocation writes;
 - capacity-checked reservations;
 - atomic usage recording and reservation consumption; and

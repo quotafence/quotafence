@@ -98,6 +98,32 @@ impl<'connection> CatalogRepository<'connection> {
         .transpose()
     }
 
+    pub fn list_accounts(&self) -> StorageResult<Vec<Account>> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, provider_id, display_name
+             FROM accounts
+             ORDER BY display_name, id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+
+        rows.map(|row| {
+            let (id, provider_id, display_name) = row?;
+            Account::new(
+                AccountId::new(id)?,
+                ProviderId::new(provider_id)?,
+                display_name,
+            )
+            .map_err(StorageError::from)
+        })
+        .collect()
+    }
+
     pub fn insert_quota_pool(&self, pool: &QuotaPool) -> StorageResult<()> {
         self.connection.execute(
             "INSERT INTO quota_pools (id, account_id, display_name, unit)
@@ -139,6 +165,34 @@ impl<'connection> CatalogRepository<'connection> {
             .map_err(StorageError::from)
         })
         .transpose()
+    }
+
+    pub fn list_quota_pools(&self) -> StorageResult<Vec<QuotaPool>> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, account_id, display_name, unit
+             FROM quota_pools
+             ORDER BY display_name, id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?;
+
+        rows.map(|row| {
+            let (id, account_id, display_name, unit) = row?;
+            QuotaPool::new(
+                QuotaPoolId::new(id)?,
+                AccountId::new(account_id)?,
+                display_name,
+                QuotaUnit::new(unit)?,
+            )
+            .map_err(StorageError::from)
+        })
+        .collect()
     }
 
     pub fn insert_quota_window(&self, window: &QuotaWindow) -> StorageResult<()> {
@@ -195,6 +249,41 @@ impl<'connection> CatalogRepository<'connection> {
             .map_err(StorageError::from)
         })
         .transpose()
+    }
+
+    pub fn list_quota_windows(&self) -> StorageResult<Vec<QuotaWindow>> {
+        let mut statement = self.connection.prepare(
+            "SELECT w.id, w.pool_id, w.starts_at, w.ends_at, w.capacity, p.unit
+             FROM quota_windows w
+             JOIN quota_pools p ON p.id = w.pool_id
+             ORDER BY w.ends_at DESC, w.starts_at DESC, w.id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, String>(5)?,
+            ))
+        })?;
+
+        rows.map(|row| {
+            let (id, pool_id, starts_at, ends_at, capacity, unit) = row?;
+            QuotaWindow::new(
+                WindowId::new(id)?,
+                QuotaPoolId::new(pool_id)?,
+                UnixMillis::new(starts_at),
+                UnixMillis::new(ends_at),
+                QuotaAmount::new(
+                    from_sql_integer(capacity, "window capacity")?,
+                    QuotaUnit::new(unit)?,
+                ),
+            )
+            .map_err(StorageError::from)
+        })
+        .collect()
     }
 
     pub fn insert_scope(&self, scope: &Scope) -> StorageResult<()> {
@@ -329,6 +418,10 @@ mod tests {
         assert_eq!(account.provider_id().as_str(), "codex");
         assert_eq!(pool.unit().as_str(), "quota_points");
         assert_eq!(window.capacity().value(), 100);
+        assert_eq!(catalog.list_providers().unwrap().len(), 1);
+        assert_eq!(catalog.list_accounts().unwrap().len(), 1);
+        assert_eq!(catalog.list_quota_pools().unwrap().len(), 1);
+        assert_eq!(catalog.list_quota_windows().unwrap().len(), 1);
     }
 
     #[test]

@@ -1,8 +1,13 @@
 use std::{path::Path, time::Duration};
 
-use rusqlite::Connection;
+use rusqlite::{Connection, TransactionBehavior};
 
-use super::{migrations, AllocationRepository, CatalogRepository, LedgerRepository, StorageResult};
+use crate::domain::{Account, Allocation, Provider, QuotaPool, QuotaWindow, Scope};
+
+use super::{
+    allocations::set_in_transaction, migrations, AllocationRepository, CatalogRepository,
+    LedgerRepository, StorageResult,
+};
 
 pub struct Database {
     connection: Connection,
@@ -51,6 +56,41 @@ impl Database {
             |row| row.get(0),
         )?)
     }
+
+    pub fn insert_quota_source(
+        &mut self,
+        provider: &Provider,
+        account: &Account,
+        pool: &QuotaPool,
+        window: &QuotaWindow,
+    ) -> StorageResult<()> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        {
+            let catalog = CatalogRepository::new(&transaction);
+            catalog.insert_provider(provider)?;
+            catalog.insert_account(account)?;
+            catalog.insert_quota_pool(pool)?;
+            catalog.insert_quota_window(window)?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn insert_allocated_scope(
+        &mut self,
+        scope: &Scope,
+        allocation: &Allocation,
+    ) -> StorageResult<()> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        CatalogRepository::new(&transaction).insert_scope(scope)?;
+        set_in_transaction(&transaction, allocation)?;
+        transaction.commit()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -58,8 +98,9 @@ mod tests {
     use super::*;
     use crate::{
         domain::{
-            Confidence, UnixMillis, UsageAttribution, UsageEvent, UsageEventId, UsageSource,
-            WindowId,
+            Account, AccountId, Confidence, Provider, ProviderId, QuotaAmount, QuotaPool,
+            QuotaPoolId, QuotaUnit, QuotaWindow, UnixMillis, UsageAttribution, UsageEvent,
+            UsageEventId, UsageSource, WindowId,
         },
         storage::test_support::{points, seeded_database},
     };
@@ -125,5 +166,58 @@ mod tests {
 
         assert!(update.is_err());
         assert!(delete.is_err());
+    }
+
+    #[test]
+    fn quota_source_insert_rolls_back_the_full_chain_on_conflict() {
+        let mut database = Database::open_in_memory().unwrap();
+        let catalog = database.catalog();
+        catalog
+            .insert_provider(
+                &Provider::new(ProviderId::new("existing").unwrap(), "Existing").unwrap(),
+            )
+            .unwrap();
+        catalog
+            .insert_account(
+                &Account::new(
+                    AccountId::new("shared-account").unwrap(),
+                    ProviderId::new("existing").unwrap(),
+                    "Existing account",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        let provider = Provider::new(ProviderId::new("codex").unwrap(), "Codex").unwrap();
+        let account = Account::new(
+            AccountId::new("shared-account").unwrap(),
+            provider.id().clone(),
+            "Subscription",
+        )
+        .unwrap();
+        let pool = QuotaPool::new(
+            QuotaPoolId::new("codex-weekly").unwrap(),
+            account.id().clone(),
+            "Weekly allowance",
+            QuotaUnit::new("percent").unwrap(),
+        )
+        .unwrap();
+        let window = QuotaWindow::new(
+            WindowId::new("week-1").unwrap(),
+            pool.id().clone(),
+            UnixMillis::new(1_000),
+            UnixMillis::new(10_000),
+            QuotaAmount::new(100, QuotaUnit::new("percent").unwrap()),
+        )
+        .unwrap();
+
+        assert!(database
+            .insert_quota_source(&provider, &account, &pool, &window)
+            .is_err());
+        assert!(database
+            .catalog()
+            .get_provider(provider.id())
+            .unwrap()
+            .is_none());
     }
 }

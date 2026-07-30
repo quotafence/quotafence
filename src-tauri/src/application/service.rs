@@ -6,13 +6,14 @@ use crate::{
         QuotaPool, QuotaPoolId, QuotaUnit, QuotaWindow, Reservation, ReservationId, Scope, ScopeId,
         UnixMillis, UsageAttribution, UsageEvent, UsageEventId, WindowId,
     },
-    storage::Database,
+    storage::{Database, StorageError},
 };
 
 use super::{
     error::to_view_integer, AllocationSnapshot, ApplicationError, ApplicationResult, CreateAccount,
-    CreateProvider, CreateQuotaPool, CreateQuotaWindow, CreateScope, GetQuotaDashboard,
-    QuotaDashboard, RecordUsage, ReleaseReservation, ReserveQuota, SetAllocation, WindowSummary,
+    CreateAllocatedScope, CreateProvider, CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow,
+    CreateScope, GetLocalState, GetQuotaDashboard, LocalState, QuotaDashboard, QuotaSourceSummary,
+    RecordUsage, ReleaseReservation, ReserveQuota, ScopeSummary, SetAllocation, WindowSummary,
 };
 
 pub struct QuotaService {
@@ -72,6 +73,36 @@ impl QuotaService {
         Ok(())
     }
 
+    pub fn create_quota_source(&mut self, command: CreateQuotaSource) -> ApplicationResult<()> {
+        let provider = Provider::new(
+            ProviderId::new(command.provider_id)?,
+            command.provider_display_name,
+        )?;
+        let account = Account::new(
+            AccountId::new(command.account_id)?,
+            provider.id().clone(),
+            command.account_display_name,
+        )?;
+        let unit = QuotaUnit::new(command.unit)?;
+        let pool = QuotaPool::new(
+            QuotaPoolId::new(command.pool_id)?,
+            account.id().clone(),
+            command.pool_display_name,
+            unit.clone(),
+        )?;
+        let window = QuotaWindow::new(
+            WindowId::new(command.window_id)?,
+            pool.id().clone(),
+            UnixMillis::new(command.starts_at),
+            UnixMillis::new(command.ends_at),
+            QuotaAmount::new(command.capacity, unit),
+        )?;
+
+        self.database
+            .insert_quota_source(&provider, &account, &pool, &window)?;
+        Ok(())
+    }
+
     pub fn create_scope(&mut self, command: CreateScope) -> ApplicationResult<()> {
         let scope = Scope::new(
             ScopeId::new(command.id)?,
@@ -83,13 +114,38 @@ impl QuotaService {
         Ok(())
     }
 
+    pub fn create_allocated_scope(
+        &mut self,
+        command: CreateAllocatedScope,
+    ) -> ApplicationResult<()> {
+        let scope = Scope::new(
+            ScopeId::new(command.id)?,
+            command.parent_id.map(ScopeId::new).transpose()?,
+            command.kind,
+            command.display_name,
+        )?;
+        let allocation = Allocation::new(
+            scope.id().clone(),
+            WindowId::new(command.window_id)?,
+            QuotaAmount::new(command.amount, QuotaUnit::new(command.unit)?),
+        );
+
+        self.database
+            .insert_allocated_scope(&scope, &allocation)
+            .map_err(map_input_storage_error)?;
+        Ok(())
+    }
+
     pub fn set_allocation(&mut self, command: SetAllocation) -> ApplicationResult<()> {
         let allocation = Allocation::new(
             ScopeId::new(command.scope_id)?,
             WindowId::new(command.window_id)?,
             QuotaAmount::new(command.amount, QuotaUnit::new(command.unit)?),
         );
-        self.database.allocations().set(&allocation)?;
+        self.database
+            .allocations()
+            .set(&allocation)
+            .map_err(map_input_storage_error)?;
         Ok(())
     }
 
@@ -227,10 +283,123 @@ impl QuotaService {
             allocations: snapshots,
         })
     }
+
+    pub fn local_state(&mut self, command: GetLocalState) -> ApplicationResult<LocalState> {
+        let at = UnixMillis::new(command.at);
+        let catalog = self.database.catalog();
+        let providers: HashMap<_, _> = catalog
+            .list_providers()?
+            .into_iter()
+            .map(|provider| (provider.id().clone(), provider))
+            .collect();
+        let accounts: HashMap<_, _> = catalog
+            .list_accounts()?
+            .into_iter()
+            .map(|account| (account.id().clone(), account))
+            .collect();
+        let pools: HashMap<_, _> = catalog
+            .list_quota_pools()?
+            .into_iter()
+            .map(|pool| (pool.id().clone(), pool))
+            .collect();
+        let windows = catalog.list_quota_windows()?;
+        let scopes = catalog.list_scopes()?;
+        let mut sources = Vec::with_capacity(windows.len());
+
+        for window in windows {
+            let pool = pools.get(window.pool_id()).ok_or_else(|| {
+                inconsistent_reference("quota window", window.id(), "quota pool", window.pool_id())
+            })?;
+            let account = accounts.get(pool.account_id()).ok_or_else(|| {
+                inconsistent_reference("quota pool", pool.id(), "account", pool.account_id())
+            })?;
+            let provider = providers.get(account.provider_id()).ok_or_else(|| {
+                inconsistent_reference("account", account.id(), "provider", account.provider_id())
+            })?;
+
+            sources.push(QuotaSourceSummary {
+                provider_id: provider.id().to_string(),
+                provider_display_name: provider.display_name().to_owned(),
+                account_id: account.id().to_string(),
+                account_display_name: account.display_name().to_owned(),
+                pool_id: pool.id().to_string(),
+                pool_display_name: pool.display_name().to_owned(),
+                window_id: window.id().to_string(),
+                starts_at: window.starts_at().value(),
+                ends_at: window.ends_at().value(),
+                capacity: window.capacity().value(),
+                unit: window.capacity().unit().to_string(),
+                is_active: window.contains(at),
+            });
+        }
+
+        let requested_window_id = command.selected_window_id.map(WindowId::new).transpose()?;
+        let selected_window_id = match requested_window_id {
+            Some(requested) => {
+                if !sources
+                    .iter()
+                    .any(|source| source.window_id == requested.as_str())
+                {
+                    return Err(ApplicationError::NotFound {
+                        resource: "quota window",
+                        id: requested.to_string(),
+                    });
+                }
+                Some(requested.to_string())
+            }
+            None => sources
+                .iter()
+                .find(|source| source.is_active)
+                .or_else(|| sources.first())
+                .map(|source| source.window_id.clone()),
+        };
+        let dashboard = selected_window_id
+            .as_ref()
+            .map(|window_id| {
+                self.dashboard(GetQuotaDashboard {
+                    window_id: window_id.clone(),
+                    at: command.at,
+                })
+            })
+            .transpose()?;
+
+        Ok(LocalState {
+            sources,
+            scopes: scopes
+                .into_iter()
+                .map(|scope| ScopeSummary {
+                    id: scope.id().to_string(),
+                    parent_id: scope.parent_id().map(ToString::to_string),
+                    kind: scope.kind(),
+                    display_name: scope.display_name().to_owned(),
+                })
+                .collect(),
+            selected_window_id,
+            dashboard,
+        })
+    }
 }
 
 fn arithmetic_overflow() -> ApplicationError {
     crate::domain::DomainError::ArithmeticOverflow.into()
+}
+
+fn map_input_storage_error(error: StorageError) -> ApplicationError {
+    match error {
+        StorageError::Domain(error) => ApplicationError::Validation(error),
+        error => ApplicationError::Storage(error),
+    }
+}
+
+fn inconsistent_reference(
+    owner_kind: &str,
+    owner_id: impl std::fmt::Display,
+    missing_kind: &str,
+    missing_id: impl std::fmt::Display,
+) -> ApplicationError {
+    ApplicationError::InconsistentData {
+        message: format!("{owner_kind} {owner_id} references missing {missing_kind} {missing_id}"),
+    }
 }
 
 #[cfg(test)]
@@ -238,11 +407,12 @@ mod tests {
     use super::*;
     use crate::{
         application::{
-            CreateAccount, CreateProvider, CreateQuotaPool, CreateQuotaWindow, CreateScope,
-            GetQuotaDashboard, RecordUsage, ReserveQuota, SetAllocation,
+            CreateAccount, CreateAllocatedScope, CreateProvider, CreateQuotaPool,
+            CreateQuotaSource, CreateQuotaWindow, CreateScope, GetLocalState, GetQuotaDashboard,
+            RecordUsage, ReserveQuota, SetAllocation,
         },
         domain::{Confidence, EnforcementDecision, ScopeKind, UsageSource},
-        storage::{Database, StorageError},
+        storage::Database,
     };
 
     fn configured_service() -> QuotaService {
@@ -501,5 +671,99 @@ mod tests {
             .iter()
             .any(|allocation| allocation["scopeId"] == "feature-a"));
         assert!(json["window"].get("provider_remaining").is_none());
+    }
+
+    #[test]
+    fn local_state_is_empty_before_onboarding() {
+        let mut service = QuotaService::new(Database::open_in_memory().unwrap());
+
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: None,
+                at: 3_000,
+            })
+            .unwrap();
+
+        assert!(state.sources.is_empty());
+        assert!(state.scopes.is_empty());
+        assert_eq!(state.selected_window_id, None);
+        assert_eq!(state.dashboard, None);
+    }
+
+    #[test]
+    fn local_state_rehydrates_sources_scopes_and_the_active_dashboard() {
+        let mut service = configured_service();
+
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: None,
+                at: 3_000,
+            })
+            .unwrap();
+
+        assert_eq!(state.sources.len(), 1);
+        assert_eq!(state.sources[0].provider_display_name, "Codex");
+        assert!(state.sources[0].is_active);
+        assert_eq!(state.scopes.len(), 2);
+        assert_eq!(state.selected_window_id.as_deref(), Some("week-1"));
+        assert_eq!(state.dashboard.unwrap().window.capacity, 100);
+    }
+
+    #[test]
+    fn quota_source_onboarding_creates_the_complete_catalog_chain() {
+        let mut service = QuotaService::new(Database::open_in_memory().unwrap());
+
+        service
+            .create_quota_source(CreateQuotaSource {
+                provider_id: "codex".to_owned(),
+                provider_display_name: "Codex".to_owned(),
+                account_id: "codex-subscription".to_owned(),
+                account_display_name: "Subscription".to_owned(),
+                pool_id: "codex-weekly".to_owned(),
+                pool_display_name: "Weekly allowance".to_owned(),
+                window_id: "week-1".to_owned(),
+                starts_at: 1_000,
+                ends_at: 10_000,
+                capacity: 100,
+                unit: "percent".to_owned(),
+            })
+            .unwrap();
+
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: None,
+                at: 3_000,
+            })
+            .unwrap();
+
+        assert_eq!(state.sources.len(), 1);
+        assert_eq!(state.sources[0].unit, "percent");
+        assert_eq!(state.dashboard.unwrap().window.provider_remaining, 100);
+    }
+
+    #[test]
+    fn allocated_scope_creation_rolls_back_when_capacity_is_exceeded() {
+        let mut service = configured_service();
+
+        let error = service
+            .create_allocated_scope(CreateAllocatedScope {
+                id: "project-b".to_owned(),
+                parent_id: None,
+                kind: ScopeKind::Project,
+                display_name: "Project B".to_owned(),
+                window_id: "week-1".to_owned(),
+                amount: 40,
+                unit: "quota_points".to_owned(),
+            })
+            .unwrap_err();
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: Some("week-1".to_owned()),
+                at: 3_000,
+            })
+            .unwrap();
+
+        assert!(matches!(error, ApplicationError::Validation(_)));
+        assert!(!state.scopes.iter().any(|scope| scope.id == "project-b"));
     }
 }

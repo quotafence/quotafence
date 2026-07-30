@@ -21,113 +21,7 @@ impl<'connection> AllocationRepository<'connection> {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let (window_capacity, unit) =
-            window_capacity_and_unit(&transaction, allocation.window_id())?;
-        ensure_unit(allocation.limit().unit(), &unit)?;
-
-        let parent_id = transaction
-            .query_row(
-                "SELECT parent_id FROM scopes WHERE id = ?1",
-                [allocation.scope_id().as_str()],
-                |row| row.get::<_, Option<String>>(0),
-            )
-            .optional()?
-            .ok_or_else(|| StorageError::NotFound {
-                entity: "scope",
-                id: allocation.scope_id().to_string(),
-            })?;
-
-        let limit = match parent_id.as_deref() {
-            Some(parent_id) => transaction
-                .query_row(
-                    "SELECT amount FROM allocations WHERE scope_id = ?1 AND window_id = ?2",
-                    params![parent_id, allocation.window_id().as_str()],
-                    |row| row.get::<_, i64>(0),
-                )
-                .optional()?
-                .ok_or_else(|| StorageError::NotFound {
-                    entity: "parent allocation",
-                    id: format!("{parent_id}/{}", allocation.window_id()),
-                })?,
-            None => window_capacity,
-        };
-
-        let allocated_elsewhere = match parent_id.as_deref() {
-            Some(parent_id) => transaction.query_row(
-                "SELECT COALESCE(SUM(a.amount), 0)
-                 FROM allocations a
-                 JOIN scopes s ON s.id = a.scope_id
-                 WHERE a.window_id = ?1
-                   AND s.parent_id = ?2
-                   AND a.scope_id <> ?3",
-                params![
-                    allocation.window_id().as_str(),
-                    parent_id,
-                    allocation.scope_id().as_str()
-                ],
-                |row| row.get::<_, i64>(0),
-            )?,
-            None => transaction.query_row(
-                "SELECT COALESCE(SUM(a.amount), 0)
-                 FROM allocations a
-                 JOIN scopes s ON s.id = a.scope_id
-                 WHERE a.window_id = ?1
-                   AND s.parent_id IS NULL
-                   AND a.scope_id <> ?2",
-                params![
-                    allocation.window_id().as_str(),
-                    allocation.scope_id().as_str()
-                ],
-                |row| row.get::<_, i64>(0),
-            )?,
-        };
-
-        let amount = to_sql_integer(allocation.limit().value(), "allocation amount")?;
-        let allocated_to_children: i64 = transaction.query_row(
-            "SELECT COALESCE(SUM(a.amount), 0)
-             FROM allocations a
-             JOIN scopes s ON s.id = a.scope_id
-             WHERE a.window_id = ?1 AND s.parent_id = ?2",
-            params![
-                allocation.window_id().as_str(),
-                allocation.scope_id().as_str()
-            ],
-            |row| row.get(0),
-        )?;
-
-        if allocated_to_children > amount {
-            return Err(DomainError::AllocationExceeded {
-                limit: allocation.limit().value(),
-                allocated: from_sql_integer(allocated_to_children, "child allocation total")?,
-                unit: unit.to_string(),
-            }
-            .into());
-        }
-
-        let total = allocated_elsewhere
-            .checked_add(amount)
-            .ok_or(StorageError::Domain(DomainError::ArithmeticOverflow))?;
-
-        if total > limit {
-            return Err(DomainError::AllocationExceeded {
-                limit: from_sql_integer(limit, "allocation limit")?,
-                allocated: from_sql_integer(total, "allocated total")?,
-                unit: unit.to_string(),
-            }
-            .into());
-        }
-
-        transaction.execute(
-            "INSERT INTO allocations (scope_id, window_id, amount)
-             VALUES (?1, ?2, ?3)
-             ON CONFLICT(scope_id, window_id)
-             DO UPDATE SET amount = excluded.amount",
-            params![
-                allocation.scope_id().as_str(),
-                allocation.window_id().as_str(),
-                amount
-            ],
-        )?;
+        set_in_transaction(&transaction, allocation)?;
         transaction.commit()?;
         Ok(())
     }
@@ -193,6 +87,119 @@ impl<'connection> AllocationRepository<'connection> {
         })
         .collect()
     }
+}
+
+pub(crate) fn set_in_transaction(
+    transaction: &Transaction<'_>,
+    allocation: &Allocation,
+) -> StorageResult<()> {
+    let (window_capacity, unit) = window_capacity_and_unit(transaction, allocation.window_id())?;
+    ensure_unit(allocation.limit().unit(), &unit)?;
+
+    let parent_id = transaction
+        .query_row(
+            "SELECT parent_id FROM scopes WHERE id = ?1",
+            [allocation.scope_id().as_str()],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()?
+        .ok_or_else(|| StorageError::NotFound {
+            entity: "scope",
+            id: allocation.scope_id().to_string(),
+        })?;
+
+    let limit = match parent_id.as_deref() {
+        Some(parent_id) => transaction
+            .query_row(
+                "SELECT amount FROM allocations WHERE scope_id = ?1 AND window_id = ?2",
+                params![parent_id, allocation.window_id().as_str()],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?
+            .ok_or_else(|| StorageError::NotFound {
+                entity: "parent allocation",
+                id: format!("{parent_id}/{}", allocation.window_id()),
+            })?,
+        None => window_capacity,
+    };
+
+    let allocated_elsewhere = match parent_id.as_deref() {
+        Some(parent_id) => transaction.query_row(
+            "SELECT COALESCE(SUM(a.amount), 0)
+             FROM allocations a
+             JOIN scopes s ON s.id = a.scope_id
+             WHERE a.window_id = ?1
+               AND s.parent_id = ?2
+               AND a.scope_id <> ?3",
+            params![
+                allocation.window_id().as_str(),
+                parent_id,
+                allocation.scope_id().as_str()
+            ],
+            |row| row.get::<_, i64>(0),
+        )?,
+        None => transaction.query_row(
+            "SELECT COALESCE(SUM(a.amount), 0)
+             FROM allocations a
+             JOIN scopes s ON s.id = a.scope_id
+             WHERE a.window_id = ?1
+               AND s.parent_id IS NULL
+               AND a.scope_id <> ?2",
+            params![
+                allocation.window_id().as_str(),
+                allocation.scope_id().as_str()
+            ],
+            |row| row.get::<_, i64>(0),
+        )?,
+    };
+
+    let amount = to_sql_integer(allocation.limit().value(), "allocation amount")?;
+    let allocated_to_children: i64 = transaction.query_row(
+        "SELECT COALESCE(SUM(a.amount), 0)
+         FROM allocations a
+         JOIN scopes s ON s.id = a.scope_id
+         WHERE a.window_id = ?1 AND s.parent_id = ?2",
+        params![
+            allocation.window_id().as_str(),
+            allocation.scope_id().as_str()
+        ],
+        |row| row.get(0),
+    )?;
+
+    if allocated_to_children > amount {
+        return Err(DomainError::AllocationExceeded {
+            limit: allocation.limit().value(),
+            allocated: from_sql_integer(allocated_to_children, "child allocation total")?,
+            unit: unit.to_string(),
+        }
+        .into());
+    }
+
+    let total = allocated_elsewhere
+        .checked_add(amount)
+        .ok_or(StorageError::Domain(DomainError::ArithmeticOverflow))?;
+
+    if total > limit {
+        return Err(DomainError::AllocationExceeded {
+            limit: from_sql_integer(limit, "allocation limit")?,
+            allocated: from_sql_integer(total, "allocated total")?,
+            unit: unit.to_string(),
+        }
+        .into());
+    }
+
+    transaction.execute(
+        "INSERT INTO allocations (scope_id, window_id, amount)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(scope_id, window_id)
+         DO UPDATE SET amount = excluded.amount",
+        params![
+            allocation.scope_id().as_str(),
+            allocation.window_id().as_str(),
+            amount
+        ],
+    )?;
+    Ok(())
 }
 
 pub(crate) fn window_capacity_and_unit(

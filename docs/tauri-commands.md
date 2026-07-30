@@ -25,12 +25,15 @@ The approved product commands are:
 - `create_account`
 - `create_quota_pool`
 - `create_quota_window`
+- `create_quota_source`
 - `create_scope`
+- `create_allocated_scope`
 - `set_allocation`
 - `reserve_quota`
 - `release_reservation`
 - `record_usage`
 - `get_quota_dashboard`
+- `get_local_state`
 
 Every command accepts one camelCase `request` object. For example:
 

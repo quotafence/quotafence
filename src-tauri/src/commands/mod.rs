@@ -6,9 +6,9 @@ use std::{error::Error, fs};
 use tauri::{Manager, Runtime, State};
 
 use crate::application::{
-    CreateAccount, CreateProvider, CreateQuotaPool, CreateQuotaWindow, CreateScope,
-    GetQuotaDashboard, QuotaDashboard, RecordUsage, ReleaseReservation, ReserveQuota,
-    SetAllocation,
+    CreateAccount, CreateAllocatedScope, CreateProvider, CreateQuotaPool, CreateQuotaSource,
+    CreateQuotaWindow, CreateScope, GetLocalState, GetQuotaDashboard, LocalState, QuotaDashboard,
+    RecordUsage, ReleaseReservation, ReserveQuota, SetAllocation,
 };
 
 pub use error::{IpcError, IpcResult};
@@ -58,8 +58,24 @@ pub(crate) fn create_quota_window(
 }
 
 #[tauri::command]
+pub(crate) fn create_quota_source(
+    state: State<'_, AppState>,
+    request: CreateQuotaSource,
+) -> IpcResult<()> {
+    state.execute(|service| service.create_quota_source(request))
+}
+
+#[tauri::command]
 pub(crate) fn create_scope(state: State<'_, AppState>, request: CreateScope) -> IpcResult<()> {
     state.execute(|service| service.create_scope(request))
+}
+
+#[tauri::command]
+pub(crate) fn create_allocated_scope(
+    state: State<'_, AppState>,
+    request: CreateAllocatedScope,
+) -> IpcResult<()> {
+    state.execute(|service| service.create_allocated_scope(request))
 }
 
 #[tauri::command]
@@ -91,6 +107,14 @@ pub(crate) fn get_quota_dashboard(
     request: GetQuotaDashboard,
 ) -> IpcResult<QuotaDashboard> {
     state.execute(|service| service.dashboard(request))
+}
+
+#[tauri::command]
+pub(crate) fn get_local_state(
+    state: State<'_, AppState>,
+    request: GetLocalState,
+) -> IpcResult<LocalState> {
+    state.execute(|service| service.local_state(request))
 }
 
 #[cfg(test)]

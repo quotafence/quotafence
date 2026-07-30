@@ -4,9 +4,12 @@ mod service;
 mod view;
 
 pub use commands::{
-    CreateAccount, CreateProvider, CreateQuotaPool, CreateQuotaWindow, CreateScope,
-    GetQuotaDashboard, RecordUsage, ReleaseReservation, ReserveQuota, SetAllocation,
+    CreateAccount, CreateAllocatedScope, CreateProvider, CreateQuotaPool, CreateQuotaSource,
+    CreateQuotaWindow, CreateScope, GetLocalState, GetQuotaDashboard, RecordUsage,
+    ReleaseReservation, ReserveQuota, SetAllocation,
 };
 pub use error::{ApplicationError, ApplicationResult};
 pub use service::QuotaService;
-pub use view::{AllocationSnapshot, QuotaDashboard, WindowSummary};
+pub use view::{
+    AllocationSnapshot, LocalState, QuotaDashboard, QuotaSourceSummary, ScopeSummary, WindowSummary,
+};

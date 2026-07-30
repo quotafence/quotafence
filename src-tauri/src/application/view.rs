@@ -4,6 +4,41 @@ use crate::domain::{EnforcementDecision, ScopeKind};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct LocalState {
+    pub sources: Vec<QuotaSourceSummary>,
+    pub scopes: Vec<ScopeSummary>,
+    pub selected_window_id: Option<String>,
+    pub dashboard: Option<QuotaDashboard>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuotaSourceSummary {
+    pub provider_id: String,
+    pub provider_display_name: String,
+    pub account_id: String,
+    pub account_display_name: String,
+    pub pool_id: String,
+    pub pool_display_name: String,
+    pub window_id: String,
+    pub starts_at: i64,
+    pub ends_at: i64,
+    pub capacity: u64,
+    pub unit: String,
+    pub is_active: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopeSummary {
+    pub id: String,
+    pub parent_id: Option<String>,
+    pub kind: ScopeKind,
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct QuotaDashboard {
     pub window: WindowSummary,
     pub allocations: Vec<AllocationSnapshot>,
