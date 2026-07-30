@@ -26,6 +26,8 @@ pub struct QuotaSourceSummary {
     pub capacity: u64,
     pub unit: String,
     pub is_active: bool,
+    pub provider_managed: bool,
+    pub last_synced_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -58,6 +60,13 @@ pub struct WindowSummary {
     pub unattributed_usage: u64,
     pub provider_remaining: i64,
     pub provider_spendable: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncProviderQuotaResult {
+    pub window_id: String,
+    pub rolled_over: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

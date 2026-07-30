@@ -51,6 +51,33 @@ pub struct CreateQuotaSource {
     pub ends_at: i64,
     pub capacity: u64,
     pub unit: String,
+    pub provider_snapshot: Option<ProviderQuotaSnapshotInput>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderQuotaSnapshotInput {
+    pub adapter: String,
+    pub remote_limit_id: String,
+    pub remote_window_kind: String,
+    pub used: u64,
+    pub observed_at: i64,
+    pub resets_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncProviderQuota {
+    pub current_window_id: String,
+    pub adapter: String,
+    pub remote_limit_id: String,
+    pub remote_window_kind: String,
+    pub starts_at: i64,
+    pub ends_at: i64,
+    pub capacity: u64,
+    pub used: u64,
+    pub unit: String,
+    pub observed_at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

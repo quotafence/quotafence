@@ -99,11 +99,30 @@ BEGIN
 END;
 "#;
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "initial_schema",
-    sql: INITIAL_SCHEMA,
-}];
+const PROVIDER_QUOTA_SNAPSHOTS: &str = r#"
+CREATE TABLE provider_quota_snapshots (
+    window_id TEXT PRIMARY KEY NOT NULL REFERENCES quota_windows(id) ON DELETE CASCADE,
+    adapter TEXT NOT NULL CHECK (length(trim(adapter)) > 0),
+    remote_limit_id TEXT NOT NULL CHECK (length(trim(remote_limit_id)) > 0),
+    remote_window_kind TEXT NOT NULL CHECK (length(trim(remote_window_kind)) > 0),
+    used INTEGER NOT NULL CHECK (used >= 0),
+    observed_at INTEGER NOT NULL,
+    resets_at INTEGER NOT NULL
+);
+"#;
+
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "initial_schema",
+        sql: INITIAL_SCHEMA,
+    },
+    Migration {
+        version: 2,
+        name: "provider_quota_snapshots",
+        sql: PROVIDER_QUOTA_SNAPSHOTS,
+    },
+];
 
 pub(crate) fn migrate(connection: &mut Connection) -> StorageResult<()> {
     connection.execute_batch(

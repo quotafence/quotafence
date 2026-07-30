@@ -1,15 +1,21 @@
 mod error;
 mod state;
 
-use std::{error::Error, fs};
+use std::{
+    error::Error,
+    fs,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
+use serde::Serialize;
 use tauri::{Manager, Runtime, State};
 
 use crate::application::{
     CreateAccount, CreateAllocatedScope, CreateProvider, CreateQuotaPool, CreateQuotaSource,
     CreateQuotaWindow, CreateScope, GetLocalState, GetQuotaDashboard, LocalState, QuotaDashboard,
-    RecordUsage, ReleaseReservation, ReserveQuota, SetAllocation,
+    RecordUsage, ReleaseReservation, ReserveQuota, SetAllocation, SyncProviderQuota,
 };
+use crate::providers::codex::{self, CodexDetection, DetectedQuotaWindow, DetectionStatus};
 
 pub use error::{IpcError, IpcResult};
 use state::AppState;
@@ -115,6 +121,160 @@ pub(crate) fn get_local_state(
     request: GetLocalState,
 ) -> IpcResult<LocalState> {
     state.execute(|service| service.local_state(request))
+}
+
+#[tauri::command]
+pub(crate) async fn detect_codex_quota() -> CodexDetection {
+    tauri::async_runtime::spawn_blocking(codex::detect)
+        .await
+        .unwrap_or_else(|_| codex::detection_failed())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CodexSyncStatus {
+    Synced,
+    NotApplicable,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CodexSyncResult {
+    status: CodexSyncStatus,
+    window_id: Option<String>,
+    rolled_over: bool,
+    synced_at: Option<i64>,
+    message: Option<String>,
+}
+
+#[tauri::command]
+pub(crate) async fn sync_codex_quota(
+    state: State<'_, AppState>,
+    window_id: String,
+) -> IpcResult<CodexSyncResult> {
+    let now = current_time_millis();
+    let source = match state.execute(|service| {
+        service.local_state(GetLocalState {
+            selected_window_id: Some(window_id.clone()),
+            at: now,
+        })
+    }) {
+        Ok(local_state) => local_state
+            .sources
+            .into_iter()
+            .find(|source| source.window_id == window_id),
+        Err(error) => {
+            return Ok(CodexSyncResult {
+                status: CodexSyncStatus::Unavailable,
+                window_id: Some(window_id),
+                rolled_over: false,
+                synced_at: None,
+                message: Some(error.message),
+            });
+        }
+    };
+    let Some(source) = source else {
+        return Ok(CodexSyncResult {
+            status: CodexSyncStatus::Unavailable,
+            window_id: Some(window_id),
+            rolled_over: false,
+            synced_at: None,
+            message: Some("The selected quota source no longer exists.".to_owned()),
+        });
+    };
+
+    if !source.provider_display_name.eq_ignore_ascii_case("codex") || source.unit != "percent" {
+        return Ok(CodexSyncResult {
+            status: CodexSyncStatus::NotApplicable,
+            window_id: Some(source.window_id),
+            rolled_over: false,
+            synced_at: None,
+            message: None,
+        });
+    }
+
+    let detection = tauri::async_runtime::spawn_blocking(codex::detect)
+        .await
+        .unwrap_or_else(|_| codex::detection_failed());
+    if detection.status != DetectionStatus::Detected {
+        return Ok(CodexSyncResult {
+            status: CodexSyncStatus::Unavailable,
+            window_id: Some(source.window_id),
+            rolled_over: false,
+            synced_at: None,
+            message: detection.message,
+        });
+    }
+
+    let Some(remote_window) = matching_window(&detection.windows, source.starts_at, source.ends_at)
+    else {
+        return Ok(CodexSyncResult {
+            status: CodexSyncStatus::Unavailable,
+            window_id: Some(source.window_id),
+            rolled_over: false,
+            synced_at: None,
+            message: Some(
+                "Codex returned quota windows, but none matched this local source.".to_owned(),
+            ),
+        });
+    };
+    let sync = state.execute(|service| {
+        service.sync_provider_quota(SyncProviderQuota {
+            current_window_id: source.window_id.clone(),
+            adapter: "codex_app_server".to_owned(),
+            remote_limit_id: detection.provider_id,
+            remote_window_kind: remote_window.kind.clone(),
+            starts_at: remote_window.starts_at,
+            ends_at: remote_window.ends_at,
+            capacity: remote_window.capacity,
+            used: remote_window.used,
+            unit: remote_window.unit.clone(),
+            observed_at: now,
+        })
+    });
+
+    Ok(match sync {
+        Ok(result) => CodexSyncResult {
+            status: CodexSyncStatus::Synced,
+            window_id: Some(result.window_id),
+            rolled_over: result.rolled_over,
+            synced_at: Some(now),
+            message: None,
+        },
+        Err(error) => CodexSyncResult {
+            status: CodexSyncStatus::Unavailable,
+            window_id: Some(source.window_id),
+            rolled_over: false,
+            synced_at: None,
+            message: Some(error.message),
+        },
+    })
+}
+
+fn matching_window(
+    windows: &[DetectedQuotaWindow],
+    local_starts_at: i64,
+    local_ends_at: i64,
+) -> Option<&DetectedQuotaWindow> {
+    let local_duration = local_ends_at.checked_sub(local_starts_at)?;
+    windows
+        .iter()
+        .filter_map(|window| {
+            let remote_duration = window.ends_at.checked_sub(window.starts_at)?;
+            let difference = remote_duration.abs_diff(local_duration);
+            (difference <= 5 * 60_000).then_some((difference, window))
+        })
+        .min_by_key(|(difference, _)| *difference)
+        .map(|(_, window)| window)
+}
+
+fn current_time_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
+        .unwrap_or(0)
 }
 
 #[cfg(test)]

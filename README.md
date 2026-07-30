@@ -3,9 +3,9 @@
 Local-first quota allocation and enforcement for coding-agent subscriptions.
 
 > [!IMPORTANT]
-> Agent Quota Manager is an early local MVP with no stable release. Manual
-> allocation and accounting work locally, but provider detection and managed
-> enforcement are not implemented yet. Codex is the first planned integration.
+> Agent Quota Manager is an early local MVP with no stable release. Codex quota
+> discovery and manual allocation work locally, but continuous reconciliation
+> and managed enforcement are not implemented yet.
 
 Coding-agent subscriptions usually expose one shared usage allowance. When
 several repositories or tasks compete for that allowance, it is difficult to
@@ -69,6 +69,20 @@ described in [Storage](docs/storage.md), and use-case orchestration in
 is documented in [Tauri commands](docs/tauri-commands.md). See
 [Local MVP](docs/local-mvp.md) for the current end-to-end workflow and its
 limitations.
+
+### Codex detection
+
+When Codex is installed and signed in with a ChatGPT subscription, onboarding
+starts its official local App Server and calls `account/rateLimits/read`. The
+adapter imports the selected quota window, reset time, normalized percentage,
+and current provider-confirmed usage. Manual setup remains available when
+detection is unsupported or temporarily unavailable.
+
+The app does not read Codex credential files, session transcripts, prompts, or
+repository contents. The App Server process is stopped after the snapshot is
+read. The selected Codex source refreshes on startup and on demand. Provider
+totals replace the previous snapshot rather than accumulating as usage events,
+and a new reset window carries allocations forward without old usage.
 
 ## Development
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { AllocationForm } from "./components/AllocationForm";
 import { Dashboard } from "./components/Dashboard";
@@ -14,6 +14,7 @@ import {
   getLocalState,
   recordUsage,
   setAllocation,
+  syncCodexQuota,
 } from "./lib/api";
 import type {
   LocalState,
@@ -142,6 +143,7 @@ function App() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>(null);
+  const initialSyncStarted = useRef(false);
 
   const loadState = useCallback(async (windowId: string | null = null) => {
     const nextState = await getLocalState(windowId);
@@ -150,9 +152,28 @@ function App() {
   }, []);
 
   useEffect(() => {
-    loadState()
-      .catch((reason) => setError(getErrorMessage(reason)))
-      .finally(() => setInitializing(false));
+    async function initialize() {
+      try {
+        const nextState = await loadState();
+        if (initialSyncStarted.current) {
+          return;
+        }
+        initialSyncStarted.current = true;
+        const source = nextState.sources.find(
+          (candidate) => candidate.windowId === nextState.selectedWindowId,
+        );
+        if (source?.providerDisplayName.toLowerCase() === "codex") {
+          const sync = await syncCodexQuota(source.windowId);
+          await loadState(sync.windowId ?? source.windowId);
+        }
+      } catch (reason) {
+        setError(getErrorMessage(reason));
+      } finally {
+        setInitializing(false);
+      }
+    }
+
+    void initialize();
   }, [loadState]);
 
   const selectedSource = useMemo(
@@ -210,7 +231,17 @@ function App() {
     setRefreshing(true);
     setError(null);
     try {
-      await loadState(localState?.selectedWindowId ?? null);
+      const windowId = localState?.selectedWindowId ?? null;
+      if (!windowId || selectedSource?.providerDisplayName.toLowerCase() !== "codex") {
+        await loadState(windowId);
+        return;
+      }
+
+      const sync = await syncCodexQuota(windowId);
+      await loadState(sync.windowId ?? windowId);
+      if (sync.status === "unavailable" && sync.message) {
+        setError(sync.message);
+      }
     } catch (reason) {
       setError(getErrorMessage(reason));
     } finally {
@@ -308,7 +339,7 @@ function App() {
 
       {modal?.type === "source" && (
         <Modal
-          eyebrow="Manual subscription"
+          eyebrow="Provider detection"
           title="Add a quota source"
           onClose={() => setModal(null)}
         >

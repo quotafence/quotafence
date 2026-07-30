@@ -2,11 +2,11 @@ use std::{path::Path, time::Duration};
 
 use rusqlite::{Connection, TransactionBehavior};
 
-use crate::domain::{Account, Allocation, Provider, QuotaPool, QuotaWindow, Scope};
+use crate::domain::{Account, Allocation, Provider, QuotaPool, QuotaWindow, Scope, WindowId};
 
 use super::{
-    allocations::set_in_transaction, migrations, AllocationRepository, CatalogRepository,
-    LedgerRepository, StorageResult,
+    allocations::set_in_transaction, migrations, provider_snapshots, AllocationRepository,
+    CatalogRepository, LedgerRepository, ProviderQuotaSnapshot, StorageResult,
 };
 
 pub struct Database {
@@ -64,6 +64,17 @@ impl Database {
         pool: &QuotaPool,
         window: &QuotaWindow,
     ) -> StorageResult<()> {
+        self.insert_quota_source_with_snapshot(provider, account, pool, window, None)
+    }
+
+    pub fn insert_quota_source_with_snapshot(
+        &mut self,
+        provider: &Provider,
+        account: &Account,
+        pool: &QuotaPool,
+        window: &QuotaWindow,
+        snapshot: Option<&ProviderQuotaSnapshot>,
+    ) -> StorageResult<()> {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -74,6 +85,47 @@ impl Database {
             catalog.insert_quota_pool(pool)?;
             catalog.insert_quota_window(window)?;
         }
+        if let Some(snapshot) = snapshot {
+            provider_snapshots::upsert(&transaction, snapshot)?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn provider_quota_snapshot(
+        &self,
+        window_id: &WindowId,
+    ) -> StorageResult<Option<ProviderQuotaSnapshot>> {
+        provider_snapshots::get(&self.connection, window_id)
+    }
+
+    pub fn sync_provider_quota(
+        &mut self,
+        current_window_id: &WindowId,
+        target_window: &QuotaWindow,
+        snapshot: &ProviderQuotaSnapshot,
+    ) -> StorageResult<()> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+        if target_window.id() != current_window_id {
+            if CatalogRepository::new(&transaction)
+                .get_quota_window(target_window.id())?
+                .is_none()
+            {
+                CatalogRepository::new(&transaction).insert_quota_window(target_window)?;
+            }
+            transaction.execute(
+                "INSERT OR IGNORE INTO allocations (scope_id, window_id, amount)
+                 SELECT scope_id, ?1, amount
+                 FROM allocations
+                 WHERE window_id = ?2",
+                [target_window.id().as_str(), current_window_id.as_str()],
+            )?;
+        }
+
+        provider_snapshots::upsert(&transaction, snapshot)?;
         transaction.commit()?;
         Ok(())
     }

@@ -34,8 +34,11 @@ The approved product commands are:
 - `record_usage`
 - `get_quota_dashboard`
 - `get_local_state`
+- `detect_codex_quota`
+- `sync_codex_quota`
 
-Every command accepts one camelCase `request` object. For example:
+Mutation and ledger query commands accept one camelCase `request` object. For
+example:
 
 ```ts
 import { invoke } from "@tauri-apps/api/core";
@@ -83,5 +86,12 @@ database details are not exposed to the webview.
 ## Trust boundary
 
 Commands expose fixed use cases only. There is no arbitrary SQL, shell, or
-filesystem command. ID creation remains a caller concern for now, allowing the
-frontend to keep a stable identity when retrying a request.
+filesystem command. `detect_codex_quota` may start the fixed
+`codex app-server --stdio` process, perform its documented handshake, and read
+subscription rate-limit metadata. It does not accept a command string from the
+webview and returns sanitized detection states instead of raw process errors.
+`sync_codex_quota` applies the selected provider window as an absolute local
+snapshot and rolls the local window forward when its reset boundary changes.
+
+ID creation remains a caller concern for now, allowing the frontend to keep a
+stable identity when retrying a request.

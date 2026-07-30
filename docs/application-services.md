@@ -29,6 +29,7 @@ The current command DTOs cover:
 - allocation updates;
 - quota reservation and release;
 - usage recording with optional atomic reservation consumption; and
+- absolute provider-snapshot synchronization and reset rollover;
 - quota-dashboard queries; and
 - complete local-state queries for application startup and refresh.
 
@@ -58,7 +59,9 @@ The window summary distinguishes:
 
 Child usage and reservations debit both their own allocation and every ancestor
 allocation. The provider summary only sums root scopes, avoiding double-counting
-child activity.
+child activity. A provider snapshot is reconciled with local observations using
+the greater total; active reservations remain additional committed capacity
+because they have not yet appeared in provider usage.
 
 ## Policy
 

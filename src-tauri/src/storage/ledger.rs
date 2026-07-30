@@ -169,6 +169,21 @@ impl<'connection> LedgerRepository<'connection> {
         &self,
         window_id: &WindowId,
     ) -> StorageResult<QuotaAmount> {
+        self.unattributed_usage_for_window_with_filter(window_id, false)
+    }
+
+    pub fn local_unattributed_usage_for_window(
+        &self,
+        window_id: &WindowId,
+    ) -> StorageResult<QuotaAmount> {
+        self.unattributed_usage_for_window_with_filter(window_id, true)
+    }
+
+    fn unattributed_usage_for_window_with_filter(
+        &self,
+        window_id: &WindowId,
+        exclude_provider_totals: bool,
+    ) -> StorageResult<QuotaAmount> {
         let row = self
             .connection
             .query_row(
@@ -176,10 +191,15 @@ impl<'connection> LedgerRepository<'connection> {
                  FROM quota_windows w
                  JOIN quota_pools p ON p.id = w.pool_id
                  LEFT JOIN usage_events u
-                   ON u.window_id = w.id AND u.scope_id IS NULL
+                   ON u.window_id = w.id
+                  AND u.scope_id IS NULL
+                  AND (
+                      ?2 = 0
+                      OR u.source NOT IN ('provider_confirmed', 'provider_observed')
+                  )
                  WHERE w.id = ?1
                  GROUP BY p.unit",
-                [window_id.as_str()],
+                params![window_id.as_str(), exclude_provider_totals],
                 |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
             )
             .optional()?
@@ -421,7 +441,10 @@ fn insert_reservation(
     Ok(())
 }
 
-fn insert_usage_event(transaction: &Transaction<'_>, event: &UsageEvent) -> StorageResult<()> {
+pub(crate) fn insert_usage_event(
+    transaction: &Transaction<'_>,
+    event: &UsageEvent,
+) -> StorageResult<()> {
     let scope_id = match event.attribution() {
         UsageAttribution::Scope(scope_id) => Some(scope_id.as_str()),
         UsageAttribution::Unattributed => None,

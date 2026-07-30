@@ -7,6 +7,42 @@ export type IpcError = {
   message: string;
 };
 
+export type ProviderDetectionStatus =
+  | "detected"
+  | "not_installed"
+  | "not_authenticated"
+  | "unavailable";
+
+export type DetectedQuotaWindow = {
+  id: string;
+  displayName: string;
+  kind: string;
+  startsAt: number;
+  endsAt: number;
+  capacity: number;
+  used: number;
+  remaining: number;
+  unit: string;
+  durationMinutes: number;
+};
+
+export type CodexDetection = {
+  status: ProviderDetectionStatus;
+  providerId: string;
+  providerDisplayName: string;
+  planType: string | null;
+  windows: DetectedQuotaWindow[];
+  message: string | null;
+};
+
+export type CodexSyncResult = {
+  status: "synced" | "not_applicable" | "unavailable";
+  windowId: string | null;
+  rolledOver: boolean;
+  syncedAt: number | null;
+  message: string | null;
+};
+
 export type QuotaSourceSummary = {
   providerId: string;
   providerDisplayName: string;
@@ -20,6 +56,8 @@ export type QuotaSourceSummary = {
   capacity: number;
   unit: string;
   isActive: boolean;
+  providerManaged: boolean;
+  lastSyncedAt: number | null;
 };
 
 export type ScopeSummary = {
@@ -71,11 +109,20 @@ export type LocalState = {
 
 export type QuotaSourceInput = {
   providerDisplayName: string;
+  accountDisplayName?: string;
   poolDisplayName: string;
   capacity: number;
   unit: string;
   startsAt: number;
   endsAt: number;
+  providerSnapshot?: {
+    adapter: string;
+    remoteLimitId: string;
+    remoteWindowKind: string;
+    used: number;
+    observedAt: number;
+    resetsAt: number;
+  };
 };
 
 export type ScopeInput = {
