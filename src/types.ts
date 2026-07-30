@@ -65,6 +65,7 @@ export type ScopeSummary = {
   parentId: string | null;
   kind: ScopeKind;
   displayName: string;
+  repositoryRoot: string | null;
 };
 
 export type WindowSummary = {

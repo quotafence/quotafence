@@ -38,6 +38,7 @@ impl From<ApplicationError> for IpcError {
             ApplicationError::InconsistentData { message } => {
                 Self::new("inconsistent_data", message)
             }
+            ApplicationError::InvalidRequest { message } => Self::new("validation_error", message),
             ApplicationError::NumericOutOfRange { field, value } => Self::new(
                 "numeric_out_of_range",
                 format!("{field} value {value} cannot be represented"),

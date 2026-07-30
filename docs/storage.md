@@ -14,6 +14,7 @@ The `src-tauri/src/storage` module provides:
 - catalog repositories for providers, accounts, pools, windows, and scopes;
 - atomic quota-source onboarding;
 - provider-source identity checks and soft archival;
+- canonical Git-root to repository-scope bindings;
 - atomic scope-and-initial-allocation creation;
 - transactional hierarchical allocation writes;
 - capacity-checked reservations;
@@ -49,6 +50,8 @@ providers
             ├── allocations ── scopes
             ├── reservations ─ scopes
             └── usage_events ─ scopes (optional)
+
+repository_bindings ── repository scopes
 ```
 
 Amounts are stored as non-negative SQLite integers. Their unit is defined by the
@@ -71,6 +74,11 @@ which allows the source to be added again while preserving its historical
 windows and ledger records. The active source list selects one current, or
 otherwise latest, window per pool so rollover history is not presented as a
 second source.
+
+Repository bindings are separate from scopes. The canonical Git worktree root
+is unique, and a repository scope can be bound only once. Binding never creates
+an allocation implicitly, and restrictive foreign keys prevent a bound scope
+from being deleted behind the mapping.
 
 ## Transactions
 

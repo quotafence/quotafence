@@ -26,12 +26,18 @@ The current command DTOs cover:
 - atomic quota-source onboarding;
 - scope creation;
 - atomic scope-and-allocation creation;
+- explicit canonical-root to repository-scope binding;
+- repository context and active-allocation queries;
 - allocation updates;
 - quota reservation and release;
 - usage recording with optional atomic reservation consumption; and
 - absolute provider-snapshot synchronization and reset rollover;
 - quota-dashboard queries; and
 - complete local-state queries for application startup and refresh.
+
+The CLI resolves Git metadata outside this layer, then passes a canonical root
+to these use cases. Application services never scan repository contents and do
+not silently create a scope or budget for an unmapped path.
 
 Command IDs are supplied by the caller to give retries a stable identity. A
 duplicate currently returns a storage conflict rather than silently succeeding;

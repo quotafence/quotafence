@@ -5,8 +5,9 @@ Local-first budget guard and routing layer for AI coding agents.
 > [!IMPORTANT]
 > Agent Quota Manager is an early local MVP with no stable release. Codex quota
 > discovery, checkpoint refresh, reset rollover, and manual allocations work
-> locally. Repository mapping, managed sessions, automatic attribution, and
-> enforcement at launch are not implemented yet.
+> locally. Repository mapping and the read-only `aqm context` workflow are now
+> implemented. Managed sessions, automatic attribution, and enforcement at
+> launch are not implemented yet.
 
 Solo power users often run several coding agents across multiple repositories
 against the same constrained subscription. Low-priority work can exhaust that
@@ -90,7 +91,8 @@ or background lifecycle management justify it. See
 [Provider adapters](docs/provider-adapters.md). The implemented SQLite layer is
 described in [Storage](docs/storage.md), and use-case orchestration in
 [Application services](docs/application-services.md). The desktop IPC contract
-is documented in [Tauri commands](docs/tauri-commands.md). See
+is documented in [Tauri commands](docs/tauri-commands.md), and repository
+binding in the [AQM CLI guide](docs/cli.md). See
 [Local MVP](docs/local-mvp.md) for the current implemented baseline.
 
 ### Codex detection
@@ -131,6 +133,18 @@ npm run check
 
 This builds the frontend, checks Rust formatting and compilation, runs Clippy
 with warnings denied, and runs the Rust tests.
+
+### Resolve or bind the current repository
+
+Create a repository allocation in the desktop app, then run:
+
+```bash
+npm run aqm -- context
+npm run aqm -- bind --scope "Repository allocation name"
+```
+
+These development commands use the same local database as the desktop. See the
+[CLI guide](docs/cli.md) for path, JSON, and isolated-database options.
 
 ## Contributing
 

@@ -49,6 +49,10 @@ impl Database {
         LedgerRepository::new(&mut self.connection)
     }
 
+    pub fn repository_bindings(&self) -> super::RepositoryBindingRepository<'_> {
+        super::RepositoryBindingRepository::new(&self.connection)
+    }
+
     pub fn schema_version(&self) -> StorageResult<i64> {
         Ok(self.connection.query_row(
             "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",

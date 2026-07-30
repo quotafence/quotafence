@@ -37,6 +37,38 @@ pub struct ScopeSummary {
     pub parent_id: Option<String>,
     pub kind: ScopeKind,
     pub display_name: String,
+    pub repository_root: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryBindingSummary {
+    pub canonical_root: String,
+    pub scope_id: String,
+    pub scope_display_name: String,
+    pub bound_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryAllocationContext {
+    pub provider_display_name: String,
+    pub pool_display_name: String,
+    pub window_id: String,
+    pub unit: String,
+    pub limit: u64,
+    pub remaining: i64,
+    pub spendable: u64,
+    pub decision: EnforcementDecision,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryContext {
+    pub canonical_root: String,
+    pub binding: Option<RepositoryBindingSummary>,
+    pub allocations: Vec<RepositoryAllocationContext>,
+    pub available_repository_scopes: Vec<ScopeSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

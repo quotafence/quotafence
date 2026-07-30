@@ -1,7 +1,9 @@
 pub mod application;
 mod commands;
 pub mod domain;
+pub mod paths;
 pub mod providers;
+pub mod repository;
 pub mod storage;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

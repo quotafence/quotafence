@@ -10,17 +10,19 @@ use std::{
 use serde::Serialize;
 use tauri::{Manager, Runtime, State};
 
-use crate::application::{
-    ArchiveQuotaSource, CreateAccount, CreateAllocatedScope, CreateProvider, CreateQuotaPool,
-    CreateQuotaSource, CreateQuotaWindow, CreateScope, GetLocalState, GetQuotaDashboard,
-    LocalState, QuotaDashboard, ReleaseReservation, ReserveQuota, SetAllocation, SyncProviderQuota,
-};
 use crate::providers::codex::{self, CodexDetection, DetectedQuotaWindow, DetectionStatus};
+use crate::{
+    application::{
+        ArchiveQuotaSource, CreateAccount, CreateAllocatedScope, CreateProvider, CreateQuotaPool,
+        CreateQuotaSource, CreateQuotaWindow, CreateScope, GetLocalState, GetQuotaDashboard,
+        LocalState, QuotaDashboard, ReleaseReservation, ReserveQuota, SetAllocation,
+        SyncProviderQuota,
+    },
+    paths::DATABASE_FILENAME,
+};
 
 pub use error::{IpcError, IpcResult};
 use state::AppState;
-
-const DATABASE_FILENAME: &str = "agent-quota-manager.sqlite3";
 
 pub(crate) fn initialize<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn Error>> {
     let app_data_dir = app.path().app_data_dir()?;
