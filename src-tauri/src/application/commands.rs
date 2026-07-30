@@ -98,6 +98,29 @@ pub struct EvaluateWorkspaceAdmission {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GetWorkspacePolicy {
+    pub canonical_path: String,
+    pub at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetWorkspacePolicy {
+    pub scope_id: String,
+    pub warn_at_basis_points: Option<u16>,
+    pub confirm_at_basis_points: Option<u16>,
+    pub stop_at_basis_points: Option<u16>,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetWorkspacePolicy {
+    pub scope_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderQuotaSnapshotInput {
     pub adapter: String,
     pub remote_limit_id: String,

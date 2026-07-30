@@ -21,6 +21,8 @@ pub fn run() {
             commands::archive_quota_source,
             commands::create_allocated_workspace,
             commands::set_allocation,
+            commands::set_workspace_policy,
+            commands::reset_workspace_policy,
             commands::reserve_quota,
             commands::release_reservation,
             commands::get_quota_dashboard,

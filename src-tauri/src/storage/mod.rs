@@ -6,6 +6,7 @@ mod error;
 mod ledger;
 mod managed_sessions;
 mod migrations;
+mod policies;
 mod provider_snapshots;
 mod turn_observations;
 mod workspace_bindings;
@@ -22,6 +23,7 @@ pub use managed_sessions::{
     ManagedSession, ManagedSessionReconciliationOutcome, ManagedSessionReconciliationResult,
     ManagedSessionRepository, ManagedSessionStatus, NewManagedSession, ReconciliationStatus,
 };
+pub use policies::{PolicyOverrideAudit, WorkspacePolicy, WorkspacePolicyRepository};
 pub use provider_snapshots::ProviderQuotaSnapshot;
 pub use turn_observations::{
     BeginObservationResult, BeginObservationStatus, ProviderTurnObservation,

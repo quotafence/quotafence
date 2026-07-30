@@ -28,6 +28,7 @@ The current command DTOs cover:
 - explicit canonical-folder to workspace-scope binding;
 - nearest-ancestor workspace context and active-allocation queries;
 - provider-neutral workspace admission assessment;
+- effective workspace-policy reads, validated overrides, and reset to defaults;
 - managed-session admission, reservation, process-state transitions, and
   recovery reads;
 - managed-session baseline capture plus atomic terminal reconciliation and
@@ -60,7 +61,9 @@ unmapped work, and concurrency produce no scoped event.
 
 `PrepareManagedSession` re-evaluates admission, applies stop and explicit
 confirmation boundaries, reserves the workspace's current spendable capacity,
-and persists the starting session atomically. The CLI reports the child PID
+and persists the starting session atomically. When `--yes` accepts a real
+confirmation boundary, its audit record is committed in that same transaction.
+The CLI reports the child PID
 through `MarkManagedSessionRunning`; `FinishManagedSession` then commits the
 terminal outcome and reservation release together. Process spawning and signal
 handling remain outside the application layer.
@@ -99,9 +102,14 @@ compatibility but cannot be created through the desktop IPC boundary.
 
 `QuotaService::new` uses the standard 80/90/100 percent policy.
 `QuotaService::with_policy` allows a caller or test to inject another validated
-policy. `allow`, `warn`, `require_confirmation`, and `stop` are pure assessment
-results at this layer; process enforcement begins only when AQM owns a managed
-launch. Persisting per-scope policy is a later schema/application change.
+application default. A persisted workspace-scope override takes precedence and
+survives provider-window rollover. Dashboard, context, admission, and managed
+launches all resolve that same effective policy.
+
+`allow`, `warn`, `require_confirmation`, and `stop` remain assessment results
+at this layer. A confirmation is enforced and audited only for an actual
+AQM-managed launch; a stop refuses that launch. A dry run has no audit side
+effect, and unmanaged or already-running Codex work is not hard-enforced.
 
 ## Tauri boundary
 

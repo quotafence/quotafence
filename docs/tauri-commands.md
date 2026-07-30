@@ -29,6 +29,8 @@ The approved product commands are:
 - `archive_quota_source`
 - `create_allocated_workspace`
 - `set_allocation`
+- `set_workspace_policy`
+- `reset_workspace_policy`
 - `reserve_quota`
 - `release_reservation`
 - `get_quota_dashboard`
@@ -54,7 +56,9 @@ Application DTOs remain the source of truth for request fields. Domain
 constructors validate every request after deserialization, so the webview
 cannot bypass identifier, amount, capacity, or lifecycle invariants. New
 allocations enter through `create_allocated_workspace`, which atomically binds
-one selected folder.
+one selected folder. Policy mutations accept integer basis points, run domain
+range and ordering validation, and can target only an explicitly bound
+workspace scope.
 
 ## Errors
 

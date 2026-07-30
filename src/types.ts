@@ -1,6 +1,18 @@
 export type ScopeKind = "project" | "workspace" | "task" | "reserve";
 
-export type EnforcementDecision = "allow" | "warn" | "confirm" | "stop";
+export type EnforcementDecision =
+  | "allow"
+  | "warn"
+  | "require_confirmation"
+  | "stop";
+
+export type PolicySummary = {
+  warnAtBasisPoints: number | null;
+  confirmAtBasisPoints: number | null;
+  stopAtBasisPoints: number | null;
+  customized: boolean;
+  updatedAt: number | null;
+};
 
 export type IpcError = {
   code: string;
@@ -94,6 +106,14 @@ export type AllocationSnapshot = {
   remaining: number;
   spendable: number;
   decision: EnforcementDecision;
+  policy: PolicySummary;
+};
+
+export type WorkspaceBudgetInput = {
+  amount: number;
+  warnAtBasisPoints: number | null;
+  confirmAtBasisPoints: number | null;
+  stopAtBasisPoints: number | null;
 };
 
 export type QuotaDashboard = {

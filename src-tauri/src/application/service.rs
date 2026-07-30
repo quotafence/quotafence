@@ -5,14 +5,15 @@ use std::{
 
 use crate::{
     domain::{
-        Account, AccountId, Allocation, EnforcementPolicy, Provider, ProviderId, QuotaAmount,
-        QuotaBalance, QuotaPool, QuotaPoolId, QuotaUnit, QuotaWindow, Reservation, ReservationId,
-        Scope, ScopeId, UnixMillis, UsageAttribution, UsageEvent, UsageEventId, WindowId,
+        Account, AccountId, Allocation, BasisPoints, EnforcementPolicy, Provider, ProviderId,
+        QuotaAmount, QuotaBalance, QuotaPool, QuotaPoolId, QuotaUnit, QuotaWindow, Reservation,
+        ReservationId, Scope, ScopeId, UnixMillis, UsageAttribution, UsageEvent, UsageEventId,
+        WindowId,
     },
     storage::{
         BeginObservationStatus, Database, ManagedSessionReconciliationResult, ManagedSessionStatus,
         NewManagedSession, ProviderQuotaSnapshot, ProviderTurnObservation,
-        ReconcileObservationResult, StorageError, WorkspaceBinding,
+        ReconcileObservationResult, StorageError, WorkspaceBinding, WorkspacePolicy,
     },
     workspace::{contains_path, path_depth},
 };
@@ -24,20 +25,22 @@ use super::{
     CreateAccount, CreateAllocatedScope, CreateAllocatedWorkspace, CreateProvider, CreateQuotaPool,
     CreateQuotaSource, CreateQuotaWindow, CreateScope, EvaluateWorkspaceAdmission,
     FinishManagedSession, GetLocalState, GetProviderTurnObservation, GetQuotaDashboard,
-    GetWorkspaceContext, LocalState, ManagedSessionLaunch, ManagedSessionOutcome,
-    ManagedSessionReconciliation, ManagedSessionReconciliationStatus, MarkManagedSessionRunning,
-    PrepareManagedSession, ProviderTurnObservationSummary, QuotaDashboard, QuotaSourceSummary,
-    ReconcileProviderTurnObservation, RecordUsage, ReleaseReservation, ReserveQuota, ScopeSummary,
-    SetAllocation, SyncProviderQuota, SyncProviderQuotaResult, TurnObservationStartResult,
-    TurnObservationStartStatus, TurnReconciliationResult, TurnReconciliationStatus, WindowSummary,
-    WorkspaceAllocationContext, WorkspaceBindingSummary, WorkspaceContext,
+    GetWorkspaceContext, GetWorkspacePolicy, LocalState, ManagedSessionLaunch,
+    ManagedSessionOutcome, ManagedSessionReconciliation, ManagedSessionReconciliationStatus,
+    MarkManagedSessionRunning, PolicySummary, PrepareManagedSession,
+    ProviderTurnObservationSummary, QuotaDashboard, QuotaSourceSummary,
+    ReconcileProviderTurnObservation, RecordUsage, ReleaseReservation, ReserveQuota,
+    ResetWorkspacePolicy, ScopeSummary, SetAllocation, SetWorkspacePolicy, SyncProviderQuota,
+    SyncProviderQuotaResult, TurnObservationStartResult, TurnObservationStartStatus,
+    TurnReconciliationResult, TurnReconciliationStatus, WindowSummary, WorkspaceAllocationContext,
+    WorkspaceBindingSummary, WorkspaceContext, WorkspacePolicySummary,
 };
 
 const TURN_OBSERVATION_STALE_AFTER_MILLIS: i64 = 12 * 60 * 60 * 1_000;
 
 pub struct QuotaService {
     database: Database,
-    policy: EnforcementPolicy,
+    default_policy: EnforcementPolicy,
 }
 
 impl QuotaService {
@@ -50,7 +53,10 @@ impl QuotaService {
     }
 
     pub fn with_policy(database: Database, policy: EnforcementPolicy) -> Self {
-        Self { database, policy }
+        Self {
+            database,
+            default_policy: policy,
+        }
     }
 
     pub fn create_provider(&mut self, command: CreateProvider) -> ApplicationResult<()> {
@@ -517,6 +523,7 @@ impl QuotaService {
             selected_window_id: None,
             at: command.at,
         })?;
+        let (workspace_policy, _) = self.effective_policy(binding.scope_id())?;
         let mut allocations = Vec::new();
         for source in local_state.sources {
             let dashboard = self.dashboard(GetQuotaDashboard {
@@ -528,7 +535,8 @@ impl QuotaService {
                 .into_iter()
                 .find(|allocation| allocation.scope_id == binding.scope_id().as_str())
             {
-                let provider_decision = self.provider_decision(&dashboard.window)?;
+                let provider_decision =
+                    self.provider_decision(&dashboard.window, &workspace_policy)?;
                 let allocation_decision = allocation.decision;
                 allocations.push(WorkspaceAllocationContext {
                     provider_id: source.provider_id,
@@ -547,6 +555,7 @@ impl QuotaService {
                     allocation_decision,
                     provider_decision,
                     decision: allocation_decision.max(provider_decision),
+                    policy: allocation.policy,
                 });
             }
         }
@@ -629,6 +638,7 @@ impl QuotaService {
             allocation_decision: allocation.allocation_decision,
             provider_decision: allocation.provider_decision,
             decision: allocation.decision,
+            policy: allocation.policy,
         })
     }
 
@@ -715,8 +725,13 @@ impl QuotaService {
             baseline_used: baseline.used(),
             baseline_observed_at: baseline.observed_at().value(),
         };
-        self.database
-            .start_managed_session(&reservation, &session, admitted_at)?;
+        self.database.start_managed_session(
+            &reservation,
+            &session,
+            admitted_at,
+            assessment.decision == crate::domain::EnforcementDecision::RequireConfirmation
+                && command.assume_yes,
+        )?;
 
         Ok(ManagedSessionLaunch {
             session_id,
@@ -741,6 +756,70 @@ impl QuotaService {
             command.started_at,
         )?;
         Ok(())
+    }
+
+    pub fn workspace_policy(
+        &mut self,
+        command: GetWorkspacePolicy,
+    ) -> ApplicationResult<WorkspacePolicySummary> {
+        let context = self.workspace_context(GetWorkspaceContext {
+            canonical_path: command.canonical_path,
+            at: command.at,
+        })?;
+        let binding = context
+            .binding
+            .ok_or_else(|| ApplicationError::InvalidRequest {
+                message: format!("workspace {} is not bound", context.canonical_path),
+            })?;
+        let (_, policy) = self.effective_policy(&ScopeId::new(binding.scope_id.clone())?)?;
+        Ok(WorkspacePolicySummary {
+            canonical_path: binding.canonical_path,
+            scope_id: binding.scope_id,
+            scope_display_name: binding.scope_display_name,
+            policy,
+        })
+    }
+
+    pub fn set_workspace_policy(
+        &mut self,
+        command: SetWorkspacePolicy,
+    ) -> ApplicationResult<PolicySummary> {
+        let scope_id = ScopeId::new(command.scope_id)?;
+        self.ensure_bound_workspace_scope(&scope_id)?;
+        let policy = EnforcementPolicy::new(
+            command
+                .warn_at_basis_points
+                .map(BasisPoints::new)
+                .transpose()?,
+            command
+                .confirm_at_basis_points
+                .map(BasisPoints::new)
+                .transpose()?,
+            command
+                .stop_at_basis_points
+                .map(BasisPoints::new)
+                .transpose()?,
+        )?;
+        self.database
+            .workspace_policies()
+            .set(&WorkspacePolicy::new(
+                scope_id.clone(),
+                policy,
+                UnixMillis::new(command.updated_at),
+            ))?;
+        let (_, summary) = self.effective_policy(&scope_id)?;
+        Ok(summary)
+    }
+
+    pub fn reset_workspace_policy(
+        &mut self,
+        command: ResetWorkspacePolicy,
+    ) -> ApplicationResult<PolicySummary> {
+        let scope_id = ScopeId::new(command.scope_id)?;
+        self.ensure_bound_workspace_scope(&scope_id)?;
+        self.database.workspace_policies().reset(&scope_id)?;
+        let (_, summary) = self.effective_policy(&scope_id)?;
+        Ok(summary)
     }
 
     pub fn finish_managed_session(
@@ -812,9 +891,41 @@ impl QuotaService {
             .collect()
     }
 
+    fn ensure_bound_workspace_scope(&self, scope_id: &ScopeId) -> ApplicationResult<()> {
+        if self
+            .database
+            .workspace_bindings()
+            .list()?
+            .iter()
+            .any(|binding| binding.scope_id() == scope_id)
+        {
+            return Ok(());
+        }
+        Err(ApplicationError::InvalidRequest {
+            message: format!("scope {scope_id} is not bound to a local workspace"),
+        })
+    }
+
+    fn effective_policy(
+        &self,
+        scope_id: &ScopeId,
+    ) -> ApplicationResult<(EnforcementPolicy, PolicySummary)> {
+        if let Some(workspace_policy) = self.database.workspace_policies().get(scope_id)? {
+            let policy = workspace_policy.policy().clone();
+            let summary =
+                policy_summary(&policy, true, Some(workspace_policy.updated_at().value()));
+            return Ok((policy, summary));
+        }
+        Ok((
+            self.default_policy.clone(),
+            policy_summary(&self.default_policy, false, None),
+        ))
+    }
+
     fn provider_decision(
         &self,
         window: &WindowSummary,
+        policy: &EnforcementPolicy,
     ) -> ApplicationResult<crate::domain::EnforcementDecision> {
         let unit = QuotaUnit::new(window.unit.clone())?;
         let balance = QuotaBalance::new(
@@ -825,7 +936,7 @@ impl QuotaService {
             ),
             QuotaAmount::new(0, unit),
         )?;
-        Ok(self.policy.evaluate(&balance))
+        Ok(policy.evaluate(&balance))
     }
 
     pub fn create_allocated_workspace(
@@ -979,6 +1090,7 @@ impl QuotaService {
                 &window_id,
                 UnixMillis::new(command.at),
             )?;
+            let (policy, policy_summary) = self.effective_policy(allocation.scope_id())?;
 
             if scope.parent_id().is_none() {
                 allocated_to_root_scopes = allocated_to_root_scopes
@@ -1003,7 +1115,8 @@ impl QuotaService {
                 active_reservations: balance.active_reservations().value(),
                 remaining: to_view_integer(balance.remaining(), "allocation remaining")?,
                 spendable: balance.spendable().value(),
-                decision: self.policy.evaluate(&balance),
+                decision: policy.evaluate(&balance),
+                policy: policy_summary,
             });
         }
 
@@ -1175,6 +1288,20 @@ fn arithmetic_overflow() -> ApplicationError {
     crate::domain::DomainError::ArithmeticOverflow.into()
 }
 
+fn policy_summary(
+    policy: &EnforcementPolicy,
+    customized: bool,
+    updated_at: Option<i64>,
+) -> PolicySummary {
+    PolicySummary {
+        warn_at_basis_points: policy.warn_at().map(BasisPoints::value),
+        confirm_at_basis_points: policy.confirm_at().map(BasisPoints::value),
+        stop_at_basis_points: policy.stop_at().map(BasisPoints::value),
+        customized,
+        updated_at,
+    }
+}
+
 fn empty_reconciliation(status: TurnReconciliationStatus) -> TurnReconciliationResult {
     TurnReconciliationResult {
         status,
@@ -1219,9 +1346,10 @@ mod tests {
             ArchiveQuotaSource, BindWorkspace, CreateAccount, CreateAllocatedScope,
             CreateAllocatedWorkspace, CreateProvider, CreateQuotaPool, CreateQuotaSource,
             CreateQuotaWindow, CreateScope, EvaluateWorkspaceAdmission, FinishManagedSession,
-            GetLocalState, GetQuotaDashboard, GetWorkspaceContext, ManagedSessionOutcome,
-            MarkManagedSessionRunning, PrepareManagedSession, ProviderQuotaSnapshotInput,
-            RecordUsage, ReserveQuota, SetAllocation, SyncProviderQuota,
+            GetLocalState, GetQuotaDashboard, GetWorkspaceContext, GetWorkspacePolicy,
+            ManagedSessionOutcome, MarkManagedSessionRunning, PrepareManagedSession,
+            ProviderQuotaSnapshotInput, RecordUsage, ReserveQuota, ResetWorkspacePolicy,
+            SetAllocation, SetWorkspacePolicy, SyncProviderQuota,
         },
         domain::{Confidence, EnforcementDecision, ScopeKind, UsageSource},
         storage::Database,
@@ -2032,6 +2160,196 @@ mod tests {
         assert_eq!(assessment.allocation_decision, EnforcementDecision::Warn);
         assert_eq!(assessment.provider_decision, EnforcementDecision::Allow);
         assert_eq!(assessment.decision, EnforcementDecision::Warn);
+    }
+
+    #[test]
+    fn workspace_policy_is_shared_by_dashboard_context_and_admission_then_resets() {
+        let mut service = configured_service();
+        add_workspace_allocation(&mut service);
+        service
+            .bind_workspace(BindWorkspace {
+                canonical_path: "/code/workspace-a".to_owned(),
+                scope_reference: "workspace-a".to_owned(),
+                bound_at: 2_000,
+            })
+            .unwrap();
+        service
+            .record_usage(RecordUsage {
+                id: "workspace-usage".to_owned(),
+                window_id: "week-1".to_owned(),
+                scope_id: Some("workspace-a".to_owned()),
+                amount: 18,
+                unit: "quota_points".to_owned(),
+                observed_at: 2_500,
+                source: UsageSource::LocalMeasured,
+                confidence: Confidence::Observed,
+                reservation_id: None,
+            })
+            .unwrap();
+
+        let custom = service
+            .set_workspace_policy(SetWorkspacePolicy {
+                scope_id: "workspace-a".to_owned(),
+                warn_at_basis_points: Some(5_000),
+                confirm_at_basis_points: Some(8_000),
+                stop_at_basis_points: Some(10_000),
+                updated_at: 2_600,
+            })
+            .unwrap();
+        assert!(custom.customized);
+        assert_eq!(custom.warn_at_basis_points, Some(5_000));
+
+        let dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+        assert_eq!(
+            snapshot(&dashboard, "workspace-a").decision,
+            EnforcementDecision::Warn
+        );
+        assert!(snapshot(&dashboard, "workspace-a").policy.customized);
+
+        let context = service
+            .workspace_context(GetWorkspaceContext {
+                canonical_path: "/code/workspace-a/src".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+        assert_eq!(context.allocations[0].decision, EnforcementDecision::Warn);
+        assert_eq!(
+            context.allocations[0].policy.warn_at_basis_points,
+            Some(5_000)
+        );
+
+        let admission = service
+            .evaluate_workspace_admission(EvaluateWorkspaceAdmission {
+                canonical_path: "/code/workspace-a".to_owned(),
+                provider_id: "codex".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+        assert_eq!(admission.decision, EnforcementDecision::Warn);
+        assert!(admission.policy.customized);
+
+        let policy = service
+            .workspace_policy(GetWorkspacePolicy {
+                canonical_path: "/code/workspace-a/nested".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+        assert_eq!(policy.scope_id, "workspace-a");
+        assert_eq!(policy.policy.updated_at, Some(2_600));
+
+        let reset = service
+            .reset_workspace_policy(ResetWorkspacePolicy {
+                scope_id: "workspace-a".to_owned(),
+            })
+            .unwrap();
+        assert!(!reset.customized);
+        assert_eq!(reset.warn_at_basis_points, Some(8_000));
+        let dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+        assert_eq!(
+            snapshot(&dashboard, "workspace-a").decision,
+            EnforcementDecision::Allow
+        );
+    }
+
+    #[test]
+    fn invalid_workspace_policy_is_rejected_without_replacing_the_previous_policy() {
+        let mut service = managed_workspace_service();
+        service
+            .set_workspace_policy(SetWorkspacePolicy {
+                scope_id: "workspace-a".to_owned(),
+                warn_at_basis_points: Some(5_000),
+                confirm_at_basis_points: Some(8_000),
+                stop_at_basis_points: Some(10_000),
+                updated_at: 2_100,
+            })
+            .unwrap();
+
+        let invalid = service.set_workspace_policy(SetWorkspacePolicy {
+            scope_id: "workspace-a".to_owned(),
+            warn_at_basis_points: Some(9_000),
+            confirm_at_basis_points: Some(8_000),
+            stop_at_basis_points: Some(10_000),
+            updated_at: 2_200,
+        });
+        assert!(matches!(invalid, Err(ApplicationError::Validation(_))));
+
+        let persisted = service
+            .workspace_policy(GetWorkspacePolicy {
+                canonical_path: "/code/workspace-a".to_owned(),
+                at: 2_300,
+            })
+            .unwrap();
+        assert_eq!(persisted.policy.warn_at_basis_points, Some(5_000));
+        assert_eq!(persisted.policy.updated_at, Some(2_100));
+    }
+
+    #[test]
+    fn managed_confirmation_override_is_required_and_audited_atomically() {
+        let mut service = managed_workspace_service();
+        service
+            .set_workspace_policy(SetWorkspacePolicy {
+                scope_id: "workspace-a".to_owned(),
+                warn_at_basis_points: None,
+                confirm_at_basis_points: Some(100),
+                stop_at_basis_points: None,
+                updated_at: 1_950,
+            })
+            .unwrap();
+
+        let refused = service.prepare_managed_session(PrepareManagedSession {
+            id: "session-refused".to_owned(),
+            reservation_id: "reservation-refused".to_owned(),
+            canonical_path: "/code/workspace-a".to_owned(),
+            provider_id: "codex".to_owned(),
+            assume_yes: false,
+            admitted_at: 2_000,
+            expires_at: 8_000,
+            supervisor_pid: 42,
+        });
+        assert!(refused.unwrap_err().to_string().contains("--yes"));
+        assert!(service
+            .database
+            .workspace_policies()
+            .list_override_audits(&ScopeId::new("workspace-a").unwrap())
+            .unwrap()
+            .is_empty());
+
+        let launch = service
+            .prepare_managed_session(PrepareManagedSession {
+                id: "session-accepted".to_owned(),
+                reservation_id: "reservation-accepted".to_owned(),
+                canonical_path: "/code/workspace-a".to_owned(),
+                provider_id: "codex".to_owned(),
+                assume_yes: true,
+                admitted_at: 2_100,
+                expires_at: 8_000,
+                supervisor_pid: 42,
+            })
+            .unwrap();
+        assert_eq!(
+            launch.assessment.decision,
+            EnforcementDecision::RequireConfirmation
+        );
+
+        let audits = service
+            .database
+            .workspace_policies()
+            .list_override_audits(&ScopeId::new("workspace-a").unwrap())
+            .unwrap();
+        assert_eq!(audits.len(), 1);
+        assert_eq!(audits[0].session_id, "session-accepted");
+        assert_eq!(audits[0].window_id.as_str(), "week-1");
+        assert_eq!(audits[0].accepted_at.value(), 2_100);
     }
 
     #[test]

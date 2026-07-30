@@ -225,6 +225,52 @@ WHERE status IN ('completed', 'failed', 'interrupted')
   AND reconciliation_status = 'pending';
 "#;
 
+const WORKSPACE_POLICIES: &str = r#"
+CREATE TABLE workspace_policies (
+    scope_id TEXT PRIMARY KEY NOT NULL REFERENCES scopes(id) ON DELETE RESTRICT,
+    warn_at_basis_points INTEGER CHECK (
+        warn_at_basis_points IS NULL
+        OR warn_at_basis_points BETWEEN 1 AND 10000
+    ),
+    confirm_at_basis_points INTEGER CHECK (
+        confirm_at_basis_points IS NULL
+        OR confirm_at_basis_points BETWEEN 1 AND 10000
+    ),
+    stop_at_basis_points INTEGER CHECK (
+        stop_at_basis_points IS NULL
+        OR stop_at_basis_points BETWEEN 1 AND 10000
+    ),
+    updated_at INTEGER NOT NULL,
+    CHECK (
+        warn_at_basis_points IS NULL
+        OR confirm_at_basis_points IS NULL
+        OR warn_at_basis_points <= confirm_at_basis_points
+    ),
+    CHECK (
+        confirm_at_basis_points IS NULL
+        OR stop_at_basis_points IS NULL
+        OR confirm_at_basis_points <= stop_at_basis_points
+    ),
+    CHECK (
+        warn_at_basis_points IS NULL
+        OR stop_at_basis_points IS NULL
+        OR warn_at_basis_points <= stop_at_basis_points
+    )
+);
+
+CREATE TABLE managed_session_policy_overrides (
+    session_id TEXT PRIMARY KEY NOT NULL
+        REFERENCES managed_sessions(id) ON DELETE RESTRICT,
+    scope_id TEXT NOT NULL REFERENCES scopes(id) ON DELETE RESTRICT,
+    window_id TEXT NOT NULL REFERENCES quota_windows(id) ON DELETE RESTRICT,
+    decision TEXT NOT NULL CHECK (decision = 'require_confirmation'),
+    accepted_at INTEGER NOT NULL
+);
+
+CREATE INDEX idx_managed_session_policy_overrides_scope
+    ON managed_session_policy_overrides(scope_id, accepted_at);
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -265,6 +311,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 8,
         name: "managed_session_reconciliation",
         sql: MANAGED_SESSION_RECONCILIATION,
+    },
+    Migration {
+        version: 9,
+        name: "workspace_policies",
+        sql: WORKSPACE_POLICIES,
     },
 ];
 

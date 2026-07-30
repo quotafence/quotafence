@@ -34,11 +34,12 @@ The repository currently has:
   direct process supervision, pre/post checkpoint reconciliation, terminal
   cleanup, and Unix orphan recovery; and
 - experimental Codex desktop turn attribution through official lifecycle
-  hooks, with contention and rollover kept unattributed.
+  hooks, with contention and rollover kept unattributed; and
+- persisted workspace policy overrides shared by dashboard, CLI admission, and
+  managed launch, with audited confirmation acceptance.
 
-It does **not** yet have persisted per-scope policy, in-flight usage
-enforcement, cross-platform orphan recovery, exact token accounting, or
-burn-rate forecasting.
+It does **not** yet have in-flight usage enforcement, cross-platform orphan
+recovery, exact token accounting, or burn-rate forecasting.
 
 ## Gap to an end-to-end Codex slice
 
@@ -47,12 +48,12 @@ burn-rate forecasting.
 | Provider checkpoint | Implemented | Reused before and after managed work |
 | Window rollover | Implemented | Covered during session reconciliation |
 | Workspace context | Implemented | Reused for admission and managed launch |
-| Managed launch | Implemented in `aqm run codex` | Reused by reconciliation and persisted policy |
-| Reservation | Reserved before spawn, then consumed or released atomically | Reused by persisted policy |
+| Managed launch | Implemented in `aqm run codex` | Harden from real daily use |
+| Reservation | Reserved before spawn, then consumed or released atomically | Add a smaller session cap only with evidence |
 | Attribution | Managed deltas are observed and scoped only without visible contention | Richer provider signals when available |
 | Reconciliation | Implemented for exact delta, zero, ambiguity, rollover, and failure | Retry/recovery improvements from real usage |
-| Policy | In-memory standard thresholds drive dry-run admission | Persisted effective policy drives managed launch |
-| Enforcement | Dry-run result and shell exit code only | Warn, confirm, or refuse an AQM-managed launch |
+| Policy | Persisted workspace override, then application default | Add provider-specific policy only with evidence |
+| Enforcement | Warn, confirm, or refuse an AQM-managed launch | Live termination only with a timely signal |
 | Forecasting | None | Depletion estimate based on trustworthy history |
 | Routing | None | Deferred until one provider loop is reliable |
 
@@ -162,7 +163,7 @@ work becomes unattributed usage; zero, rollover, and unavailable checkpoints do
 not fabricate scoped consumption. Managed child hooks inherit an AQM marker so
 the same work is not counted again as an experimental desktop turn.
 
-### M5 — Enforced policy in the daily workflow
+### M5 — Enforced policy in the daily workflow — complete
 
 - Persist policy at the appropriate allocation or scope boundary.
 - Surface warn and confirmation outcomes in the CLI without hiding provider
@@ -176,6 +177,14 @@ the same work is not counted again as an experimental desktop turn.
 Verification: policy precedence tests, interactive/non-interactive confirmation
 tests, override audit records, and proof that unmanaged Codex sessions are
 never described as hard-enforced.
+
+Implemented with workspace-scope policy rows using integer basis points.
+`aqm policy show/set/reset` and the desktop allocation form share the same
+application service. `aqm admit codex` remains a side-effect-free assessment;
+`aqm run codex --yes` records an override only when it actually crosses a
+confirmation boundary and starts the managed session. Stop refuses launch.
+Live termination remains intentionally unsupported because the aggregate Codex
+checkpoint is not a timely in-flight signal.
 
 ### M6 — Burn rate and depletion signal
 

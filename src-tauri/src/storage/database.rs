@@ -6,7 +6,7 @@ use crate::domain::{Account, Allocation, Provider, QuotaPool, QuotaWindow, Scope
 
 use super::{
     allocations::set_in_transaction, ledger::reserve_in_transaction, managed_sessions, migrations,
-    provider_snapshots,
+    policies, provider_snapshots,
     workspace_bindings::insert_in_transaction as insert_workspace_binding_in_transaction,
     AllocationRepository, CatalogRepository, LedgerRepository, ManagedSessionReconciliationResult,
     ManagedSessionRepository, ManagedSessionStatus, NewManagedSession, ProviderQuotaSnapshot,
@@ -65,6 +65,10 @@ impl Database {
         ManagedSessionRepository::new(&self.connection)
     }
 
+    pub fn workspace_policies(&self) -> super::WorkspacePolicyRepository<'_> {
+        super::WorkspacePolicyRepository::new(&self.connection)
+    }
+
     pub fn schema_version(&self) -> StorageResult<i64> {
         Ok(self.connection.query_row(
             "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
@@ -104,12 +108,22 @@ impl Database {
         reservation: &crate::domain::Reservation,
         session: &NewManagedSession,
         admitted_at: crate::domain::UnixMillis,
+        confirmation_override_accepted: bool,
     ) -> StorageResult<()> {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         reserve_in_transaction(&transaction, reservation, admitted_at)?;
         managed_sessions::insert_starting(&transaction, session)?;
+        if confirmation_override_accepted {
+            policies::insert_override_in_transaction(
+                &transaction,
+                &session.id,
+                reservation.scope_id(),
+                reservation.window_id(),
+                admitted_at,
+            )?;
+        }
         transaction.commit()?;
         Ok(())
     }

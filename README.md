@@ -43,8 +43,9 @@ That workflow now:
 
 On Unix, the next managed invocation also recovers sessions orphaned by a
 crashed supervisor. When AQM observes concurrent Codex work in the same quota
-window, the aggregate delta remains unattributed. The next milestone persists
-workspace policy instead of relying only on application defaults.
+window, the aggregate delta remains unattributed. Each folder can persist its
+own warn, confirmation, and stop thresholds; both the desktop and CLI resolve
+that override before falling back to the application defaults.
 
 The desktop UI remains useful for setup and policy visibility, but dashboard
 analytics alone are not the product. Longer term, the same control layer may
@@ -165,6 +166,14 @@ Preview the current policy boundary without launching Codex:
 
 ```bash
 npm run aqm -- admit codex
+```
+
+Inspect or customize the bound folder's managed-session policy:
+
+```bash
+npm run aqm -- policy show
+npm run aqm -- policy set --warn 75 --confirm 90 --stop 100
+npm run aqm -- policy reset
 ```
 
 Launch a managed Codex session from an allocated folder:

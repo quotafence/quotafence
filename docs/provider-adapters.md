@@ -107,8 +107,9 @@ marker to prevent double observation. Visible concurrent work remains
 unattributed; invisible external usage is why this signal is not
 provider-confirmed.
 
-The remaining Codex vertical slice is to persist workspace policy overrides and
-surface the resulting policy boundary without overstating live enforcement.
+Workspace policy overrides are now persisted and applied to dry-run admission
+and managed launch. Stop means refusal to start an AQM-managed process;
+aggregate Codex checkpoints are not timely enough to justify live termination.
 
 Only after that slice is stable should the adapter contract be generalized from
 real implementation evidence for a second provider.

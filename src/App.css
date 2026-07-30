@@ -1445,7 +1445,7 @@ h3,
   background: #cbb084;
 }
 
-.progress-fill.confirm {
+.progress-fill.require_confirmation {
   background: #c78c70;
 }
 
@@ -1609,6 +1609,39 @@ h3,
 
 .form-help {
   color: var(--muted);
+}
+
+.policy-fields {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #101011;
+}
+
+.policy-fields legend {
+  padding: 0 6px;
+  color: #d6d6d8;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.policy-fields > div {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.policy-fields .input-with-suffix input {
+  padding-right: 58px;
+}
+
+.form-error {
+  margin: -6px 0 0;
+  color: #f0b0b4;
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 .error-toast {
