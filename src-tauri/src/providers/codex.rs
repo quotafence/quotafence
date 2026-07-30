@@ -15,6 +15,7 @@ use crate::application::{GetLocalState, QuotaService, SyncProviderQuota};
 
 const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(30);
 const RATE_LIMIT_TIMEOUT: Duration = Duration::from_secs(45);
+const WINDOW_BOUNDARY_DRIFT_TOLERANCE_MILLIS: u64 = 5 * 60_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -141,14 +142,11 @@ pub fn sync_detection(
     observed_at: i64,
     detection: CodexDetection,
 ) -> CodexSyncResult {
-    let source = match service.local_state(GetLocalState {
+    let local_state = match service.local_state(GetLocalState {
         selected_window_id: Some(window_id.clone()),
         at: observed_at,
     }) {
-        Ok(local_state) => local_state
-            .sources
-            .into_iter()
-            .find(|source| source.window_id == window_id),
+        Ok(local_state) => local_state,
         Err(error) => {
             return CodexSyncResult {
                 status: CodexSyncStatus::Unavailable,
@@ -159,6 +157,11 @@ pub fn sync_detection(
             };
         }
     };
+    let selected_window_id = local_state.selected_window_id.as_deref();
+    let source = local_state
+        .sources
+        .into_iter()
+        .find(|source| Some(source.window_id.as_str()) == selected_window_id);
     let Some(source) = source else {
         return CodexSyncResult {
             status: CodexSyncStatus::Unavailable,
@@ -205,13 +208,20 @@ pub fn sync_detection(
             ),
         };
     };
+    let (starts_at, ends_at) = stable_window_bounds(
+        source.starts_at,
+        source.ends_at,
+        remote_window.starts_at,
+        remote_window.ends_at,
+        observed_at,
+    );
     let sync = service.sync_provider_quota(SyncProviderQuota {
         current_window_id: source.window_id.clone(),
         adapter: "codex_app_server".to_owned(),
         remote_limit_id: detection.provider_id,
         remote_window_kind: remote_window.kind.clone(),
-        starts_at: remote_window.starts_at,
-        ends_at: remote_window.ends_at,
+        starts_at,
+        ends_at,
         capacity: remote_window.capacity,
         used: remote_window.used,
         unit: remote_window.unit.clone(),
@@ -451,6 +461,24 @@ fn matching_window(
         .map(|(_, window)| window)
 }
 
+fn stable_window_bounds(
+    local_starts_at: i64,
+    local_ends_at: i64,
+    remote_starts_at: i64,
+    remote_ends_at: i64,
+    observed_at: i64,
+) -> (i64, i64) {
+    let local_window_is_active = local_starts_at <= observed_at && observed_at < local_ends_at;
+    if local_window_is_active
+        && local_starts_at.abs_diff(remote_starts_at) <= WINDOW_BOUNDARY_DRIFT_TOLERANCE_MILLIS
+        && local_ends_at.abs_diff(remote_ends_at) <= WINDOW_BOUNDARY_DRIFT_TOLERANCE_MILLIS
+    {
+        (local_starts_at, local_ends_at)
+    } else {
+        (remote_starts_at, remote_ends_at)
+    }
+}
+
 fn window_display_name(duration_minutes: u64) -> String {
     match duration_minutes {
         10_080 => "Weekly allowance".to_owned(),
@@ -632,8 +660,8 @@ mod tests {
                 id: "codex-primary".to_owned(),
                 display_name: "10-minute allowance".to_owned(),
                 kind: "primary".to_owned(),
-                starts_at: 3_000,
-                ends_at: 603_000,
+                starts_at: 601_000,
+                ends_at: 1_201_000,
                 capacity: 100,
                 used: 88,
                 remaining: 12,
@@ -645,18 +673,147 @@ mod tests {
         let result = sync_detection(
             &mut service,
             "codex-window-old".to_owned(),
-            4_000,
+            602_000,
             detection,
         );
 
         assert_eq!(result.status, CodexSyncStatus::Synced);
         assert!(result.rolled_over);
+        let current_window_id = result.window_id.unwrap();
         let dashboard = service
             .dashboard(GetQuotaDashboard {
-                window_id: result.window_id.unwrap(),
-                at: 4_000,
+                window_id: current_window_id,
+                at: 602_000,
             })
             .unwrap();
         assert_eq!(dashboard.window.provider_remaining, 12);
+    }
+
+    #[test]
+    fn small_provider_boundary_drift_does_not_create_a_new_window() {
+        let mut service = QuotaService::new(Database::open_in_memory().unwrap());
+        service
+            .create_quota_source(CreateQuotaSource {
+                provider_id: "local-source-provider".to_owned(),
+                provider_display_name: "Codex".to_owned(),
+                account_id: "codex-subscription".to_owned(),
+                account_display_name: "Subscription".to_owned(),
+                pool_id: "codex-window".to_owned(),
+                pool_display_name: "Allowance".to_owned(),
+                window_id: "codex-window-current".to_owned(),
+                starts_at: 1_000,
+                ends_at: 601_000,
+                capacity: 100,
+                unit: "percent".to_owned(),
+                provider_snapshot: Some(ProviderQuotaSnapshotInput {
+                    adapter: "codex_app_server".to_owned(),
+                    remote_limit_id: "codex".to_owned(),
+                    remote_window_kind: "primary".to_owned(),
+                    used: 10,
+                    observed_at: 2_000,
+                    resets_at: 601_000,
+                }),
+            })
+            .unwrap();
+        let detection = CodexDetection::detected(
+            Some("plus".to_owned()),
+            vec![DetectedQuotaWindow {
+                id: "codex-primary".to_owned(),
+                display_name: "10-minute allowance".to_owned(),
+                kind: "primary".to_owned(),
+                starts_at: 4_000,
+                ends_at: 604_000,
+                capacity: 100,
+                used: 12,
+                remaining: 88,
+                unit: "percent".to_owned(),
+                duration_minutes: 10,
+            }],
+        );
+
+        let result = sync_detection(
+            &mut service,
+            "codex-window-current".to_owned(),
+            5_000,
+            detection,
+        );
+
+        assert_eq!(result.status, CodexSyncStatus::Synced);
+        assert!(!result.rolled_over);
+        assert_eq!(result.window_id.as_deref(), Some("codex-window-current"));
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: None,
+                at: 5_000,
+            })
+            .unwrap();
+        assert_eq!(
+            state.selected_window_id.as_deref(),
+            Some("codex-window-current")
+        );
+        assert_eq!(state.dashboard.unwrap().window.provider_remaining, 88);
+    }
+
+    #[test]
+    fn sync_recovers_when_the_caller_still_holds_the_pre_rollover_window() {
+        let mut service = QuotaService::new(Database::open_in_memory().unwrap());
+        service
+            .create_quota_source(CreateQuotaSource {
+                provider_id: "local-source-provider".to_owned(),
+                provider_display_name: "Codex".to_owned(),
+                account_id: "codex-subscription".to_owned(),
+                account_display_name: "Subscription".to_owned(),
+                pool_id: "codex-window".to_owned(),
+                pool_display_name: "Allowance".to_owned(),
+                window_id: "codex-window-old".to_owned(),
+                starts_at: 1_000,
+                ends_at: 601_000,
+                capacity: 100,
+                unit: "percent".to_owned(),
+                provider_snapshot: Some(ProviderQuotaSnapshotInput {
+                    adapter: "codex_app_server".to_owned(),
+                    remote_limit_id: "codex".to_owned(),
+                    remote_window_kind: "primary".to_owned(),
+                    used: 10,
+                    observed_at: 2_000,
+                    resets_at: 601_000,
+                }),
+            })
+            .unwrap();
+        let checkpoint = || {
+            CodexDetection::detected(
+                Some("plus".to_owned()),
+                vec![DetectedQuotaWindow {
+                    id: "codex-primary".to_owned(),
+                    display_name: "10-minute allowance".to_owned(),
+                    kind: "primary".to_owned(),
+                    starts_at: 601_000,
+                    ends_at: 1_201_000,
+                    capacity: 100,
+                    used: 88,
+                    remaining: 12,
+                    unit: "percent".to_owned(),
+                    duration_minutes: 10,
+                }],
+            )
+        };
+
+        let rollover = sync_detection(
+            &mut service,
+            "codex-window-old".to_owned(),
+            602_000,
+            checkpoint(),
+        );
+        let current_window_id = rollover.window_id.unwrap();
+        let retry = sync_detection(
+            &mut service,
+            "codex-window-old".to_owned(),
+            603_000,
+            checkpoint(),
+        );
+
+        assert_eq!(retry.status, CodexSyncStatus::Synced);
+        assert!(!retry.rolled_over);
+        assert_eq!(retry.window_id.as_deref(), Some(current_window_id.as_str()));
     }
 }
