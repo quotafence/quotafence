@@ -936,16 +936,23 @@ impl QuotaService {
         let requested_window_id = command.selected_window_id.map(WindowId::new).transpose()?;
         let selected_window_id = match requested_window_id {
             Some(requested) => {
-                if !sources
+                let selected_source = sources
                     .iter()
-                    .any(|source| source.window_id == requested.as_str())
-                {
-                    return Err(ApplicationError::NotFound {
+                    .find(|source| source.window_id == requested.as_str())
+                    .or_else(|| {
+                        let requested_pool_id = windows
+                            .iter()
+                            .find(|window| window.id() == &requested)
+                            .map(|window| window.pool_id())?;
+                        sources
+                            .iter()
+                            .find(|source| source.pool_id.as_str() == requested_pool_id.as_str())
+                    })
+                    .ok_or_else(|| ApplicationError::NotFound {
                         resource: "quota window",
                         id: requested.to_string(),
-                    });
-                }
-                Some(requested.to_string())
+                    })?;
+                Some(selected_source.window_id.clone())
             }
             None => sources
                 .iter()
@@ -1823,6 +1830,38 @@ mod tests {
             state.selected_window_id.as_deref(),
             Some("codex-weekly-window-20000")
         );
+    }
+
+    #[test]
+    fn local_state_recovers_a_stale_window_selection_after_rollover() {
+        let mut service = configured_service();
+        let result = service
+            .sync_provider_quota(SyncProviderQuota {
+                current_window_id: "week-1".to_owned(),
+                adapter: "codex_app_server".to_owned(),
+                remote_limit_id: "codex".to_owned(),
+                remote_window_kind: "secondary".to_owned(),
+                starts_at: 10_000,
+                ends_at: 20_000,
+                capacity: 100,
+                used: 4,
+                unit: "quota_points".to_owned(),
+                observed_at: 11_000,
+            })
+            .unwrap();
+
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: Some("week-1".to_owned()),
+                at: 11_000,
+            })
+            .unwrap();
+
+        assert_eq!(
+            state.selected_window_id.as_deref(),
+            Some(result.window_id.as_str())
+        );
+        assert_eq!(state.dashboard.unwrap().window.id, result.window_id);
     }
 
     #[test]
