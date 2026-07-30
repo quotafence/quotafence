@@ -6,14 +6,15 @@ use crate::{
         QuotaPool, QuotaPoolId, QuotaUnit, QuotaWindow, Reservation, ReservationId, Scope, ScopeId,
         UnixMillis, UsageAttribution, UsageEvent, UsageEventId, WindowId,
     },
-    storage::{Database, StorageError},
+    storage::{Database, ProviderQuotaSnapshot, StorageError},
 };
 
 use super::{
     error::to_view_integer, AllocationSnapshot, ApplicationError, ApplicationResult, CreateAccount,
     CreateAllocatedScope, CreateProvider, CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow,
     CreateScope, GetLocalState, GetQuotaDashboard, LocalState, QuotaDashboard, QuotaSourceSummary,
-    RecordUsage, ReleaseReservation, ReserveQuota, ScopeSummary, SetAllocation, WindowSummary,
+    RecordUsage, ReleaseReservation, ReserveQuota, ScopeSummary, SetAllocation, SyncProviderQuota,
+    SyncProviderQuotaResult, WindowSummary,
 };
 
 pub struct QuotaService {
@@ -90,17 +91,93 @@ impl QuotaService {
             command.pool_display_name,
             unit.clone(),
         )?;
+        let window_id = WindowId::new(command.window_id)?;
+        let snapshot = command.provider_snapshot.map(|snapshot| {
+            ProviderQuotaSnapshot::new(
+                window_id.clone(),
+                snapshot.adapter,
+                snapshot.remote_limit_id,
+                snapshot.remote_window_kind,
+                snapshot.used,
+                UnixMillis::new(snapshot.observed_at),
+                UnixMillis::new(snapshot.resets_at),
+            )
+        });
         let window = QuotaWindow::new(
-            WindowId::new(command.window_id)?,
+            window_id,
             pool.id().clone(),
             UnixMillis::new(command.starts_at),
             UnixMillis::new(command.ends_at),
             QuotaAmount::new(command.capacity, unit),
         )?;
 
-        self.database
-            .insert_quota_source(&provider, &account, &pool, &window)?;
+        self.database.insert_quota_source_with_snapshot(
+            &provider,
+            &account,
+            &pool,
+            &window,
+            snapshot.as_ref(),
+        )?;
         Ok(())
+    }
+
+    pub fn sync_provider_quota(
+        &mut self,
+        command: SyncProviderQuota,
+    ) -> ApplicationResult<SyncProviderQuotaResult> {
+        let current_window_id = WindowId::new(command.current_window_id)?;
+        let current_window = self
+            .database
+            .catalog()
+            .get_quota_window(&current_window_id)?
+            .ok_or_else(|| ApplicationError::NotFound {
+                resource: "quota window",
+                id: current_window_id.to_string(),
+            })?;
+        let unit = QuotaUnit::new(command.unit)?;
+        if current_window.capacity().unit() != &unit {
+            return Err(crate::domain::DomainError::UnitMismatch {
+                expected: current_window.capacity().unit().to_string(),
+                actual: unit.to_string(),
+            }
+            .into());
+        }
+
+        let rolled_over = current_window.starts_at().value() != command.starts_at
+            || current_window.ends_at().value() != command.ends_at;
+        let target_window_id = if rolled_over {
+            WindowId::new(format!(
+                "{}-window-{}",
+                current_window.pool_id(),
+                command.ends_at
+            ))?
+        } else {
+            current_window_id.clone()
+        };
+        let target_window = QuotaWindow::new(
+            target_window_id.clone(),
+            current_window.pool_id().clone(),
+            UnixMillis::new(command.starts_at),
+            UnixMillis::new(command.ends_at),
+            QuotaAmount::new(command.capacity, unit),
+        )?;
+        let snapshot = ProviderQuotaSnapshot::new(
+            target_window_id.clone(),
+            command.adapter,
+            command.remote_limit_id,
+            command.remote_window_kind,
+            command.used,
+            UnixMillis::new(command.observed_at),
+            UnixMillis::new(command.ends_at),
+        );
+
+        self.database
+            .sync_provider_quota(&current_window_id, &target_window, &snapshot)?;
+
+        Ok(SyncProviderQuotaResult {
+            window_id: target_window_id.to_string(),
+            rolled_over,
+        })
     }
 
     pub fn create_scope(&mut self, command: CreateScope) -> ApplicationResult<()> {
@@ -209,13 +286,20 @@ impl QuotaService {
             .map(|scope| (scope.id().clone(), scope))
             .collect();
         let allocations = self.database.allocations().list_for_window(&window_id)?;
-        let unattributed = self
-            .database
-            .ledger()
-            .unattributed_usage_for_window(&window_id)?;
+        let provider_snapshot = self.database.provider_quota_snapshot(&window_id)?;
+        let unattributed = if provider_snapshot.is_some() {
+            self.database
+                .ledger()
+                .local_unattributed_usage_for_window(&window_id)?
+        } else {
+            self.database
+                .ledger()
+                .unattributed_usage_for_window(&window_id)?
+        };
         let mut snapshots = Vec::with_capacity(allocations.len());
         let mut allocated_to_root_scopes = 0_u64;
-        let mut root_committed = 0_u64;
+        let mut root_attributed_usage = 0_u64;
+        let mut root_active_reservations = 0_u64;
 
         for allocation in allocations {
             let scope = scopes.get(allocation.scope_id()).ok_or_else(|| {
@@ -236,8 +320,11 @@ impl QuotaService {
                 allocated_to_root_scopes = allocated_to_root_scopes
                     .checked_add(allocation.limit().value())
                     .ok_or_else(arithmetic_overflow)?;
-                root_committed = root_committed
-                    .checked_add(balance.committed())
+                root_attributed_usage = root_attributed_usage
+                    .checked_add(balance.attributed_usage().value())
+                    .ok_or_else(arithmetic_overflow)?;
+                root_active_reservations = root_active_reservations
+                    .checked_add(balance.active_reservations().value())
                     .ok_or_else(arithmetic_overflow)?;
             }
 
@@ -256,8 +343,19 @@ impl QuotaService {
             });
         }
 
-        let provider_committed = root_committed
+        let local_observed_usage = root_attributed_usage
             .checked_add(unattributed.value())
+            .ok_or_else(arithmetic_overflow)?;
+        let effective_observed_usage = provider_snapshot
+            .as_ref()
+            .map_or(local_observed_usage, |snapshot| {
+                snapshot.used().max(local_observed_usage)
+            });
+        let effective_unattributed_usage = effective_observed_usage
+            .saturating_sub(root_attributed_usage)
+            .max(unattributed.value());
+        let provider_committed = effective_observed_usage
+            .checked_add(root_active_reservations)
             .ok_or_else(arithmetic_overflow)?;
         let provider_remaining =
             i128::from(window.capacity().value()) - i128::from(provider_committed);
@@ -276,7 +374,7 @@ impl QuotaService {
                     .capacity()
                     .value()
                     .saturating_sub(allocated_to_root_scopes),
-                unattributed_usage: unattributed.value(),
+                unattributed_usage: effective_unattributed_usage,
                 provider_remaining: to_view_integer(provider_remaining, "provider remaining")?,
                 provider_spendable,
             },
@@ -317,6 +415,7 @@ impl QuotaService {
                 inconsistent_reference("account", account.id(), "provider", account.provider_id())
             })?;
 
+            let snapshot = self.database.provider_quota_snapshot(window.id())?;
             sources.push(QuotaSourceSummary {
                 provider_id: provider.id().to_string(),
                 provider_display_name: provider.display_name().to_owned(),
@@ -330,6 +429,8 @@ impl QuotaService {
                 capacity: window.capacity().value(),
                 unit: window.capacity().unit().to_string(),
                 is_active: window.contains(at),
+                provider_managed: snapshot.is_some(),
+                last_synced_at: snapshot.map(|snapshot| snapshot.observed_at().value()),
             });
         }
 
@@ -409,7 +510,8 @@ mod tests {
         application::{
             CreateAccount, CreateAllocatedScope, CreateProvider, CreateQuotaPool,
             CreateQuotaSource, CreateQuotaWindow, CreateScope, GetLocalState, GetQuotaDashboard,
-            RecordUsage, ReserveQuota, SetAllocation,
+            ProviderQuotaSnapshotInput, RecordUsage, ReserveQuota, SetAllocation,
+            SyncProviderQuota,
         },
         domain::{Confidence, EnforcementDecision, ScopeKind, UsageSource},
         storage::Database,
@@ -726,6 +828,14 @@ mod tests {
                 ends_at: 10_000,
                 capacity: 100,
                 unit: "percent".to_owned(),
+                provider_snapshot: Some(ProviderQuotaSnapshotInput {
+                    adapter: "codex_app_server".to_owned(),
+                    remote_limit_id: "codex".to_owned(),
+                    remote_window_kind: "secondary".to_owned(),
+                    used: 24,
+                    observed_at: 2_000,
+                    resets_at: 10_000,
+                }),
             })
             .unwrap();
 
@@ -738,7 +848,83 @@ mod tests {
 
         assert_eq!(state.sources.len(), 1);
         assert_eq!(state.sources[0].unit, "percent");
-        assert_eq!(state.dashboard.unwrap().window.provider_remaining, 100);
+        let dashboard = state.dashboard.unwrap();
+        assert_eq!(dashboard.window.unattributed_usage, 24);
+        assert_eq!(dashboard.window.provider_remaining, 76);
+    }
+
+    #[test]
+    fn provider_sync_replaces_the_absolute_snapshot_instead_of_adding_usage() {
+        let mut service = configured_service();
+        service
+            .record_usage(RecordUsage {
+                id: "old-provider-reading".to_owned(),
+                window_id: "week-1".to_owned(),
+                scope_id: None,
+                amount: 68,
+                unit: "quota_points".to_owned(),
+                observed_at: 2_000,
+                source: UsageSource::ProviderConfirmed,
+                confidence: Confidence::Confirmed,
+                reservation_id: None,
+            })
+            .unwrap();
+
+        for (used, expected_remaining) in [(73, 27), (74, 26), (65, 35)] {
+            service
+                .sync_provider_quota(SyncProviderQuota {
+                    current_window_id: "week-1".to_owned(),
+                    adapter: "codex_app_server".to_owned(),
+                    remote_limit_id: "codex".to_owned(),
+                    remote_window_kind: "secondary".to_owned(),
+                    starts_at: 1_000,
+                    ends_at: 10_000,
+                    capacity: 100,
+                    used,
+                    unit: "quota_points".to_owned(),
+                    observed_at: 3_000,
+                })
+                .unwrap();
+
+            let dashboard = service
+                .dashboard(GetQuotaDashboard {
+                    window_id: "week-1".to_owned(),
+                    at: 3_000,
+                })
+                .unwrap();
+            assert_eq!(dashboard.window.unattributed_usage, used);
+            assert_eq!(dashboard.window.provider_remaining, expected_remaining);
+        }
+    }
+
+    #[test]
+    fn provider_reset_rolls_allocations_into_a_fresh_window() {
+        let mut service = configured_service();
+        let result = service
+            .sync_provider_quota(SyncProviderQuota {
+                current_window_id: "week-1".to_owned(),
+                adapter: "codex_app_server".to_owned(),
+                remote_limit_id: "codex".to_owned(),
+                remote_window_kind: "secondary".to_owned(),
+                starts_at: 10_000,
+                ends_at: 20_000,
+                capacity: 100,
+                used: 4,
+                unit: "quota_points".to_owned(),
+                observed_at: 11_000,
+            })
+            .unwrap();
+
+        assert!(result.rolled_over);
+        let dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: result.window_id,
+                at: 11_000,
+            })
+            .unwrap();
+        assert_eq!(dashboard.window.provider_remaining, 96);
+        assert_eq!(snapshot(&dashboard, "project-a").limit, 70);
+        assert_eq!(snapshot(&dashboard, "feature-a").limit, 50);
     }
 
     #[test]

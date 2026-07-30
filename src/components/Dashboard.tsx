@@ -62,6 +62,22 @@ function dateRange(source: QuotaSourceSummary): string {
   return `${formatter.format(source.startsAt)} – ${formatter.format(source.endsAt)}`;
 }
 
+function formatLastSync(timestamp: number | null): string {
+  if (timestamp === null) {
+    return "Local estimate";
+  }
+
+  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1_000));
+  if (seconds < 60) {
+    return "Synced just now";
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `Synced ${minutes}m ago`;
+  }
+  return `Synced ${Math.floor(minutes / 60)}h ago`;
+}
+
 function orderedScopes(scopes: ScopeSummary[]): ScopeSummary[] {
   const byParent = new Map<string | null, ScopeSummary[]>();
   for (const scope of scopes) {
@@ -323,6 +339,7 @@ export function Dashboard({
               <div className="status-line">
                 <span className={`status-dot ${source.isActive ? "active" : ""}`} />
                 {source.isActive ? "Active window" : "Inactive window"}
+                <small>{formatLastSync(source.lastSyncedAt)}</small>
               </div>
               <h2>{formatAmount(window.providerSpendable, window.unit)}</h2>
               <p>available from {formatAmount(window.capacity, window.unit)}</p>

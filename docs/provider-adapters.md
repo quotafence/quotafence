@@ -1,8 +1,8 @@
 # Provider Adapters
 
 Provider adapters isolate subscription-specific behavior from the quota core.
-Codex is the first planned adapter; additional providers should use the same
-contract while exposing their real differences.
+Codex is the first implemented discovery adapter; additional providers should
+use the same contract while exposing their real differences.
 
 ## Capability discovery
 
@@ -47,14 +47,29 @@ is unavailable.
 
 ## Codex-first development
 
-The first adapter should prove the complete vertical slice:
+The current Codex adapter implements quota discovery and synchronization:
 
-1. detect an available Codex installation or supported local surface;
-2. discover account quota and its reset window;
-3. map a repository to an allocation;
-4. launch one managed session;
-5. attribute and reconcile its usage; and
-6. enforce a visible policy boundary where technically supported.
+- resolve a Codex executable from `PATH`, common install locations, or the
+  `AGENT_QUOTA_CODEX_BIN` override;
+- start `codex app-server --stdio`;
+- complete the documented JSON-RPC initialization handshake;
+- call `account/rateLimits/read`;
+- map every complete primary or secondary window into percentage capacity,
+  provider-confirmed usage, duration, and reset time; and
+- replace the absolute provider snapshot on startup or explicit refresh;
+- carry allocations into a fresh local window after the provider reset; and
+- stop the transient App Server process after the snapshot is returned.
+
+Only structured quota metadata crosses the adapter boundary. It does not read
+`auth.json`, Codex session JSONL, prompts, source files, or account email.
+Malformed, incomplete, and out-of-range provider responses are rejected.
+
+The remaining Codex vertical slice is:
+
+1. map a repository to an allocation;
+2. launch one managed session;
+3. attribute and reconcile its usage; and
+4. enforce a visible policy boundary where technically supported.
 
 Only after that slice is stable should the adapter contract be generalized from
 real implementation evidence for a second provider.

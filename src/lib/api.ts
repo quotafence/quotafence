@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  CodexDetection,
+  CodexSyncResult,
   IpcError,
   LocalState,
   QuotaSourceInput,
@@ -25,6 +27,16 @@ export async function getLocalState(
   });
 }
 
+export async function detectCodexQuota(): Promise<CodexDetection> {
+  return invoke<CodexDetection>("detect_codex_quota");
+}
+
+export async function syncCodexQuota(
+  windowId: string,
+): Promise<CodexSyncResult> {
+  return invoke<CodexSyncResult>("sync_codex_quota", { windowId });
+}
+
 export async function createQuotaSource(
   input: QuotaSourceInput,
 ): Promise<void> {
@@ -35,7 +47,7 @@ export async function createQuotaSource(
       providerId: `${sourceId}-provider`,
       providerDisplayName: input.providerDisplayName,
       accountId: `${sourceId}-account`,
-      accountDisplayName: "Subscription",
+      accountDisplayName: input.accountDisplayName ?? "Subscription",
       poolId: `${sourceId}-pool`,
       poolDisplayName: input.poolDisplayName,
       windowId: `${sourceId}-window`,
@@ -43,6 +55,7 @@ export async function createQuotaSource(
       endsAt: input.endsAt,
       capacity: input.capacity,
       unit: input.unit,
+      providerSnapshot: input.providerSnapshot ?? null,
     },
   });
 }

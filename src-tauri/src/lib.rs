@@ -1,6 +1,7 @@
 pub mod application;
 mod commands;
 pub mod domain;
+pub mod providers;
 pub mod storage;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,6 +23,8 @@ pub fn run() {
             commands::record_usage,
             commands::get_quota_dashboard,
             commands::get_local_state,
+            commands::detect_codex_quota,
+            commands::sync_codex_quota,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -9,11 +9,19 @@ Onboarding creates one quota source as a single transaction:
 
 ```text
 provider → subscription account → quota pool → quota window
+                                               └→ provider quota snapshot
 ```
 
-The user chooses a provider label, allowance, unit, and reset time. This is
-manual configuration; selecting "Codex" or "Claude Code" does not claim that an
-adapter is installed or that usage is being read automatically.
+The app first probes the installed Codex App Server. When a signed-in
+subscription exposes rate limits, the user chooses one detected window and the
+app imports its duration, reset time, percentage capacity, and current usage.
+The provider total is stored as a replaceable absolute snapshot, so the
+dashboard reflects provider remaining capacity without adding repeated reads
+together.
+
+Manual provider, allowance, unit, and reset configuration remains available as
+an explicit fallback. Selecting Claude Code manually does not claim that a
+Claude adapter is installed.
 
 ## Dashboard workflow
 
@@ -24,6 +32,8 @@ For the selected quota window, the UI can:
 - create project, repository, and nested task allocations;
 - update existing allocation limits;
 - record observed usage against a scope or as unattributed usage;
+- refresh the selected Codex source on startup or on demand;
+- carry allocations into the next provider reset window;
 - show hierarchical debiting, reservations, and policy decisions; and
 - switch between locally configured quota sources.
 
@@ -40,12 +50,11 @@ directory. The UI does not load remote fonts, analytics, or hosted assets.
 
 This milestone does not:
 
-- authenticate with a coding-agent provider;
-- discover subscription quota automatically;
+- alter or copy coding-agent authentication;
 - launch or stop a managed coding-agent session;
-- reconcile manual observations with provider-confirmed totals;
+- attribute a provider-confirmed total to individual projects automatically;
 - delete or archive sources and scopes; or
 - run as a background daemon.
 
-The next vertical slice can add the first Codex adapter while keeping these
-manual workflows available as a provider-neutral fallback.
+The next vertical slice can map repositories to allocations and run a managed
+Codex session while keeping manual workflows as a provider-neutral fallback.

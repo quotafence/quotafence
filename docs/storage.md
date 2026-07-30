@@ -44,6 +44,7 @@ providers
 └── accounts
     └── quota_pools
         └── quota_windows
+            ├── provider_quota_snapshots
             ├── allocations ── scopes
             ├── reservations ─ scopes
             └── usage_events ─ scopes (optional)
@@ -56,6 +57,11 @@ Timestamps are Unix milliseconds.
 Usage events allow a null scope for unattributed provider consumption. Update
 and delete triggers make those events append-only, and restrictive foreign keys
 prevent parent deletion from erasing ledger history.
+
+Provider quota snapshots are different from ledger events: each window has at
+most one absolute provider reading, and a later sync replaces it. Dashboard
+reconciliation takes the greater of that reading and locally observed usage, so
+refreshing cannot double-count the provider total.
 
 ## Transactions
 
@@ -90,5 +96,4 @@ Migration rules:
 
 - encryption at rest;
 - backup, export, or restore;
-- reconciliation checkpoints; and
 - pruning or archival policy.
