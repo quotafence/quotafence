@@ -1,7 +1,8 @@
-# Local MVP
+# Current Local MVP
 
-The desktop application now supports a complete provider-neutral local workflow
-without requiring a provider account or API key.
+This document describes the implemented baseline, not the full product
+positioning. The desktop application currently configures local budgets and
+observes Codex quota; it is not yet in the coding-agent execution path.
 
 ## First-run workflow
 
@@ -52,9 +53,12 @@ This milestone does not:
 
 - alter or copy coding-agent authentication;
 - launch or stop a managed coding-agent session;
+- map the current working repository to an allocation;
 - attribute a provider-confirmed total to individual projects automatically;
+- persist per-scope policy or enforce it during admission;
+- forecast depletion from session history;
 - delete or archive sources and scopes; or
 - run as a background daemon.
 
-The next vertical slice can map repositories to allocations and run a managed
-Codex session while keeping manual workflows as a provider-neutral fallback.
+The next vertical slice starts with repository binding and a read-only CLI
+context command. See the [Codex-first roadmap](roadmap.md).
