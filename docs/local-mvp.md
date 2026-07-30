@@ -3,8 +3,8 @@
 This document describes the implemented baseline, not the full product
 positioning. The desktop application currently configures local budgets and
 observes Codex quota. The CLI can own one Codex child process and reserve its
-workspace capacity. Optional lifecycle hooks can infer folder usage for one
-uncontended Codex desktop turn.
+workspace capacity. Desktop refresh can passively infer folder usage from
+Codex's local thread metadata plus the provider's aggregate quota checkpoint.
 
 ## First-run workflow
 
@@ -36,7 +36,8 @@ For the selected quota window, the UI can:
 - update existing allocation limits;
 - show canonical folder paths on explicitly bound workspace allocations;
 - refresh the selected Codex source on startup or on demand;
-- display inferred folder usage reconciled by the optional Codex hook adapter;
+- establish a Codex Desktop activity baseline at startup and reconcile later
+  refreshes to one unambiguous mapped folder;
 - carry allocations into the next provider reset window;
 - prevent duplicate active bindings to the same detected provider limit;
 - archive a quota source without deleting its ledger history;
@@ -57,14 +58,21 @@ The app reloads providers, windows, scopes, allocations, and ledger totals from
 SQLite at startup. Data is stored in Tauri's operating-system-specific app-data
 directory. The UI does not load remote fonts, analytics, or hosted assets.
 
+For passive Codex Desktop attribution, the backend opens the newest local
+`state_N.sqlite` database read-only and selects only thread ID, working folder,
+cumulative token counter, and update time. It never selects or stores thread
+title, preview, prompt, response, transcript, credential, or source-code
+content. The stored cursor is local attribution metadata, not a copy of Codex
+history.
+
 ## Honest limitations
 
 This milestone does not:
 
 - alter or copy coding-agent authentication;
-- provide exact per-turn tokens or confirmed causal attribution from an
+- provide exact per-workspace tokens or confirmed causal attribution from an
   account-wide integer percentage;
-- split concurrent Codex turns across folders;
+- split activity across multiple or unmapped folders;
 - accept manual usage estimates as a substitute for automatic attribution;
 - enforce live in-flight quota movement;
 - archive scopes; or

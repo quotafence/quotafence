@@ -105,6 +105,11 @@ subscription rate-limit metadata. It does not accept a command string from the
 webview and returns sanitized detection states instead of raw process errors.
 `sync_codex_quota` applies the selected provider window as an absolute local
 snapshot and rolls the local window forward when its reset boundary changes.
+In the same blocking task it opens Codex's newest local state database
+read-only, selects only minimal thread usage metadata, and reconciles an
+unambiguous provider delta to the nearest bound workspace. Its response reports
+whether tracking established a baseline, has pending activity, attributed a
+delta, remained ambiguous, rolled over, or was unavailable.
 `archive_quota_source` hides a quota pool from active selection while retaining
 its windows, allocations, snapshots, and append-only usage history.
 

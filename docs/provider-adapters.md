@@ -56,7 +56,7 @@ Current capability status:
 | Reset rollover | Implemented |
 | Workspace binding | Implemented for any local folder |
 | Managed user session | Implemented through the CLI wrapper |
-| Automatic attribution | Experimental for one uncontended Codex desktop turn |
+| Automatic attribution | Passive on desktop refresh when activity resolves to one workspace |
 | Admission assessment | Implemented as dry run and managed launch gate |
 | Live hard stop | Not supported |
 
@@ -85,7 +85,31 @@ It does not read `auth.json`, Codex session JSONL, prompts, source files, or
 account email. Malformed, incomplete, and out-of-range provider responses are
 rejected.
 
-The experimental desktop integration uses official Codex lifecycle hooks:
+The passive Codex Desktop adapter discovers the highest-versioned local
+`state_N.sqlite`, opens it read-only, verifies the `threads` schema, and selects
+only thread ID, working directory, cumulative token counter, and update time.
+It intentionally does not select title or preview columns and does not scan
+rollout JSONL files. The first scan establishes a cursor baseline. Later token
+deltas identify active folders, while `account/rateLimits/read` remains the
+source of the quota amount.
+
+If all pending activity maps through nearest-ancestor binding to one workspace,
+AQM appends the provider percentage delta to that workspace at `inferred`
+confidence. Multiple workspaces, any unmapped activity, reset rollover, or a
+missing scan leave the provider change unattributed. A provider refresh that
+cannot include a desktop scan invalidates pending attribution rather than
+guessing across an observation gap.
+
+### Related work
+
+[OpenUsage](https://github.com/robinebers/openusage) demonstrates that local
+Codex session data can support useful usage analysis. AQM follows the same
+local-first principle but uses a narrower input for this feature: it queries
+minimal thread counters from Codex's state database instead of parsing rollout
+content, then debits only the separately refreshed provider quota delta.
+
+The optional higher-frequency desktop integration uses official Codex
+lifecycle hooks:
 
 - `UserPromptSubmit` records a provider checkpoint baseline for the event's
   working folder;

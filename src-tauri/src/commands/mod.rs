@@ -154,10 +154,28 @@ pub(crate) async fn sync_codex_quota(
     window_id: String,
 ) -> IpcResult<CodexSyncResult> {
     let now = current_time_millis();
-    let detection = tauri::async_runtime::spawn_blocking(codex::detect)
-        .await
-        .unwrap_or_else(|_| codex::detection_failed());
-    state.execute(|service| Ok(codex::sync_detection(service, window_id, now, detection)))
+    let (detection, desktop_scan) = tauri::async_runtime::spawn_blocking(|| {
+        (codex::detect(), crate::providers::codex_desktop::scan())
+    })
+    .await
+    .unwrap_or_else(|_| {
+        (
+            codex::detection_failed(),
+            crate::providers::codex_desktop::CodexDesktopScan {
+                observations: Vec::new(),
+                message: Some("Codex Desktop metadata scan stopped unexpectedly.".to_owned()),
+            },
+        )
+    });
+    state.execute(|service| {
+        Ok(codex::sync_detection_with_desktop(
+            service,
+            window_id,
+            now,
+            detection,
+            desktop_scan,
+        ))
+    })
 }
 
 fn current_time_millis() -> i64 {

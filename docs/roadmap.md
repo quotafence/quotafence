@@ -33,8 +33,8 @@ The repository currently has:
 - a persisted `aqm run codex` managed-session lifecycle with atomic reservation,
   direct process supervision, pre/post checkpoint reconciliation, terminal
   cleanup, and Unix orphan recovery;
-- experimental Codex desktop turn attribution through official lifecycle
-  hooks, with contention and rollover kept unattributed;
+- passive Codex Desktop attribution from local thread metadata at refresh, plus
+  experimental lifecycle hooks for higher-frequency observation;
 - persisted workspace policy overrides shared by dashboard, CLI admission, and
   managed launch, with audited confirmation acceptance; and
 - an evidence-gated managed burn rate and depletion signal for the active
@@ -102,9 +102,17 @@ timestamp, the Codex checkpoint application accepts fabricated detection data
 in tests, and the CLI reserves exit codes `0`, `10`, `20`, and `30` for policy
 outcomes. `--yes` accepts confirmation but never overrides stop.
 
-### M2.5 — Observed Codex desktop attribution — experimental
+### M2.5 — Observed Codex desktop attribution — implemented, conservative
 
-- Install user-level `UserPromptSubmit`, `Stop`, and `SessionEnd` hooks without
+- Read minimal local Codex Desktop thread metadata without parsing rollout
+  files, prompts, previews, or responses.
+- Establish a baseline and correlate later folder activity with provider
+  checkpoint movement during desktop startup or refresh.
+- Attribute only when all pending activity resolves to one workspace.
+- Keep multiple, unmapped, reset, or interrupted observation gaps
+  unattributed.
+- Optionally install user-level `UserPromptSubmit`, `Stop`, and `SessionEnd`
+  hooks for higher-frequency turn boundaries without
   overwriting unrelated hook configuration.
 - Map the lifecycle event's working folder to its nearest workspace allocation.
 - Refresh before and after a turn and append the aggregate percentage delta at
@@ -115,14 +123,16 @@ outcomes. `--yes` accepts confirmation but never overrides stop.
   scoped ledger.
 - Support status and uninstall for the integration.
 
-Verification: hook-schema parser tests that ignore prompt/transcript fields,
-installer round-trip tests, storage contention/idempotency tests, rollover
-tests, and an end-to-end fake-checkpoint test proving that a 4% provider delta
-reduces the mapped folder allocation by 4%.
+Verification: read-only scanner schema/privacy tests, baseline and pending
+cursor tests, mapped and ambiguous reconciliation tests, hook-schema parser
+tests that ignore prompt/transcript fields, installer round-trip tests,
+rollover tests, and an end-to-end fake-checkpoint test proving that a 4%
+provider delta reduces the mapped folder allocation by 4%.
 
 This milestone makes ordinary Codex app usage observable but does not make it
-AQM-managed. Hook trust is user-controlled, hooks are fail-open, and aggregate
-integer percentage checkpoints cannot expose exact token consumption.
+AQM-managed. Passive scans require no hook trust; optional hooks remain
+user-controlled and fail-open. Aggregate integer percentage checkpoints cannot
+expose exact workspace token consumption.
 
 ### M3 — One managed Codex session — complete
 

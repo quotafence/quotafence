@@ -37,6 +37,8 @@ The current command DTOs cover:
 - quota reservation and release;
 - usage recording with optional atomic reservation consumption;
 - absolute provider-snapshot synchronization and reset rollover;
+- optional Codex Desktop cursor reconciliation in the same snapshot
+  transaction;
 - provider-turn baseline creation, lookup, reconciliation, and cleanup;
 - burn-rate and depletion forecasting from reconciled managed sessions;
 - quota-dashboard queries; and
@@ -59,6 +61,14 @@ adapter refreshes again and `ReconcileProviderTurnObservation` atomically
 removes the active observation and appends an inferred, provider-observed usage
 event only when the stored turn is unambiguous. Missing checkpoints, rollover,
 unmapped work, and concurrency produce no scoped event.
+
+`SyncProviderQuota` may also receive a complete passive desktop metadata scan.
+The service advances per-thread cursors and the provider snapshot atomically.
+The first scan is baseline-only. A later provider delta is scoped only when all
+pending thread activity resolves to one workspace; otherwise it stays visible
+only in the provider total. Callers that did not perform a desktop scan pass no
+observation value, which invalidates pending correlation instead of treating an
+unknown scan as an empty one.
 
 `PrepareManagedSession` re-evaluates admission, applies stop and explicit
 confirmation boundaries, reserves the workspace's current spendable capacity,

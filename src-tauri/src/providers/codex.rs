@@ -11,7 +11,11 @@ use std::{
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::application::{GetLocalState, QuotaService, SyncProviderQuota};
+use crate::application::{
+    DesktopUsageReconciliationStatus, GetLocalState, QuotaService, SyncProviderQuota,
+};
+
+use super::codex_desktop::CodexDesktopScan;
 
 const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(30);
 const RATE_LIMIT_TIMEOUT: Duration = Duration::from_secs(45);
@@ -67,6 +71,30 @@ pub struct CodexSyncResult {
     pub window_id: Option<String>,
     pub rolled_over: bool,
     pub synced_at: Option<i64>,
+    pub message: Option<String>,
+    pub desktop_tracking: Option<CodexDesktopTracking>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CodexDesktopTrackingStatus {
+    Unavailable,
+    BaselineEstablished,
+    NoActivity,
+    PendingProviderDelta,
+    Attributed,
+    Ambiguous,
+    WindowRolledOver,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexDesktopTracking {
+    pub status: CodexDesktopTrackingStatus,
+    pub observed_threads: u32,
+    pub pending_tokens: u64,
+    pub attributed_amount: u64,
+    pub scope_id: Option<String>,
     pub message: Option<String>,
 }
 
@@ -148,6 +176,32 @@ pub fn sync_detection(
     observed_at: i64,
     detection: CodexDetection,
 ) -> CodexSyncResult {
+    sync_detection_inner(service, window_id, observed_at, detection, None)
+}
+
+pub fn sync_detection_with_desktop(
+    service: &mut QuotaService,
+    window_id: String,
+    observed_at: i64,
+    detection: CodexDetection,
+    desktop_scan: CodexDesktopScan,
+) -> CodexSyncResult {
+    sync_detection_inner(
+        service,
+        window_id,
+        observed_at,
+        detection,
+        Some(desktop_scan),
+    )
+}
+
+fn sync_detection_inner(
+    service: &mut QuotaService,
+    window_id: String,
+    observed_at: i64,
+    detection: CodexDetection,
+    desktop_scan: Option<CodexDesktopScan>,
+) -> CodexSyncResult {
     let local_state = match service.local_state(GetLocalState {
         selected_window_id: Some(window_id.clone()),
         at: observed_at,
@@ -160,6 +214,7 @@ pub fn sync_detection(
                 rolled_over: false,
                 synced_at: None,
                 message: Some(error.to_string()),
+                desktop_tracking: None,
             };
         }
     };
@@ -175,6 +230,7 @@ pub fn sync_detection(
             rolled_over: false,
             synced_at: None,
             message: Some("The selected quota source no longer exists.".to_owned()),
+            desktop_tracking: None,
         };
     };
 
@@ -190,6 +246,7 @@ pub fn sync_detection(
             message: Some(
                 "This source is not connected to automatic Codex quota detection.".to_owned(),
             ),
+            desktop_tracking: None,
         };
     }
     if detection.status != DetectionStatus::Detected {
@@ -199,6 +256,7 @@ pub fn sync_detection(
             rolled_over: false,
             synced_at: None,
             message: detection.message,
+            desktop_tracking: None,
         };
     }
 
@@ -212,6 +270,7 @@ pub fn sync_detection(
             message: Some(
                 "Codex returned quota windows, but none matched this local source.".to_owned(),
             ),
+            desktop_tracking: None,
         };
     };
     let (starts_at, ends_at) = stable_window_bounds(
@@ -221,6 +280,10 @@ pub fn sync_detection(
         remote_window.ends_at,
         observed_at,
     );
+    let desktop_observations = desktop_scan
+        .as_ref()
+        .filter(|scan| scan.is_available())
+        .map(|scan| scan.observations.clone());
     let sync = service.sync_provider_quota(SyncProviderQuota {
         current_window_id: source.window_id.clone(),
         adapter: "codex_app_server".to_owned(),
@@ -232,22 +295,69 @@ pub fn sync_detection(
         used: remote_window.used,
         unit: remote_window.unit.clone(),
         observed_at,
+        desktop_observations,
     });
 
     match sync {
-        Ok(result) => CodexSyncResult {
-            status: CodexSyncStatus::Synced,
-            window_id: Some(result.window_id),
-            rolled_over: result.rolled_over,
-            synced_at: Some(observed_at),
-            message: None,
-        },
+        Ok(result) => {
+            let desktop_tracking = desktop_scan.map(|scan| {
+                if let Some(message) = scan.message {
+                    return CodexDesktopTracking {
+                        status: CodexDesktopTrackingStatus::Unavailable,
+                        observed_threads: 0,
+                        pending_tokens: 0,
+                        attributed_amount: 0,
+                        scope_id: None,
+                        message: Some(message),
+                    };
+                }
+                let reconciliation = result
+                    .desktop_reconciliation
+                    .expect("an available Codex Desktop scan must produce a reconciliation result");
+                CodexDesktopTracking {
+                    status: match reconciliation.status {
+                        DesktopUsageReconciliationStatus::BaselineEstablished => {
+                            CodexDesktopTrackingStatus::BaselineEstablished
+                        }
+                        DesktopUsageReconciliationStatus::NoActivity => {
+                            CodexDesktopTrackingStatus::NoActivity
+                        }
+                        DesktopUsageReconciliationStatus::PendingProviderDelta => {
+                            CodexDesktopTrackingStatus::PendingProviderDelta
+                        }
+                        DesktopUsageReconciliationStatus::Attributed => {
+                            CodexDesktopTrackingStatus::Attributed
+                        }
+                        DesktopUsageReconciliationStatus::Ambiguous => {
+                            CodexDesktopTrackingStatus::Ambiguous
+                        }
+                        DesktopUsageReconciliationStatus::WindowRolledOver => {
+                            CodexDesktopTrackingStatus::WindowRolledOver
+                        }
+                    },
+                    observed_threads: reconciliation.observed_threads,
+                    pending_tokens: reconciliation.pending_tokens,
+                    attributed_amount: reconciliation.attributed_amount,
+                    scope_id: reconciliation.scope_id,
+                    message: None,
+                }
+            });
+            CodexSyncResult {
+                status: CodexSyncStatus::Synced,
+                window_id: Some(result.window_id),
+                rolled_over: result.rolled_over,
+                synced_at: Some(observed_at),
+                message: None,
+                desktop_tracking,
+            }
+        }
         Err(error) => CodexSyncResult {
             status: CodexSyncStatus::Unavailable,
             window_id: Some(source.window_id),
             rolled_over: false,
             synced_at: None,
             message: Some(error.to_string()),
+            desktop_tracking: None,
         },
     }
 }

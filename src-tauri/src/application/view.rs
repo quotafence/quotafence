@@ -220,6 +220,28 @@ pub struct WindowSummary {
 pub struct SyncProviderQuotaResult {
     pub window_id: String,
     pub rolled_over: bool,
+    pub desktop_reconciliation: Option<DesktopUsageReconciliation>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DesktopUsageReconciliationStatus {
+    BaselineEstablished,
+    NoActivity,
+    PendingProviderDelta,
+    Attributed,
+    Ambiguous,
+    WindowRolledOver,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopUsageReconciliation {
+    pub status: DesktopUsageReconciliationStatus,
+    pub observed_threads: u32,
+    pub pending_tokens: u64,
+    pub attributed_amount: u64,
+    pub scope_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

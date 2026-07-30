@@ -143,6 +143,17 @@ pub struct SyncProviderQuota {
     pub used: u64,
     pub unit: String,
     pub observed_at: i64,
+    #[serde(default)]
+    pub desktop_observations: Option<Vec<DesktopUsageObservation>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopUsageObservation {
+    pub thread_id: String,
+    pub canonical_path: String,
+    pub total_tokens: u64,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

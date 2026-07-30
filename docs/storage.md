@@ -19,6 +19,7 @@ The `src-tauri/src/storage` module provides:
 - transactional folder-allocation writes;
 - capacity-checked reservations;
 - minimal active provider-turn observations for checkpoint reconciliation;
+- passive Codex Desktop thread cursors and pending activity metadata;
 - persisted managed-session process state linked to its workspace reservation;
 - persisted workspace policy overrides and managed confirmation audit records;
 - reconciled managed-session history queries for depletion forecasting;
@@ -52,6 +53,7 @@ providers
         └── quota_windows
             ├── provider_quota_snapshots
             ├── provider_turn_observations ── scopes (optional)
+            ├── codex_desktop_thread_cursors
             ├── allocations ── scopes
             ├── reservations ─ scopes
             ├── managed_sessions ─ reservations, scopes
@@ -125,6 +127,13 @@ migration 8 before its `reconciliation_outcome` column was finalized. It
 inspects the actual `managed_sessions` table, adds and backfills only the missing
 column, and is a no-op for complete schemas. The repair preserves the ledger and
 all managed-session records.
+
+Migration 11 adds `codex_desktop_thread_cursors`, keyed by provider pool and
+Codex thread ID. Each row stores only canonical folder, last cumulative token
+counter, pending counter delta, and observation time. No title, preview, prompt,
+response, transcript, credential, or source-code field exists in this table.
+Cursor updates, provider snapshot replacement, and any inferred workspace usage
+event commit in one immediate transaction.
 
 ## Transactions
 
