@@ -13,8 +13,9 @@ use std::{
 use agent_quota_manager_lib::{
     application::{
         AdmissionAssessment, BindWorkspace, EvaluateWorkspaceAdmission, FinishManagedSession,
-        GetWorkspaceContext, ManagedSessionOutcome, MarkManagedSessionRunning,
-        PrepareManagedSession, QuotaService, WorkspaceContext,
+        GetWorkspaceContext, ManagedSessionOutcome, ManagedSessionReconciliation,
+        ManagedSessionReconciliationStatus, MarkManagedSessionRunning, PrepareManagedSession,
+        QuotaService, WorkspaceContext,
     },
     domain::EnforcementDecision,
     paths,
@@ -32,6 +33,7 @@ const EXIT_WARN: u8 = 10;
 const EXIT_CONFIRM: u8 = 20;
 const EXIT_STOP: u8 = 30;
 const SESSION_RESERVATION_MILLIS: i64 = 24 * 60 * 60 * 1_000;
+const MANAGED_SESSION_ENV: &str = "AQM_MANAGED_SESSION_ID";
 static FORWARDED_SIGNAL: AtomicI32 = AtomicI32::new(0);
 static SIGNAL_HANDLER_LOCK: Mutex<()> = Mutex::new(());
 
@@ -323,6 +325,7 @@ fn run_managed_codex(
     let mut child = match Command::new(&executable)
         .args(agent_args)
         .current_dir(&canonical_path)
+        .env(MANAGED_SESSION_ENV, &launch.session_id)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -389,15 +392,68 @@ fn run_managed_codex(
             return Err(error);
         }
     };
-    service
+    let finished_at = now_millis()?;
+    let current_window_id =
+        refresh_managed_checkpoint(&mut service, &launch.assessment.window_id, finished_at);
+    let reconciliation = service
         .finish_managed_session(FinishManagedSession {
             id: launch.session_id,
             outcome: process.outcome,
-            finished_at: now_millis()?,
+            finished_at,
             exit_code: process.provider_exit_code,
+            current_window_id,
         })
         .map_err(|error| error.to_string())?;
+    print_managed_reconciliation(&reconciliation, &launch.assessment.unit);
     Ok(process.shell_exit_code)
+}
+
+fn refresh_managed_checkpoint(
+    service: &mut QuotaService,
+    baseline_window_id: &str,
+    observed_at: i64,
+) -> Option<String> {
+    let checkpoint = codex::sync_detection(
+        service,
+        baseline_window_id.to_owned(),
+        observed_at,
+        codex::detect(),
+    );
+    if checkpoint.status == CodexSyncStatus::Synced {
+        return checkpoint.window_id;
+    }
+    eprintln!(
+        "AQM: Codex exited, but its final quota checkpoint is unavailable: {}",
+        checkpoint
+            .message
+            .as_deref()
+            .unwrap_or("provider temporarily unavailable")
+    );
+    None
+}
+
+fn print_managed_reconciliation(reconciliation: &ManagedSessionReconciliation, unit: &str) {
+    match reconciliation.status {
+        ManagedSessionReconciliationStatus::Attributed => println!(
+            "AQM: attributed {} {} to this workspace",
+            reconciliation.amount.unwrap_or(0),
+            unit
+        ),
+        ManagedSessionReconciliationStatus::NoUsage => {
+            println!("AQM: provider checkpoint did not change during this session")
+        }
+        ManagedSessionReconciliationStatus::Ambiguous => println!(
+            "AQM: kept {} {} unattributed because concurrent usage was observed",
+            reconciliation.amount.unwrap_or(0),
+            unit
+        ),
+        ManagedSessionReconciliationStatus::WindowRolledOver => {
+            println!("AQM: quota window rolled over; no cross-window usage was attributed")
+        }
+        ManagedSessionReconciliationStatus::SnapshotUnavailable => {
+            println!("AQM: session ended without a reconcilable provider checkpoint")
+        }
+    }
 }
 
 fn finish_session_after_error(
@@ -412,7 +468,9 @@ fn finish_session_after_error(
             outcome,
             finished_at: now_millis()?,
             exit_code,
+            current_window_id: None,
         })
+        .map(|_| ())
         .map_err(|error| error.to_string())
 }
 
@@ -430,6 +488,7 @@ fn recover_orphaned_sessions(service: &mut QuotaService, recovered_at: i64) -> R
                 outcome: ManagedSessionOutcome::Interrupted,
                 finished_at: recovered_at,
                 exit_code: None,
+                current_window_id: None,
             })
             .map_err(|error| error.to_string())?;
     }
@@ -571,6 +630,9 @@ fn managed_session_identity(now: i64) -> (String, String) {
 }
 
 fn run_codex_hook(options: &CommonOptions) -> Result<(), String> {
+    if env::var_os(MANAGED_SESSION_ENV).is_some() {
+        return Ok(());
+    }
     let event = CodexHookEvent::from_reader(io::stdin().lock())?;
     let mut service = open_service(options)?;
     codex_hooks::handle_event(&mut service, &event, now_millis()?, || {

@@ -19,8 +19,8 @@ pub use database::Database;
 pub use error::{StorageError, StorageResult};
 pub use ledger::LedgerRepository;
 pub use managed_sessions::{
-    ManagedSession, ManagedSessionRepository, ManagedSessionStatus, NewManagedSession,
-    ReconciliationStatus,
+    ManagedSession, ManagedSessionReconciliationOutcome, ManagedSessionReconciliationResult,
+    ManagedSessionRepository, ManagedSessionStatus, NewManagedSession, ReconciliationStatus,
 };
 pub use provider_snapshots::ProviderQuotaSnapshot;
 pub use turn_observations::{

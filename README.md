@@ -7,10 +7,12 @@ Local-first budget guard and routing layer for AI coding agents.
 > discovery, checkpoint refresh, reset rollover, and manual allocations work
 > locally. Folder-based workspace mapping plus `aqm context` and the provider-refreshing
 > `aqm admit codex` dry run are implemented. `aqm run codex` now admits,
-> reserves, launches, supervises, and recovers one managed Codex session.
+> reserves, launches, supervises, reconciles, and recovers one managed Codex
+> session.
 > Experimental Codex lifecycle hooks
 > can infer a single desktop turn's workspace usage from provider checkpoint
-> deltas. Managed-session usage reconciliation is not implemented yet.
+> deltas. Aggregate percentage checkpoints still cannot provide exact token
+> counts or prove causality when external usage is invisible to AQM.
 
 Solo power users often run several coding agents across multiple workspaces
 against the same constrained subscription. Low-priority work can exhaust that
@@ -35,12 +37,14 @@ That workflow now:
 - resolves the current folder to a workspace allocation;
 - reserves capacity for the requested work;
 - warns, requires confirmation, or refuses admission at a policy boundary;
-- runs a Codex process under AQM management.
+- runs a Codex process under AQM management; and
+- refreshes the provider checkpoint after exit and attributes an unambiguous
+  observed delta to the workspace.
 
 On Unix, the next managed invocation also recovers sessions orphaned by a
-crashed supervisor. The next milestone reconciles the resulting aggregate
-provider delta back to the workspace without claiming false session-level
-precision.
+crashed supervisor. When AQM observes concurrent Codex work in the same quota
+window, the aggregate delta remains unattributed. The next milestone persists
+workspace policy instead of relying only on application defaults.
 
 The desktop UI remains useful for setup and policy visibility, but dashboard
 analytics alone are not the product. Longer term, the same control layer may

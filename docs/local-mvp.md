@@ -45,6 +45,9 @@ For the selected quota window, the UI can:
 
 Creating a workspace, its first allocation, and its folder binding is atomic.
 An invalid or over-capacity allocation leaves none of those records behind.
+The CLI-managed Codex workflow also persists a provider baseline before spawn
+and reconciles the final aggregate delta to the bound folder when no visible
+concurrent observation makes that attribution ambiguous.
 
 ## Persistence and privacy
 
@@ -61,7 +64,6 @@ This milestone does not:
   account-wide integer percentage;
 - split concurrent Codex turns across folders;
 - accept manual usage estimates as a substitute for automatic attribution;
-- reconcile managed-session usage after the child exits;
 - persist per-scope policy or enforce live in-flight quota movement;
 - forecast depletion from session history;
 - archive scopes; or

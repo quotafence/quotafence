@@ -30,6 +30,8 @@ The current command DTOs cover:
 - provider-neutral workspace admission assessment;
 - managed-session admission, reservation, process-state transitions, and
   recovery reads;
+- managed-session baseline capture plus atomic terminal reconciliation and
+  reservation transition;
 - allocation updates;
 - quota reservation and release;
 - usage recording with optional atomic reservation consumption;

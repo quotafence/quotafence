@@ -100,9 +100,15 @@ checkpoint is an account-wide integer percentage, the resulting workspace
 attribution is `inferred`, may remain unchanged for a small turn, and is never
 split across concurrent turns.
 
-The remaining Codex vertical slice is to attribute and reconcile managed usage,
-persist workspace policy overrides, and surface the resulting policy boundary
-without overstating live enforcement.
+The managed Codex wrapper now records a pre-spawn checkpoint, refreshes after
+exit, and attributes a same-window non-contended delta at `observed`
+confidence. Managed child hooks are bypassed through an inherited session
+marker to prevent double observation. Visible concurrent work remains
+unattributed; invisible external usage is why this signal is not
+provider-confirmed.
+
+The remaining Codex vertical slice is to persist workspace policy overrides and
+surface the resulting policy boundary without overstating live enforcement.
 
 Only after that slice is stable should the adapter contract be generalized from
 real implementation evidence for a second provider.

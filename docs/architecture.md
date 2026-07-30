@@ -160,15 +160,15 @@ assistant response, or transcript path.
 7. Persist the exit outcome, refresh the provider checkpoint, and reconcile.
 8. Consume or release the reservation and append immutable attribution events.
 
-Steps 1–6 and the terminal process outcome are implemented. The current M3
-path releases its reservation at exit. M4 will add the post-session checkpoint
-and replace that reservation with observed usage when attribution is
-unambiguous.
+Steps 1–8 are implemented for one aggregate Codex quota pool. The baseline is
+persisted before spawn, and terminal state, immutable usage, reconciliation
+state, and the reservation transition commit together. Missing or cross-window
+checkpoints release the reservation without inventing usage.
 
-An aggregate provider delta is not automatically proof that one session caused
-it. Usage outside a managed session or concurrent work can reduce the same
-total. Ambiguous consumption remains **unattributed**, and managed attribution
-must carry an honest confidence level.
+An aggregate provider delta is not proof that one session caused it. Visible
+concurrent work marks both observations contended and keeps the managed delta
+**unattributed**. Usage outside AQM without a lifecycle signal cannot be
+detected, so managed attribution remains `observed`, never provider-confirmed.
 
 ## Enforcement modes
 

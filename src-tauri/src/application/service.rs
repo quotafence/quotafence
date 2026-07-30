@@ -10,9 +10,9 @@ use crate::{
         Scope, ScopeId, UnixMillis, UsageAttribution, UsageEvent, UsageEventId, WindowId,
     },
     storage::{
-        BeginObservationStatus, Database, ManagedSessionStatus, NewManagedSession,
-        ProviderQuotaSnapshot, ProviderTurnObservation, ReconcileObservationResult, StorageError,
-        WorkspaceBinding,
+        BeginObservationStatus, Database, ManagedSessionReconciliationResult, ManagedSessionStatus,
+        NewManagedSession, ProviderQuotaSnapshot, ProviderTurnObservation,
+        ReconcileObservationResult, StorageError, WorkspaceBinding,
     },
     workspace::{contains_path, path_depth},
 };
@@ -25,12 +25,12 @@ use super::{
     CreateQuotaSource, CreateQuotaWindow, CreateScope, EvaluateWorkspaceAdmission,
     FinishManagedSession, GetLocalState, GetProviderTurnObservation, GetQuotaDashboard,
     GetWorkspaceContext, LocalState, ManagedSessionLaunch, ManagedSessionOutcome,
-    MarkManagedSessionRunning, PrepareManagedSession, ProviderTurnObservationSummary,
-    QuotaDashboard, QuotaSourceSummary, ReconcileProviderTurnObservation, RecordUsage,
-    ReleaseReservation, ReserveQuota, ScopeSummary, SetAllocation, SyncProviderQuota,
-    SyncProviderQuotaResult, TurnObservationStartResult, TurnObservationStartStatus,
-    TurnReconciliationResult, TurnReconciliationStatus, WindowSummary, WorkspaceAllocationContext,
-    WorkspaceBindingSummary, WorkspaceContext,
+    ManagedSessionReconciliation, ManagedSessionReconciliationStatus, MarkManagedSessionRunning,
+    PrepareManagedSession, ProviderTurnObservationSummary, QuotaDashboard, QuotaSourceSummary,
+    ReconcileProviderTurnObservation, RecordUsage, ReleaseReservation, ReserveQuota, ScopeSummary,
+    SetAllocation, SyncProviderQuota, SyncProviderQuotaResult, TurnObservationStartResult,
+    TurnObservationStartStatus, TurnReconciliationResult, TurnReconciliationStatus, WindowSummary,
+    WorkspaceAllocationContext, WorkspaceBindingSummary, WorkspaceContext,
 };
 
 const TURN_OBSERVATION_STALE_AFTER_MILLIS: i64 = 12 * 60 * 60 * 1_000;
@@ -685,6 +685,15 @@ impl QuotaService {
         }
 
         let admitted_at = UnixMillis::new(command.admitted_at);
+        let baseline = self
+            .database
+            .provider_quota_snapshot(&WindowId::new(assessment.window_id.clone())?)?
+            .ok_or_else(|| ApplicationError::InvalidRequest {
+                message: format!(
+                    "quota window {} has no provider checkpoint for managed admission",
+                    assessment.window_id
+                ),
+            })?;
         let reservation = Reservation::new(
             ReservationId::new(reservation_id.clone())?,
             ScopeId::new(assessment.scope_id.clone())?,
@@ -695,7 +704,7 @@ impl QuotaService {
         )?;
         let session = NewManagedSession {
             id: session_id.clone(),
-            adapter: provider_id,
+            adapter: baseline.adapter().to_owned(),
             pool_id: assessment.pool_id.clone(),
             window_id: assessment.window_id.clone(),
             scope_id: assessment.scope_id.clone(),
@@ -703,6 +712,8 @@ impl QuotaService {
             canonical_path: assessment.canonical_path.clone(),
             supervisor_pid: command.supervisor_pid,
             created_at: command.admitted_at,
+            baseline_used: baseline.used(),
+            baseline_observed_at: baseline.observed_at().value(),
         };
         self.database
             .start_managed_session(&reservation, &session, admitted_at)?;
@@ -735,19 +746,53 @@ impl QuotaService {
     pub fn finish_managed_session(
         &mut self,
         command: FinishManagedSession,
-    ) -> ApplicationResult<()> {
+    ) -> ApplicationResult<ManagedSessionReconciliation> {
         let status = match command.outcome {
             ManagedSessionOutcome::Completed => ManagedSessionStatus::Completed,
             ManagedSessionOutcome::Failed => ManagedSessionStatus::Failed,
             ManagedSessionOutcome::Interrupted => ManagedSessionStatus::Interrupted,
         };
-        self.database.finish_managed_session(
+        let current_window_id = command.current_window_id.map(WindowId::new).transpose()?;
+        let result = self.database.finish_managed_session(
             &required_request_text(command.id, "managed session ID")?,
             status,
             command.finished_at,
             command.exit_code,
+            current_window_id.as_ref(),
         )?;
-        Ok(())
+        Ok(match result {
+            ManagedSessionReconciliationResult::Attributed { amount, scope_id } => {
+                ManagedSessionReconciliation {
+                    status: ManagedSessionReconciliationStatus::Attributed,
+                    amount: Some(amount),
+                    scope_id: Some(scope_id.to_string()),
+                }
+            }
+            ManagedSessionReconciliationResult::NoUsage => ManagedSessionReconciliation {
+                status: ManagedSessionReconciliationStatus::NoUsage,
+                amount: Some(0),
+                scope_id: None,
+            },
+            ManagedSessionReconciliationResult::Ambiguous { amount } => {
+                ManagedSessionReconciliation {
+                    status: ManagedSessionReconciliationStatus::Ambiguous,
+                    amount: Some(amount),
+                    scope_id: None,
+                }
+            }
+            ManagedSessionReconciliationResult::WindowRolledOver => ManagedSessionReconciliation {
+                status: ManagedSessionReconciliationStatus::WindowRolledOver,
+                amount: None,
+                scope_id: None,
+            },
+            ManagedSessionReconciliationResult::SnapshotUnavailable => {
+                ManagedSessionReconciliation {
+                    status: ManagedSessionReconciliationStatus::SnapshotUnavailable,
+                    amount: None,
+                    scope_id: None,
+                }
+            }
+        })
     }
 
     pub fn active_managed_sessions(&self) -> ApplicationResult<Vec<ActiveManagedSession>> {
@@ -1311,7 +1356,25 @@ mod tests {
                 bound_at: 1_500,
             })
             .unwrap();
+        sync_managed_snapshot(&mut service, 10, 1_900);
         service
+    }
+
+    fn sync_managed_snapshot(service: &mut QuotaService, used: u64, observed_at: i64) {
+        service
+            .sync_provider_quota(SyncProviderQuota {
+                current_window_id: "week-1".to_owned(),
+                adapter: "codex_app_server".to_owned(),
+                remote_limit_id: "codex".to_owned(),
+                remote_window_kind: "secondary".to_owned(),
+                starts_at: 1_000,
+                ends_at: 10_000,
+                capacity: 100,
+                used,
+                unit: "quota_points".to_owned(),
+                observed_at,
+            })
+            .unwrap();
     }
 
     fn prepare_session(
@@ -1334,7 +1397,7 @@ mod tests {
     }
 
     #[test]
-    fn managed_session_reserves_before_start_and_releases_on_completion() {
+    fn managed_session_reconciles_usage_and_consumes_its_reservation() {
         let mut service = managed_workspace_service();
         let launch = prepare_session(&mut service, "session-1", "session-1-reservation");
 
@@ -1355,23 +1418,50 @@ mod tests {
                 started_at: 2_100,
             })
             .unwrap();
-        service
+        sync_managed_snapshot(&mut service, 14, 3_900);
+        let reconciliation = service
             .finish_managed_session(FinishManagedSession {
                 id: "session-1".to_owned(),
                 outcome: ManagedSessionOutcome::Completed,
                 finished_at: 4_000,
                 exit_code: Some(0),
+                current_window_id: Some("week-1".to_owned()),
             })
             .unwrap();
 
+        assert_eq!(
+            reconciliation.status,
+            ManagedSessionReconciliationStatus::Attributed
+        );
+        assert_eq!(reconciliation.amount, Some(4));
+        assert_eq!(reconciliation.scope_id.as_deref(), Some("workspace-a"));
         assert!(service.active_managed_sessions().unwrap().is_empty());
-        let released = service
+        let reconciled = service
             .dashboard(GetQuotaDashboard {
                 window_id: "week-1".to_owned(),
                 at: 4_000,
             })
             .unwrap();
-        assert_eq!(snapshot(&released, "workspace-a").active_reservations, 0);
+        assert_eq!(snapshot(&reconciled, "workspace-a").active_reservations, 0);
+        assert_eq!(snapshot(&reconciled, "workspace-a").attributed_usage, 4);
+
+        let retried = service
+            .finish_managed_session(FinishManagedSession {
+                id: "session-1".to_owned(),
+                outcome: ManagedSessionOutcome::Completed,
+                finished_at: 4_100,
+                exit_code: Some(0),
+                current_window_id: Some("week-1".to_owned()),
+            })
+            .unwrap();
+        assert_eq!(retried, reconciliation);
+        let after_retry = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 4_100,
+            })
+            .unwrap();
+        assert_eq!(snapshot(&after_retry, "workspace-a").attributed_usage, 4);
     }
 
     #[test]
@@ -1404,15 +1494,20 @@ mod tests {
         let mut service = managed_workspace_service();
         prepare_session(&mut service, "session-1", "session-1-reservation");
 
-        service
+        let reconciliation = service
             .finish_managed_session(FinishManagedSession {
                 id: "session-1".to_owned(),
                 outcome: ManagedSessionOutcome::Interrupted,
                 finished_at: 3_000,
                 exit_code: None,
+                current_window_id: None,
             })
             .unwrap();
 
+        assert_eq!(
+            reconciliation.status,
+            ManagedSessionReconciliationStatus::SnapshotUnavailable
+        );
         assert!(service.active_managed_sessions().unwrap().is_empty());
         let dashboard = service
             .dashboard(GetQuotaDashboard {
@@ -1421,6 +1516,127 @@ mod tests {
             })
             .unwrap();
         assert_eq!(snapshot(&dashboard, "workspace-a").active_reservations, 0);
+    }
+
+    #[test]
+    fn managed_session_with_no_provider_delta_records_no_usage() {
+        let mut service = managed_workspace_service();
+        prepare_session(&mut service, "session-1", "session-1-reservation");
+
+        let reconciliation = service
+            .finish_managed_session(FinishManagedSession {
+                id: "session-1".to_owned(),
+                outcome: ManagedSessionOutcome::Completed,
+                finished_at: 3_000,
+                exit_code: Some(0),
+                current_window_id: Some("week-1".to_owned()),
+            })
+            .unwrap();
+
+        assert_eq!(
+            reconciliation.status,
+            ManagedSessionReconciliationStatus::NoUsage
+        );
+        assert_eq!(reconciliation.amount, Some(0));
+        let dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+        assert_eq!(snapshot(&dashboard, "workspace-a").attributed_usage, 0);
+        assert_eq!(snapshot(&dashboard, "workspace-a").active_reservations, 0);
+    }
+
+    #[test]
+    fn managed_session_never_attributes_across_a_window_rollover() {
+        let mut service = managed_workspace_service();
+        prepare_session(&mut service, "session-1", "session-1-reservation");
+
+        let reconciliation = service
+            .finish_managed_session(FinishManagedSession {
+                id: "session-1".to_owned(),
+                outcome: ManagedSessionOutcome::Completed,
+                finished_at: 10_100,
+                exit_code: Some(0),
+                current_window_id: Some("week-2".to_owned()),
+            })
+            .unwrap();
+
+        assert_eq!(
+            reconciliation.status,
+            ManagedSessionReconciliationStatus::WindowRolledOver
+        );
+        assert!(service.active_managed_sessions().unwrap().is_empty());
+    }
+
+    #[test]
+    fn concurrent_provider_turn_keeps_managed_delta_unattributed() {
+        let mut service = managed_workspace_service();
+        prepare_session(&mut service, "session-1", "session-1-reservation");
+        service
+            .begin_provider_turn_observation(BeginProviderTurnObservation {
+                session_id: "external-session".to_owned(),
+                turn_id: "external-turn".to_owned(),
+                adapter: "codex_app_server".to_owned(),
+                canonical_path: "/code/external".to_owned(),
+                scope_id: None,
+                window_id: "week-1".to_owned(),
+                started_at: 1_950,
+            })
+            .unwrap();
+        sync_managed_snapshot(&mut service, 15, 2_900);
+
+        let reconciliation = service
+            .finish_managed_session(FinishManagedSession {
+                id: "session-1".to_owned(),
+                outcome: ManagedSessionOutcome::Completed,
+                finished_at: 3_000,
+                exit_code: Some(0),
+                current_window_id: Some("week-1".to_owned()),
+            })
+            .unwrap();
+
+        assert_eq!(
+            reconciliation.status,
+            ManagedSessionReconciliationStatus::Ambiguous
+        );
+        assert_eq!(reconciliation.amount, Some(5));
+        let dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+        assert_eq!(snapshot(&dashboard, "workspace-a").attributed_usage, 0);
+        assert_eq!(snapshot(&dashboard, "workspace-a").active_reservations, 0);
+        assert_eq!(dashboard.window.unattributed_usage, 15);
+    }
+
+    #[test]
+    fn existing_provider_turn_marks_a_new_managed_session_contended() {
+        let mut service = managed_workspace_service();
+        service
+            .begin_provider_turn_observation(BeginProviderTurnObservation {
+                session_id: "external-session".to_owned(),
+                turn_id: "external-turn".to_owned(),
+                adapter: "codex_app_server".to_owned(),
+                canonical_path: "/code/external".to_owned(),
+                scope_id: None,
+                window_id: "week-1".to_owned(),
+                started_at: 1_950,
+            })
+            .unwrap();
+
+        prepare_session(&mut service, "session-1", "session-1-reservation");
+
+        let session = service
+            .database
+            .managed_sessions()
+            .get("session-1")
+            .unwrap()
+            .unwrap();
+        assert!(session.contended);
     }
 
     #[test]

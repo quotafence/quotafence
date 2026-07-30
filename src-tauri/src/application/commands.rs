@@ -247,6 +247,7 @@ pub struct FinishManagedSession {
     pub outcome: ManagedSessionOutcome,
     pub finished_at: i64,
     pub exit_code: Option<i32>,
+    pub current_window_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

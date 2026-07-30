@@ -31,13 +31,14 @@ The repository currently has:
 - canonical folder workspace bindings and a read-only `aqm context` CLI;
 - a provider-refreshing `aqm admit codex` dry run with stable policy outcomes;
 - a persisted `aqm run codex` managed-session lifecycle with atomic reservation,
-  direct process supervision, terminal cleanup, and Unix orphan recovery; and
+  direct process supervision, pre/post checkpoint reconciliation, terminal
+  cleanup, and Unix orphan recovery; and
 - experimental Codex desktop turn attribution through official lifecycle
   hooks, with contention and rollover kept unattributed.
 
-It does **not** yet have automatic attribution for managed launches, persisted
-per-scope policy, in-flight usage enforcement, cross-platform orphan recovery,
-or burn-rate forecasting.
+It does **not** yet have persisted per-scope policy, in-flight usage
+enforcement, cross-platform orphan recovery, exact token accounting, or
+burn-rate forecasting.
 
 ## Gap to an end-to-end Codex slice
 
@@ -47,9 +48,9 @@ or burn-rate forecasting.
 | Window rollover | Implemented | Covered during session reconciliation |
 | Workspace context | Implemented | Reused for admission and managed launch |
 | Managed launch | Implemented in `aqm run codex` | Reused by reconciliation and persisted policy |
-| Reservation | Implemented before managed spawn | Consumed or released by reconciliation |
-| Attribution | Experimental inferred desktop-turn deltas; no user-entered estimates | Managed session result produces scoped observed usage |
-| Reconciliation | Provider total affects dashboard | Pre/post session delta is reconciled without false precision |
+| Reservation | Reserved before spawn, then consumed or released atomically | Reused by persisted policy |
+| Attribution | Managed deltas are observed and scoped only without visible contention | Richer provider signals when available |
+| Reconciliation | Implemented for exact delta, zero, ambiguity, rollover, and failure | Retry/recovery improvements from real usage |
 | Policy | In-memory standard thresholds drive dry-run admission | Persisted effective policy drives managed launch |
 | Enforcement | Dry-run result and shell exit code only | Warn, confirm, or refuse an AQM-managed launch |
 | Forecasting | None | Depletion estimate based on trustworthy history |
@@ -140,7 +141,7 @@ code, and atomically pairs a persisted starting session with its reservation.
 Terminal transitions release that reservation, and the next invocation
 recovers active records whose supervisor process no longer exists on Unix.
 
-### M4 — Automatic attribution and reconciliation
+### M4 — Automatic attribution and reconciliation — complete
 
 - Read a provider checkpoint immediately before and after the managed session.
 - Link the reservation, session, workspace scope, and resulting usage event.
@@ -152,6 +153,14 @@ recovers active records whose supervisor process no longer exists on Unix.
 
 Verification: fake-adapter tests for zero delta, exact delta, window rollover,
 external usage ambiguity, provider failure, and duplicate reconciliation.
+
+Implemented in the managed `aqm run codex` exit path. The baseline is persisted
+before spawn. A final checkpoint is reconciled in the same transaction as the
+terminal session state and reservation transition. Exact non-contended deltas
+become immutable workspace usage at `observed` confidence; visible concurrent
+work becomes unattributed usage; zero, rollover, and unavailable checkpoints do
+not fabricate scoped consumption. Managed child hooks inherit an AQM marker so
+the same work is not counted again as an experimental desktop turn.
 
 ### M5 — Enforced policy in the daily workflow
 
