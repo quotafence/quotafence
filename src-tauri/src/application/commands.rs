@@ -78,6 +78,14 @@ pub struct GetRepositoryContext {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct EvaluateRepositoryAdmission {
+    pub canonical_root: String,
+    pub provider_id: String,
+    pub at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderQuotaSnapshotInput {
     pub adapter: String,
     pub remote_limit_id: String,

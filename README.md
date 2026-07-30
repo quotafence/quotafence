@@ -5,9 +5,9 @@ Local-first budget guard and routing layer for AI coding agents.
 > [!IMPORTANT]
 > Agent Quota Manager is an early local MVP with no stable release. Codex quota
 > discovery, checkpoint refresh, reset rollover, and manual allocations work
-> locally. Repository mapping and the read-only `aqm context` workflow are now
-> implemented. Managed sessions, automatic attribution, and enforcement at
-> launch are not implemented yet.
+> locally. Repository mapping plus `aqm context` and the provider-refreshing
+> `aqm admit codex` dry run are implemented. Managed sessions, automatic
+> attribution, and enforcement at launch are not implemented yet.
 
 Solo power users often run several coding agents across multiple repositories
 against the same constrained subscription. Low-priority work can exhaust that
@@ -143,8 +143,17 @@ npm run aqm -- context
 npm run aqm -- bind --scope "Repository allocation name"
 ```
 
-These development commands use the same local database as the desktop. See the
-[CLI guide](docs/cli.md) for path, JSON, and isolated-database options.
+Preview the current policy boundary without launching Codex:
+
+```bash
+npm run aqm -- admit codex
+```
+
+These development commands use the same local database as the desktop.
+Admission refreshes the matching Codex checkpoint and evaluates both repository
+allocation and provider capacity. See the [CLI guide](docs/cli.md) for its exit
+codes, explicit confirmation override, JSON, path, and isolated-database
+options.
 
 ## Contributing
 

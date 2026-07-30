@@ -4,6 +4,7 @@ This document describes the intended architecture. The repository currently
 contains the provider-neutral domain, local SQLite storage, application
 services, Tauri command boundary, and a Codex discovery/synchronization adapter.
 Repository mapping and a lightweight context CLI are implemented;
+provider-refreshing admission dry runs are also implemented, while
 managed-session execution remains planned.
 
 ## Goals
@@ -41,7 +42,7 @@ src-tauri/src/
   storage/                   Local persistence and migrations
   providers/
     codex/                   First provider adapter
-  bin/aqm.rs                 Repository context and future managed workflow
+  bin/aqm.rs                 Repository context, binding, and admission dry run
 ```
 
 ## Component responsibilities
@@ -106,15 +107,19 @@ Adapters translate provider-specific quota windows, usage signals, and session
 controls into the core model. Each adapter reports capabilities at runtime; see
 [Provider adapters](provider-adapters.md).
 
-The current Codex adapter discovers and synchronizes aggregate quota. It does
+The current Codex adapter discovers and synchronizes aggregate quota. Its
+checkpoint application is shared by desktop refresh and CLI admission, and can
+be tested with a fabricated detection result without spawning Codex. It does
 not yet launch a user session or expose session-level consumption.
 
 ### CLI wrapper
 
-The CLI currently resolves and explicitly binds the current repository through
-the shared application and storage layers. The first managed workflow should be
-`aqm run codex`, with the CLI owning the child process lifecycle without
-duplicating policy or storage logic in command handlers. See [CLI](cli.md).
+The CLI resolves and explicitly binds the current repository through the shared
+application and storage layers. `aqm admit codex` refreshes the relevant
+checkpoint and evaluates the effective admission boundary without launching a
+process. The first managed workflow should be `aqm run codex`, with the CLI
+owning the child process lifecycle without duplicating policy or storage logic
+in command handlers. See [CLI](cli.md).
 
 ## Managed-session flow
 

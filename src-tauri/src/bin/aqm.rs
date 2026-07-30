@@ -6,10 +6,22 @@ use std::{
 };
 
 use agent_quota_manager_lib::{
-    application::{BindRepository, GetRepositoryContext, QuotaService, RepositoryContext},
+    application::{
+        AdmissionAssessment, BindRepository, EvaluateRepositoryAdmission, GetRepositoryContext,
+        QuotaService, RepositoryContext,
+    },
+    domain::EnforcementDecision,
     paths,
+    providers::codex::{self, CodexSyncResult, CodexSyncStatus},
     repository::resolve_git_root,
 };
+use serde::Serialize;
+
+const EXIT_ALLOW: u8 = 0;
+const EXIT_ERROR: u8 = 1;
+const EXIT_WARN: u8 = 10;
+const EXIT_CONFIRM: u8 = 20;
+const EXIT_STOP: u8 = 30;
 
 #[derive(Debug)]
 enum CliCommand {
@@ -17,6 +29,11 @@ enum CliCommand {
     Bind {
         options: CommonOptions,
         scope_reference: String,
+    },
+    Admit {
+        options: CommonOptions,
+        provider_id: String,
+        assume_yes: bool,
     },
     Help,
 }
@@ -30,19 +47,19 @@ struct CommonOptions {
 
 fn main() -> ExitCode {
     match run(env::args().skip(1).collect()) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => ExitCode::from(code),
         Err(message) => {
             eprintln!("aqm: {message}");
-            ExitCode::from(1)
+            ExitCode::from(EXIT_ERROR)
         }
     }
 }
 
-fn run(args: Vec<String>) -> Result<(), String> {
+fn run(args: Vec<String>) -> Result<u8, String> {
     match parse_args(args)? {
         CliCommand::Help => {
             print_help();
-            Ok(())
+            Ok(EXIT_ALLOW)
         }
         CliCommand::Context(options) => {
             let (mut service, canonical_root) = open_context(&options)?;
@@ -52,7 +69,8 @@ fn run(args: Vec<String>) -> Result<(), String> {
                     at: now_millis()?,
                 })
                 .map_err(|error| error.to_string())?;
-            print_context(&context, options.json)
+            print_context(&context, options.json)?;
+            Ok(EXIT_ALLOW)
         }
         CliCommand::Bind {
             options,
@@ -72,9 +90,101 @@ fn run(args: Vec<String>) -> Result<(), String> {
                     at: now_millis()?,
                 })
                 .map_err(|error| error.to_string())?;
-            print_context(&context, options.json)
+            print_context(&context, options.json)?;
+            Ok(EXIT_ALLOW)
+        }
+        CliCommand::Admit {
+            options,
+            provider_id,
+            assume_yes,
+        } => {
+            let (mut service, canonical_root) = open_context(&options)?;
+            let now = now_millis()?;
+            let context = service
+                .repository_context(GetRepositoryContext {
+                    canonical_root: canonical_root.clone(),
+                    at: now,
+                })
+                .map_err(|error| error.to_string())?;
+            let allocation = provider_allocation(&context, &provider_id)?;
+            let checkpoint = match provider_id.to_ascii_lowercase().as_str() {
+                "codex" => codex::sync_detection(
+                    &mut service,
+                    allocation.window_id.clone(),
+                    now,
+                    codex::detect(),
+                ),
+                _ => {
+                    return Err(format!(
+                        "provider {provider_id:?} is not supported for admission"
+                    ))
+                }
+            };
+            match checkpoint.status {
+                CodexSyncStatus::Synced => {}
+                CodexSyncStatus::NotApplicable => {
+                    return Err(format!(
+                        "{} is not a provider-managed Codex percentage source",
+                        allocation.pool_display_name
+                    ));
+                }
+                CodexSyncStatus::Unavailable => {
+                    return Err(format!(
+                        "cannot refresh Codex checkpoint: {}",
+                        checkpoint
+                            .message
+                            .as_deref()
+                            .unwrap_or("provider temporarily unavailable")
+                    ));
+                }
+            }
+            let assessment = service
+                .evaluate_repository_admission(EvaluateRepositoryAdmission {
+                    canonical_root,
+                    provider_id,
+                    at: now,
+                })
+                .map_err(|error| error.to_string())?;
+            let exit_code = admission_exit_code(assessment.decision, assume_yes);
+            print_admission(
+                &assessment,
+                &checkpoint,
+                assume_yes && assessment.decision == EnforcementDecision::RequireConfirmation,
+                exit_code,
+                options.json,
+            )?;
+            Ok(exit_code)
         }
     }
+}
+
+fn provider_allocation<'a>(
+    context: &'a RepositoryContext,
+    provider_id: &str,
+) -> Result<&'a agent_quota_manager_lib::application::RepositoryAllocationContext, String> {
+    let binding = context.binding.as_ref().ok_or_else(|| {
+        format!(
+            "repository {} is not bound; run `aqm bind --scope <name-or-id>` first",
+            context.canonical_root
+        )
+    })?;
+    let mut matching = context
+        .allocations
+        .iter()
+        .filter(|allocation| allocation.provider_id.eq_ignore_ascii_case(provider_id));
+    let allocation = matching.next().ok_or_else(|| {
+        format!(
+            "scope {} has no allocation for provider {provider_id}",
+            binding.scope_display_name
+        )
+    })?;
+    if matching.next().is_some() {
+        return Err(format!(
+            "scope {} has multiple allocations for provider {provider_id}; pool selection is not supported yet",
+            binding.scope_display_name
+        ));
+    }
+    Ok(allocation)
 }
 
 fn open_context(options: &CommonOptions) -> Result<(QuotaService, String), String> {
@@ -111,13 +221,24 @@ fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
     if matches!(command, "-h" | "--help" | "help") {
         return Ok(CliCommand::Help);
     }
-    if !matches!(command, "context" | "bind") {
+    if !matches!(command, "context" | "bind" | "admit") {
         return Err(format!("unknown command {command:?}; run `aqm --help`"));
     }
 
     let mut options = CommonOptions::default();
     let mut scope_reference = None;
-    let mut index = 1;
+    let mut assume_yes = false;
+    let provider_id = if command == "admit" {
+        Some(
+            args.get(1)
+                .filter(|value| !value.starts_with('-'))
+                .cloned()
+                .ok_or_else(|| "`aqm admit` requires a provider, for example `codex`".to_owned())?,
+        )
+    } else {
+        None
+    };
+    let mut index = if command == "admit" { 2 } else { 1 };
     while index < args.len() {
         match args[index].as_str() {
             "--path" => {
@@ -132,6 +253,7 @@ fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
                 index += 1;
                 scope_reference = Some(required_value(&args, index, "--scope")?.to_owned());
             }
+            "--yes" if command == "admit" => assume_yes = true,
             "--json" => options.json = true,
             "-h" | "--help" => return Ok(CliCommand::Help),
             option => return Err(format!("unknown option {option:?}")),
@@ -140,14 +262,19 @@ fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
     }
 
     let options = options;
-    if command == "context" {
-        Ok(CliCommand::Context(options))
-    } else {
-        Ok(CliCommand::Bind {
+    match command {
+        "context" => Ok(CliCommand::Context(options)),
+        "bind" => Ok(CliCommand::Bind {
             options,
             scope_reference: scope_reference
                 .ok_or_else(|| "`aqm bind` requires `--scope <name-or-id>`".to_owned())?,
-        })
+        }),
+        "admit" => Ok(CliCommand::Admit {
+            options,
+            provider_id: provider_id.expect("admit provider was validated"),
+            assume_yes,
+        }),
+        _ => unreachable!("command was validated"),
     }
 }
 
@@ -209,6 +336,92 @@ fn print_context(context: &RepositoryContext, json: bool) -> Result<(), String> 
     Ok(())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AdmissionOutput<'a> {
+    assessment: &'a AdmissionAssessment,
+    checkpoint: &'a CodexSyncResult,
+    override_applied: bool,
+    proceed: bool,
+    exit_code: u8,
+}
+
+fn admission_exit_code(decision: EnforcementDecision, assume_yes: bool) -> u8 {
+    match decision {
+        EnforcementDecision::Allow => EXIT_ALLOW,
+        EnforcementDecision::Warn => EXIT_WARN,
+        EnforcementDecision::RequireConfirmation if assume_yes => EXIT_ALLOW,
+        EnforcementDecision::RequireConfirmation => EXIT_CONFIRM,
+        EnforcementDecision::Stop => EXIT_STOP,
+    }
+}
+
+fn print_admission(
+    assessment: &AdmissionAssessment,
+    checkpoint: &CodexSyncResult,
+    override_applied: bool,
+    exit_code: u8,
+    json: bool,
+) -> Result<(), String> {
+    let proceed = matches!(
+        assessment.decision,
+        EnforcementDecision::Allow | EnforcementDecision::Warn
+    ) || override_applied;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&AdmissionOutput {
+                assessment,
+                checkpoint,
+                override_applied,
+                proceed,
+                exit_code,
+            })
+            .map_err(|error| format!("cannot serialize admission: {error}"))?
+        );
+        return Ok(());
+    }
+
+    println!(
+        "Admission: {}",
+        decision_label(assessment.decision, override_applied)
+    );
+    println!(
+        "Repository: {} ({})",
+        assessment.scope_display_name, assessment.canonical_root
+    );
+    println!(
+        "Allocation: {} {} remaining of {}",
+        assessment.allocation_remaining, assessment.unit, assessment.allocation_limit
+    );
+    println!(
+        "Provider: {} {} remaining of {}",
+        assessment.provider_remaining, assessment.unit, assessment.provider_capacity
+    );
+    println!(
+        "Signals: allocation={:?}, provider={:?}",
+        assessment.allocation_decision, assessment.provider_decision
+    );
+    if assessment.decision == EnforcementDecision::RequireConfirmation && !override_applied {
+        println!("Re-run with --yes to explicitly accept this admission boundary.");
+    }
+    if assessment.decision == EnforcementDecision::Stop {
+        println!("AQM would refuse a managed launch at this policy boundary.");
+    }
+    println!("Exit code: {exit_code}");
+    Ok(())
+}
+
+fn decision_label(decision: EnforcementDecision, override_applied: bool) -> &'static str {
+    match (decision, override_applied) {
+        (EnforcementDecision::Allow, _) => "allow",
+        (EnforcementDecision::Warn, _) => "warn",
+        (EnforcementDecision::RequireConfirmation, true) => "allow (explicit override)",
+        (EnforcementDecision::RequireConfirmation, false) => "confirmation required",
+        (EnforcementDecision::Stop, _) => "stop",
+    }
+}
+
 fn now_millis() -> Result<i64, String> {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -224,10 +437,12 @@ fn print_help() {
 Usage:
   aqm context [--path <directory>] [--json]
   aqm bind --scope <name-or-id> [--path <directory>] [--json]
+  aqm admit codex [--path <directory>] [--yes] [--json]
 
 Options:
   --path <directory>   Resolve a repository from this directory instead of cwd
   --database <path>    Override the local database (or set AQM_DATABASE_PATH)
+  --yes                Explicitly accept a confirmation-required admission
   --json               Print machine-readable output"
     );
 }
@@ -264,5 +479,55 @@ mod tests {
             Some(Path::new("/tmp/aqm.sqlite3"))
         );
         assert!(options.json);
+    }
+
+    #[test]
+    fn admit_requires_provider_and_parses_explicit_override() {
+        assert!(parse_args(vec!["admit".to_owned()])
+            .unwrap_err()
+            .contains("requires a provider"));
+
+        let command = parse_args(vec![
+            "admit".to_owned(),
+            "codex".to_owned(),
+            "--yes".to_owned(),
+            "--json".to_owned(),
+        ])
+        .unwrap();
+        let CliCommand::Admit {
+            provider_id,
+            assume_yes,
+            options,
+        } = command
+        else {
+            panic!("expected admit command");
+        };
+        assert_eq!(provider_id, "codex");
+        assert!(assume_yes);
+        assert!(options.json);
+    }
+
+    #[test]
+    fn admission_exit_codes_form_a_stable_shell_contract() {
+        assert_eq!(
+            admission_exit_code(EnforcementDecision::Allow, false),
+            EXIT_ALLOW
+        );
+        assert_eq!(
+            admission_exit_code(EnforcementDecision::Warn, false),
+            EXIT_WARN
+        );
+        assert_eq!(
+            admission_exit_code(EnforcementDecision::RequireConfirmation, false),
+            EXIT_CONFIRM
+        );
+        assert_eq!(
+            admission_exit_code(EnforcementDecision::RequireConfirmation, true),
+            EXIT_ALLOW
+        );
+        assert_eq!(
+            admission_exit_code(EnforcementDecision::Stop, true),
+            EXIT_STOP
+        );
     }
 }
