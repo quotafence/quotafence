@@ -433,6 +433,7 @@ mod tests {
                     UnixMillis::new(3_000),
                     UnixMillis::new(10_000),
                 ),
+                None,
             )
             .unwrap();
     }

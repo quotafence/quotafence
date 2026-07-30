@@ -8,9 +8,10 @@ use super::{
     allocations::set_in_transaction, ledger::reserve_in_transaction, managed_sessions, migrations,
     policies, provider_snapshots,
     workspace_bindings::insert_in_transaction as insert_workspace_binding_in_transaction,
-    AllocationRepository, CatalogRepository, LedgerRepository, ManagedSessionReconciliationResult,
-    ManagedSessionRepository, ManagedSessionStatus, NewManagedSession, ProviderQuotaSnapshot,
-    StorageResult, WorkspaceBinding,
+    AllocationRepository, CatalogRepository, DesktopReconciliation, DesktopThreadObservation,
+    LedgerRepository, ManagedSessionReconciliationResult, ManagedSessionRepository,
+    ManagedSessionStatus, NewManagedSession, ProviderQuotaSnapshot, StorageResult,
+    WorkspaceBinding,
 };
 
 pub struct Database {
@@ -230,10 +231,12 @@ impl Database {
         current_window_id: &WindowId,
         target_window: &QuotaWindow,
         snapshot: &ProviderQuotaSnapshot,
-    ) -> StorageResult<()> {
+        desktop_observations: Option<&[DesktopThreadObservation]>,
+    ) -> StorageResult<Option<DesktopReconciliation>> {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let previous_snapshot = provider_snapshots::get(&transaction, current_window_id)?;
 
         if target_window.id() != current_window_id {
             if CatalogRepository::new(&transaction)
@@ -252,8 +255,24 @@ impl Database {
         }
 
         provider_snapshots::upsert(&transaction, snapshot)?;
+        let reconciliation = match desktop_observations {
+            Some(desktop_observations) => Some(super::desktop_usage::reconcile(
+                &transaction,
+                target_window.pool_id(),
+                current_window_id,
+                target_window.id(),
+                target_window.capacity().unit(),
+                previous_snapshot.as_ref(),
+                snapshot,
+                desktop_observations,
+            )?),
+            None => {
+                super::desktop_usage::discard_pending(&transaction, target_window.pool_id())?;
+                None
+            }
+        };
         transaction.commit()?;
-        Ok(())
+        Ok(reconciliation)
     }
 
     pub fn insert_allocated_scope(

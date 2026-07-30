@@ -4,9 +4,9 @@ This document describes the intended architecture. The repository currently
 contains the provider-neutral domain, local SQLite storage, application
 services, Tauri command boundary, and a Codex discovery/synchronization adapter.
 Folder-based workspace mapping and a lightweight context CLI are implemented;
-provider-refreshing admission dry runs and experimental Codex lifecycle-hook
-attribution are also implemented. `aqm run codex` owns one admitted child
-process and reservation; managed usage reconciliation remains planned.
+provider-refreshing admission dry runs, passive Codex Desktop attribution, and
+experimental lifecycle-hook attribution are also implemented. `aqm run codex`
+owns one admitted child process and reservation and reconciles terminal usage.
 
 ## Goals
 
@@ -43,6 +43,7 @@ src-tauri/src/
   storage/                   Local persistence and migrations
   providers/
     codex.rs                 Quota discovery and synchronization
+    codex_desktop.rs         Read-only local activity metadata scan
     codex_hooks.rs           Desktop lifecycle observation and hook config
   bin/aqm.rs                 Context, admission, and Codex hook entrypoint
 ```
@@ -113,9 +114,31 @@ The current Codex adapter discovers and synchronizes aggregate quota. Its
 checkpoint application is shared by desktop refresh and CLI admission, and can
 be tested with a fabricated detection result without spawning Codex. It does
 not launch user work through the App Server; the CLI wrapper starts the resolved
-Codex executable directly. An experimental lifecycle-hook adapter brackets
+Codex executable directly. A passive desktop scanner correlates minimal local
+thread activity metadata with provider checkpoint movement. An experimental
+lifecycle-hook adapter brackets
 Codex desktop turns with provider checkpoints and records an inferred scoped
 delta only when that turn is the sole active observation for the window.
+
+## Passive Codex Desktop attribution
+
+1. Desktop startup or explicit refresh reads the provider checkpoint.
+2. The adapter opens Codex's newest local state database read-only and selects
+   only thread identity, working folder, cumulative token counter, and update
+   time.
+3. The first scan records cursors without attributing historical usage.
+4. Later counter movement accumulates as pending activity by canonical folder.
+5. When the provider percentage advances, nearest-ancestor bindings resolve
+   those folders.
+6. The provider delta becomes one inferred workspace event only when every
+   pending folder resolves to the same workspace.
+7. Multiple workspaces, unmapped activity, rollover, unavailable scans, or
+   refreshes from another interface invalidate or retain no scoped guess; the
+   aggregate provider snapshot remains the source of truth.
+
+Token counters are correlation evidence, not the quota unit displayed or
+debited by AQM. No prompt, response, title, preview, transcript, credential, or
+workspace-file content crosses this adapter boundary.
 
 ### CLI wrapper
 

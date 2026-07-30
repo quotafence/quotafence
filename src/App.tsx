@@ -242,11 +242,35 @@ function App() {
         );
         return;
       }
-      setNotice(
-        sync.rolledOver
-          ? "Codex quota synced. A new quota window is now active."
-          : "Codex quota synced to the latest checkpoint.",
-      );
+      const desktop = sync.desktopTracking;
+      if (desktop?.status === "attributed") {
+        setNotice(
+          `Codex Desktop usage synced. ${desktop.attributedAmount}% was attributed to its workspace.`,
+        );
+      } else if (desktop?.status === "pending_provider_delta") {
+        setNotice(
+          "Codex Desktop activity detected. Attribution is waiting for the provider percentage to advance.",
+        );
+      } else if (desktop?.status === "baseline_established") {
+        setNotice(
+          "Codex Desktop tracking initialized. Future local activity can be attributed automatically.",
+        );
+      } else if (desktop?.status === "ambiguous") {
+        setNotice(
+          "Codex Desktop activity spanned multiple or unmapped folders, so the quota change stayed unattributed.",
+        );
+      } else if (desktop?.status === "unavailable") {
+        setNotice(
+          desktop.message ??
+            "Codex quota synced, but Desktop activity metadata was unavailable.",
+        );
+      } else {
+        setNotice(
+          sync.rolledOver
+            ? "Codex quota synced. A new quota window is now active."
+            : "Codex quota synced to the latest checkpoint.",
+        );
+      }
     } catch (reason) {
       setError(getErrorMessage(reason));
     } finally {

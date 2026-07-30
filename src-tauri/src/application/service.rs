@@ -11,10 +11,10 @@ use crate::{
         WindowId,
     },
     storage::{
-        BeginObservationStatus, Database, ManagedSessionReconciliationOutcome,
-        ManagedSessionReconciliationResult, ManagedSessionStatus, NewManagedSession,
-        ProviderQuotaSnapshot, ProviderTurnObservation, ReconcileObservationResult, StorageError,
-        WorkspaceBinding, WorkspacePolicy,
+        BeginObservationStatus, Database, DesktopReconciliationStatus, DesktopThreadObservation,
+        ManagedSessionReconciliationOutcome, ManagedSessionReconciliationResult,
+        ManagedSessionStatus, NewManagedSession, ProviderQuotaSnapshot, ProviderTurnObservation,
+        ReconcileObservationResult, StorageError, WorkspaceBinding, WorkspacePolicy,
     },
     workspace::{contains_path, path_depth},
 };
@@ -25,17 +25,17 @@ use super::{
     ActiveManagedSession, AdmissionAssessment, AllocationSnapshot, ApplicationError,
     ApplicationResult, ArchiveQuotaSource, BeginProviderTurnObservation, BindWorkspace,
     CreateAccount, CreateAllocatedScope, CreateAllocatedWorkspace, CreateProvider, CreateQuotaPool,
-    CreateQuotaSource, CreateQuotaWindow, CreateScope, EvaluateWorkspaceAdmission,
-    FinishManagedSession, GetLocalState, GetProviderTurnObservation, GetQuotaDashboard,
-    GetWorkspaceContext, GetWorkspacePolicy, LocalState, ManagedSessionLaunch,
-    ManagedSessionOutcome, ManagedSessionReconciliation, ManagedSessionReconciliationStatus,
-    MarkManagedSessionRunning, PolicySummary, PrepareManagedSession,
-    ProviderTurnObservationSummary, QuotaDashboard, QuotaSourceSummary,
-    ReconcileProviderTurnObservation, RecordUsage, ReleaseReservation, ReserveQuota,
-    ResetWorkspacePolicy, ScopeSummary, SetAllocation, SetWorkspacePolicy, SyncProviderQuota,
-    SyncProviderQuotaResult, TurnObservationStartResult, TurnObservationStartStatus,
-    TurnReconciliationResult, TurnReconciliationStatus, WindowSummary, WorkspaceAllocationContext,
-    WorkspaceBindingSummary, WorkspaceContext, WorkspacePolicySummary,
+    CreateQuotaSource, CreateQuotaWindow, CreateScope, DesktopUsageReconciliation,
+    DesktopUsageReconciliationStatus, EvaluateWorkspaceAdmission, FinishManagedSession,
+    GetLocalState, GetProviderTurnObservation, GetQuotaDashboard, GetWorkspaceContext,
+    GetWorkspacePolicy, LocalState, ManagedSessionLaunch, ManagedSessionOutcome,
+    ManagedSessionReconciliation, ManagedSessionReconciliationStatus, MarkManagedSessionRunning,
+    PolicySummary, PrepareManagedSession, ProviderTurnObservationSummary, QuotaDashboard,
+    QuotaSourceSummary, ReconcileProviderTurnObservation, RecordUsage, ReleaseReservation,
+    ReserveQuota, ResetWorkspacePolicy, ScopeSummary, SetAllocation, SetWorkspacePolicy,
+    SyncProviderQuota, SyncProviderQuotaResult, TurnObservationStartResult,
+    TurnObservationStartStatus, TurnReconciliationResult, TurnReconciliationStatus, WindowSummary,
+    WorkspaceAllocationContext, WorkspaceBindingSummary, WorkspaceContext, WorkspacePolicySummary,
 };
 
 const TURN_OBSERVATION_STALE_AFTER_MILLIS: i64 = 12 * 60 * 60 * 1_000;
@@ -205,12 +205,57 @@ impl QuotaService {
             UnixMillis::new(command.ends_at),
         );
 
-        self.database
-            .sync_provider_quota(&current_window_id, &target_window, &snapshot)?;
+        let desktop_observations = command.desktop_observations.map(|observations| {
+            observations
+                .into_iter()
+                .map(|observation| DesktopThreadObservation {
+                    thread_id: observation.thread_id,
+                    canonical_path: observation.canonical_path,
+                    total_tokens: observation.total_tokens,
+                    updated_at: observation.updated_at,
+                })
+                .collect::<Vec<_>>()
+        });
+        let desktop_reconciliation = self.database.sync_provider_quota(
+            &current_window_id,
+            &target_window,
+            &snapshot,
+            desktop_observations.as_deref(),
+        )?;
 
         Ok(SyncProviderQuotaResult {
             window_id: target_window_id.to_string(),
             rolled_over,
+            desktop_reconciliation: desktop_reconciliation.map(|desktop_reconciliation| {
+                DesktopUsageReconciliation {
+                    status: match desktop_reconciliation.status {
+                        DesktopReconciliationStatus::BaselineEstablished => {
+                            DesktopUsageReconciliationStatus::BaselineEstablished
+                        }
+                        DesktopReconciliationStatus::NoActivity => {
+                            DesktopUsageReconciliationStatus::NoActivity
+                        }
+                        DesktopReconciliationStatus::PendingProviderDelta => {
+                            DesktopUsageReconciliationStatus::PendingProviderDelta
+                        }
+                        DesktopReconciliationStatus::Attributed => {
+                            DesktopUsageReconciliationStatus::Attributed
+                        }
+                        DesktopReconciliationStatus::Ambiguous => {
+                            DesktopUsageReconciliationStatus::Ambiguous
+                        }
+                        DesktopReconciliationStatus::WindowRolledOver => {
+                            DesktopUsageReconciliationStatus::WindowRolledOver
+                        }
+                    },
+                    observed_threads: desktop_reconciliation.observed_threads,
+                    pending_tokens: desktop_reconciliation.pending_tokens,
+                    attributed_amount: desktop_reconciliation.attributed_amount,
+                    scope_id: desktop_reconciliation
+                        .scope_id
+                        .map(|scope| scope.to_string()),
+                }
+            }),
         })
     }
 
@@ -1380,11 +1425,12 @@ mod tests {
         application::{
             ArchiveQuotaSource, BindWorkspace, CreateAccount, CreateAllocatedScope,
             CreateAllocatedWorkspace, CreateProvider, CreateQuotaPool, CreateQuotaSource,
-            CreateQuotaWindow, CreateScope, DepletionForecastStatus, EvaluateWorkspaceAdmission,
-            FinishManagedSession, GetLocalState, GetQuotaDashboard, GetWorkspaceContext,
-            GetWorkspacePolicy, ManagedSessionOutcome, MarkManagedSessionRunning,
-            PrepareManagedSession, ProviderQuotaSnapshotInput, RecordUsage, ReserveQuota,
-            ResetWorkspacePolicy, SetAllocation, SetWorkspacePolicy, SyncProviderQuota,
+            CreateQuotaWindow, CreateScope, DepletionForecastStatus, DesktopUsageObservation,
+            EvaluateWorkspaceAdmission, FinishManagedSession, GetLocalState, GetQuotaDashboard,
+            GetWorkspaceContext, GetWorkspacePolicy, ManagedSessionOutcome,
+            MarkManagedSessionRunning, PrepareManagedSession, ProviderQuotaSnapshotInput,
+            RecordUsage, ReserveQuota, ResetWorkspacePolicy, SetAllocation, SetWorkspacePolicy,
+            SyncProviderQuota,
         },
         domain::{Confidence, EnforcementDecision, ScopeKind, UsageSource},
         storage::Database,
@@ -1536,8 +1582,32 @@ mod tests {
                 used,
                 unit: "quota_points".to_owned(),
                 observed_at,
+                desktop_observations: None,
             })
             .unwrap();
+    }
+
+    fn sync_desktop_snapshot(
+        service: &mut QuotaService,
+        used: u64,
+        observed_at: i64,
+        observations: Vec<DesktopUsageObservation>,
+    ) -> SyncProviderQuotaResult {
+        service
+            .sync_provider_quota(SyncProviderQuota {
+                current_window_id: "week-1".to_owned(),
+                adapter: "codex_app_server".to_owned(),
+                remote_limit_id: "codex".to_owned(),
+                remote_window_kind: "secondary".to_owned(),
+                starts_at: 1_000,
+                ends_at: 10_000,
+                capacity: 100,
+                used,
+                unit: "quota_points".to_owned(),
+                observed_at,
+                desktop_observations: Some(observations),
+            })
+            .unwrap()
     }
 
     fn prepare_session(
@@ -2617,6 +2687,7 @@ mod tests {
                     used,
                     unit: "quota_points".to_owned(),
                     observed_at: 3_000,
+                    desktop_observations: None,
                 })
                 .unwrap();
 
@@ -2629,6 +2700,156 @@ mod tests {
             assert_eq!(dashboard.window.unattributed_usage, used);
             assert_eq!(dashboard.window.provider_remaining, expected_remaining);
         }
+    }
+
+    #[test]
+    fn desktop_thread_activity_is_attributed_after_the_provider_checkpoint_advances() {
+        let mut service = managed_workspace_service();
+        let baseline = DesktopUsageObservation {
+            thread_id: "thread-1".to_owned(),
+            canonical_path: "/code/workspace-a".to_owned(),
+            total_tokens: 100,
+            updated_at: 2_000,
+        };
+
+        let first = sync_desktop_snapshot(&mut service, 10, 2_100, vec![baseline.clone()]);
+        assert_eq!(
+            first.desktop_reconciliation.unwrap().status,
+            DesktopUsageReconciliationStatus::BaselineEstablished
+        );
+
+        let mut active = baseline;
+        active.total_tokens = 175;
+        active.updated_at = 2_500;
+        let pending = sync_desktop_snapshot(&mut service, 10, 2_600, vec![active.clone()]);
+        assert_eq!(
+            pending.desktop_reconciliation.as_ref().unwrap().status,
+            DesktopUsageReconciliationStatus::PendingProviderDelta
+        );
+        assert_eq!(pending.desktop_reconciliation.unwrap().pending_tokens, 75);
+
+        let attributed = sync_desktop_snapshot(&mut service, 12, 3_000, vec![active]);
+        assert_eq!(
+            attributed.desktop_reconciliation.as_ref().unwrap().status,
+            DesktopUsageReconciliationStatus::Attributed
+        );
+        assert_eq!(
+            attributed
+                .desktop_reconciliation
+                .as_ref()
+                .unwrap()
+                .attributed_amount,
+            2
+        );
+        assert_eq!(
+            attributed
+                .desktop_reconciliation
+                .as_ref()
+                .unwrap()
+                .scope_id
+                .as_deref(),
+            Some("workspace-a")
+        );
+
+        let dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+        assert_eq!(snapshot(&dashboard, "workspace-a").attributed_usage, 2);
+        assert_eq!(dashboard.window.unattributed_usage, 10);
+    }
+
+    #[test]
+    fn provider_refresh_without_a_desktop_scan_invalidates_pending_attribution() {
+        let mut service = managed_workspace_service();
+        let baseline = DesktopUsageObservation {
+            thread_id: "thread-1".to_owned(),
+            canonical_path: "/code/workspace-a".to_owned(),
+            total_tokens: 100,
+            updated_at: 2_000,
+        };
+        sync_desktop_snapshot(&mut service, 10, 2_100, vec![baseline.clone()]);
+
+        let mut active = baseline;
+        active.total_tokens = 175;
+        active.updated_at = 2_500;
+        sync_desktop_snapshot(&mut service, 10, 2_600, vec![active.clone()]);
+
+        sync_managed_snapshot(&mut service, 12, 3_000);
+        let before_desktop_scan = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+        assert_eq!(
+            snapshot(&before_desktop_scan, "workspace-a").attributed_usage,
+            0
+        );
+
+        let attributed = sync_desktop_snapshot(&mut service, 12, 3_100, vec![active]);
+        assert_eq!(
+            attributed.desktop_reconciliation.unwrap().status,
+            DesktopUsageReconciliationStatus::NoActivity
+        );
+        let dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 3_100,
+            })
+            .unwrap();
+        assert_eq!(snapshot(&dashboard, "workspace-a").attributed_usage, 0);
+    }
+
+    #[test]
+    fn desktop_activity_in_multiple_folders_remains_unattributed() {
+        let mut service = managed_workspace_service();
+        let mapped = DesktopUsageObservation {
+            thread_id: "thread-1".to_owned(),
+            canonical_path: "/code/workspace-a".to_owned(),
+            total_tokens: 100,
+            updated_at: 2_000,
+        };
+        let unmapped = DesktopUsageObservation {
+            thread_id: "thread-2".to_owned(),
+            canonical_path: "/code/other".to_owned(),
+            total_tokens: 100,
+            updated_at: 2_000,
+        };
+        sync_desktop_snapshot(
+            &mut service,
+            10,
+            2_100,
+            vec![mapped.clone(), unmapped.clone()],
+        );
+
+        let mut mapped_active = mapped;
+        mapped_active.total_tokens = 150;
+        mapped_active.updated_at = 2_500;
+        let mut unmapped_active = unmapped;
+        unmapped_active.total_tokens = 150;
+        unmapped_active.updated_at = 2_500;
+        let result = sync_desktop_snapshot(
+            &mut service,
+            12,
+            3_000,
+            vec![mapped_active, unmapped_active],
+        );
+
+        assert_eq!(
+            result.desktop_reconciliation.unwrap().status,
+            DesktopUsageReconciliationStatus::Ambiguous
+        );
+        let dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+        assert_eq!(snapshot(&dashboard, "workspace-a").attributed_usage, 0);
+        assert_eq!(dashboard.window.unattributed_usage, 12);
     }
 
     #[test]
@@ -2646,6 +2867,7 @@ mod tests {
                 used: 4,
                 unit: "quota_points".to_owned(),
                 observed_at: 11_000,
+                desktop_observations: None,
             })
             .unwrap();
 
@@ -2688,6 +2910,7 @@ mod tests {
                 used: 4,
                 unit: "quota_points".to_owned(),
                 observed_at: 11_000,
+                desktop_observations: None,
             })
             .unwrap();
 

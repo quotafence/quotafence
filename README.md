@@ -9,10 +9,11 @@ Local-first budget guard and routing layer for AI coding agents.
 > `aqm admit codex` dry run are implemented. `aqm run codex` now admits,
 > reserves, launches, supervises, reconciles, and recovers one managed Codex
 > session.
-> Experimental Codex lifecycle hooks
-> can infer a single desktop turn's workspace usage from provider checkpoint
-> deltas. Aggregate percentage checkpoints still cannot provide exact token
-> counts or prove causality when external usage is invisible to AQM.
+> Desktop refresh can also read Codex's local thread usage metadata and infer
+> a workspace's aggregate quota change without requiring the CLI wrapper or
+> parsing prompts and transcripts. Aggregate percentage checkpoints still
+> cannot provide exact per-workspace token counts or prove causality when
+> activity spans multiple or unmapped folders.
 
 Solo power users often run several coding agents across multiple workspaces
 against the same constrained subscription. Low-priority work can exhaust that
@@ -127,11 +128,19 @@ snapshot is read. The selected Codex source refreshes on startup and on demand.
 Provider totals replace the previous snapshot rather than accumulating as usage
 events, and a new reset window carries allocations forward without old usage.
 
-Experimental Codex hooks receive lifecycle JSON from Codex. AQM deserializes
-only session ID, turn ID, event name, and working folder; prompt, response, and
-transcript fields are ignored and never persisted. A provider delta is assigned
-to a folder only when one mapped turn is active in that quota window. Concurrent
-or otherwise ambiguous consumption remains unattributed.
+Each desktop Codex refresh also opens Codex's local state database read-only and
+selects only thread ID, working folder, cumulative token counter, and update
+time. AQM does not select titles, previews, prompts, responses, or transcript
+contents. The first scan establishes a baseline. Later token-counter movement
+is used only as evidence of which folder was active; the amount charged remains
+the account-wide provider percentage delta. A delta is assigned only when all
+observed activity resolves to one mapped workspace. Multiple or unmapped
+folders remain unattributed.
+
+This passive path works with ordinary Codex Desktop tasks and requires no hook
+installation. It runs at desktop startup and explicit refresh. The lifecycle
+hook integration remains available as an experimental, higher-frequency
+alternative.
 
 ## Development
 

@@ -271,6 +271,21 @@ CREATE INDEX idx_managed_session_policy_overrides_scope
     ON managed_session_policy_overrides(scope_id, accepted_at);
 "#;
 
+const CODEX_DESKTOP_ACTIVITY: &str = r#"
+CREATE TABLE codex_desktop_thread_cursors (
+    pool_id TEXT NOT NULL REFERENCES quota_pools(id) ON DELETE CASCADE,
+    thread_id TEXT NOT NULL CHECK (length(trim(thread_id)) > 0),
+    canonical_path TEXT NOT NULL CHECK (length(trim(canonical_path)) > 0),
+    last_tokens INTEGER NOT NULL CHECK (last_tokens >= 0),
+    pending_tokens INTEGER NOT NULL DEFAULT 0 CHECK (pending_tokens >= 0),
+    observed_at INTEGER NOT NULL,
+    PRIMARY KEY (pool_id, thread_id)
+);
+
+CREATE INDEX idx_codex_desktop_pending_activity
+    ON codex_desktop_thread_cursors(pool_id, pending_tokens);
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -321,6 +336,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 10,
         name: "managed_session_reconciliation_schema_repair",
         sql: "",
+    },
+    Migration {
+        version: 11,
+        name: "codex_desktop_activity",
+        sql: CODEX_DESKTOP_ACTIVITY,
     },
 ];
 
@@ -604,7 +624,7 @@ mod tests {
                     row.get::<_, i64>(0)
                 })
                 .unwrap(),
-            10
+            latest_version()
         );
     }
 

@@ -21,6 +21,7 @@ session tokens, prompts, or private repository content.
 Changes receive additional scrutiny when they affect:
 
 - provider authentication or access to an installed agent;
+- local provider metadata databases and data-minimizing queries;
 - process launching, environment variables, or command arguments;
 - repository discovery and filesystem access;
 - local quota, attribution, or audit data;
@@ -29,3 +30,7 @@ Changes receive additional scrutiny when they affect:
 
 The project should reuse supported provider authentication surfaces where
 possible and avoid copying provider credentials into its own storage.
+Local provider databases must be opened read-only, queried with explicit
+columns, and treated as versioned untrusted input. Features must not select or
+persist prompt, response, transcript, preview, credential, or source-code
+content unless a separately reviewed requirement makes that access necessary.

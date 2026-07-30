@@ -53,6 +53,21 @@ export type CodexSyncResult = {
   rolledOver: boolean;
   syncedAt: number | null;
   message: string | null;
+  desktopTracking: {
+    status:
+      | "unavailable"
+      | "baseline_established"
+      | "no_activity"
+      | "pending_provider_delta"
+      | "attributed"
+      | "ambiguous"
+      | "window_rolled_over";
+    observedThreads: number;
+    pendingTokens: number;
+    attributedAmount: number;
+    scopeId: string | null;
+    message: string | null;
+  } | null;
 };
 
 export type QuotaSourceSummary = {

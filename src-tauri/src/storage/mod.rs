@@ -2,6 +2,7 @@ mod allocations;
 mod catalog;
 mod codec;
 mod database;
+mod desktop_usage;
 mod error;
 mod ledger;
 mod managed_sessions;
@@ -17,6 +18,9 @@ mod test_support;
 pub use allocations::AllocationRepository;
 pub use catalog::CatalogRepository;
 pub use database::Database;
+pub use desktop_usage::{
+    DesktopReconciliation, DesktopReconciliationStatus, DesktopThreadObservation,
+};
 pub use error::{StorageError, StorageResult};
 pub use ledger::LedgerRepository;
 pub use managed_sessions::{
