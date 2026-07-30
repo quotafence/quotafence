@@ -13,6 +13,7 @@ name = "agent-quota-manager"
 version = "0.1.0"
 dependencies = [
  "dirs",
+ "libc",
  "rusqlite",
  "serde",
  "serde_json",

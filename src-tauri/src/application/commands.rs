@@ -213,6 +213,44 @@ pub struct ReleaseReservation {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PrepareManagedSession {
+    pub id: String,
+    pub reservation_id: String,
+    pub canonical_path: String,
+    pub provider_id: String,
+    pub assume_yes: bool,
+    pub admitted_at: i64,
+    pub expires_at: i64,
+    pub supervisor_pid: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkManagedSessionRunning {
+    pub id: String,
+    pub child_pid: u32,
+    pub started_at: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManagedSessionOutcome {
+    Completed,
+    Failed,
+    Interrupted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinishManagedSession {
+    pub id: String,
+    pub outcome: ManagedSessionOutcome,
+    pub finished_at: i64,
+    pub exit_code: Option<i32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RecordUsage {
     pub id: String,
     pub window_id: String,

@@ -102,6 +102,25 @@ pub struct AdmissionAssessment {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ManagedSessionLaunch {
+    pub session_id: String,
+    pub reservation_id: String,
+    pub reserved_amount: u64,
+    pub assessment: AdmissionAssessment,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveManagedSession {
+    pub session_id: String,
+    pub reservation_id: String,
+    pub pool_id: String,
+    pub canonical_path: String,
+    pub supervisor_pid: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct QuotaDashboard {
     pub window: WindowSummary,
     pub allocations: Vec<AllocationSnapshot>,

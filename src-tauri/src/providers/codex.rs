@@ -136,6 +136,12 @@ pub fn detection_failed() -> CodexDetection {
     )
 }
 
+pub fn resolve_executable() -> Option<PathBuf> {
+    executable_candidates()
+        .into_iter()
+        .find_map(resolve_executable_candidate)
+}
+
 pub fn sync_detection(
     service: &mut QuotaService,
     window_id: String,
@@ -520,6 +526,18 @@ fn executable_candidates() -> Vec<PathBuf> {
     candidates.push(PathBuf::from("/opt/homebrew/bin/codex"));
     candidates.push(PathBuf::from("/usr/local/bin/codex"));
     candidates
+}
+
+fn resolve_executable_candidate(candidate: PathBuf) -> Option<PathBuf> {
+    if candidate.components().count() > 1 {
+        return candidate.is_file().then_some(candidate);
+    }
+
+    env::var_os("PATH")
+        .into_iter()
+        .flat_map(|path| env::split_paths(&path).collect::<Vec<_>>())
+        .map(|directory| directory.join(&candidate))
+        .find(|path| path.is_file())
 }
 
 fn looks_like_auth_error(message: &str) -> bool {

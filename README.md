@@ -6,9 +6,11 @@ Local-first budget guard and routing layer for AI coding agents.
 > Agent Quota Manager is an early local MVP with no stable release. Codex quota
 > discovery, checkpoint refresh, reset rollover, and manual allocations work
 > locally. Folder-based workspace mapping plus `aqm context` and the provider-refreshing
-> `aqm admit codex` dry run are implemented. Experimental Codex lifecycle hooks
+> `aqm admit codex` dry run are implemented. `aqm run codex` now admits,
+> reserves, launches, supervises, and recovers one managed Codex session.
+> Experimental Codex lifecycle hooks
 > can infer a single desktop turn's workspace usage from provider checkpoint
-> deltas. Managed sessions and enforcement at launch are not implemented yet.
+> deltas. Managed-session usage reconciliation is not implemented yet.
 
 Solo power users often run several coding agents across multiple workspaces
 against the same constrained subscription. Low-priority work can exhaust that
@@ -21,20 +23,24 @@ work when the provider integration can honestly support it.
 
 ## What it is
 
-AQM is intended to become a local control layer between a user and installed AI
-coding agents. The lightweight daily workflow should be a wrapper such as:
+AQM is a local control layer between a user and installed AI coding agents. The
+lightweight daily workflow starts with:
 
 ```bash
 aqm run codex
 ```
 
-That workflow will:
+That workflow now:
 
-- resolve the current folder to a workspace allocation;
-- reserve capacity for the requested work;
-- warn, require confirmation, or refuse admission at a policy boundary;
-- run a provider session under AQM management; and
-- reconcile the resulting provider usage back to the workspace.
+- resolves the current folder to a workspace allocation;
+- reserves capacity for the requested work;
+- warns, requires confirmation, or refuses admission at a policy boundary;
+- runs a Codex process under AQM management.
+
+On Unix, the next managed invocation also recovers sessions orphaned by a
+crashed supervisor. The next milestone reconciles the resulting aggregate
+provider delta back to the workspace without claiming false session-level
+precision.
 
 The desktop UI remains useful for setup and policy visibility, but dashboard
 analytics alone are not the product. Longer term, the same control layer may
@@ -156,6 +162,18 @@ Preview the current policy boundary without launching Codex:
 ```bash
 npm run aqm -- admit codex
 ```
+
+Launch a managed Codex session from an allocated folder:
+
+```bash
+npm run aqm -- run codex
+```
+
+Codex arguments must follow `--`, for example
+`npm run aqm -- run codex -- --model gpt-5`. The wrapper reserves the
+workspace's current spendable capacity, refuses a stop boundary, forwards
+termination signals, preserves the Codex exit code, and releases its
+reservation on completion, failure, or interruption.
 
 Install the experimental Codex desktop tracking hooks:
 

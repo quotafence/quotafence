@@ -28,6 +28,8 @@ The current command DTOs cover:
 - explicit canonical-folder to workspace-scope binding;
 - nearest-ancestor workspace context and active-allocation queries;
 - provider-neutral workspace admission assessment;
+- managed-session admission, reservation, process-state transitions, and
+  recovery reads;
 - allocation updates;
 - quota reservation and release;
 - usage recording with optional atomic reservation consumption;
@@ -53,6 +55,13 @@ adapter refreshes again and `ReconcileProviderTurnObservation` atomically
 removes the active observation and appends an inferred, provider-observed usage
 event only when the stored turn is unambiguous. Missing checkpoints, rollover,
 unmapped work, and concurrency produce no scoped event.
+
+`PrepareManagedSession` re-evaluates admission, applies stop and explicit
+confirmation boundaries, reserves the workspace's current spendable capacity,
+and persists the starting session atomically. The CLI reports the child PID
+through `MarkManagedSessionRunning`; `FinishManagedSession` then commits the
+terminal outcome and reservation release together. Process spawning and signal
+handling remain outside the application layer.
 
 Command IDs are supplied by the caller to give retries a stable identity. A
 duplicate currently returns a storage conflict rather than silently succeeding;

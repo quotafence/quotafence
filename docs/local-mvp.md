@@ -2,9 +2,9 @@
 
 This document describes the implemented baseline, not the full product
 positioning. The desktop application currently configures local budgets and
-observes Codex quota. Optional lifecycle hooks can infer folder usage for one
-uncontended Codex desktop turn, but AQM is not yet the owner of the coding-agent
-execution path.
+observes Codex quota. The CLI can own one Codex child process and reserve its
+workspace capacity. Optional lifecycle hooks can infer folder usage for one
+uncontended Codex desktop turn.
 
 ## First-run workflow
 
@@ -57,19 +57,18 @@ directory. The UI does not load remote fonts, analytics, or hosted assets.
 This milestone does not:
 
 - alter or copy coding-agent authentication;
-- launch or stop a managed coding-agent session;
 - provide exact per-turn tokens or confirmed causal attribution from an
   account-wide integer percentage;
 - split concurrent Codex turns across folders;
 - accept manual usage estimates as a substitute for automatic attribution;
-- persist per-scope policy or enforce it against a launched process;
+- reconcile managed-session usage after the child exits;
+- persist per-scope policy or enforce live in-flight quota movement;
 - forecast depletion from session history;
 - archive scopes; or
 - run as a background daemon.
 
 The companion CLI canonicalizes the current directory, resolves its nearest
 ancestor workspace binding, and reports its active allocation context. It can
-dry-run Codex admission after refreshing
-the provider checkpoint, but does not yet reserve capacity or launch provider
-work.
+dry-run Codex admission or reserve capacity and supervise one managed Codex
+process with `aqm run codex`.
 See the [CLI guide](cli.md) and [Codex-first roadmap](roadmap.md).

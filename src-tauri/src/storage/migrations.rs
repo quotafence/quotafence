@@ -156,6 +156,44 @@ CREATE INDEX idx_provider_turn_observations_session
     ON provider_turn_observations(session_id);
 "#;
 
+const MANAGED_SESSIONS: &str = r#"
+CREATE TABLE managed_sessions (
+    id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+    adapter TEXT NOT NULL CHECK (length(trim(adapter)) > 0),
+    pool_id TEXT NOT NULL REFERENCES quota_pools(id) ON DELETE RESTRICT,
+    window_id TEXT NOT NULL REFERENCES quota_windows(id) ON DELETE RESTRICT,
+    scope_id TEXT NOT NULL REFERENCES scopes(id) ON DELETE RESTRICT,
+    reservation_id TEXT NOT NULL UNIQUE REFERENCES reservations(id) ON DELETE RESTRICT,
+    canonical_path TEXT NOT NULL CHECK (length(trim(canonical_path)) > 0),
+    status TEXT NOT NULL CHECK (
+        status IN ('starting', 'running', 'completed', 'failed', 'interrupted')
+    ),
+    reconciliation_status TEXT NOT NULL DEFAULT 'pending' CHECK (
+        reconciliation_status IN ('pending', 'reconciled', 'unavailable')
+    ),
+    supervisor_pid INTEGER NOT NULL CHECK (supervisor_pid > 0),
+    child_pid INTEGER CHECK (child_pid IS NULL OR child_pid > 0),
+    created_at INTEGER NOT NULL,
+    started_at INTEGER,
+    finished_at INTEGER,
+    exit_code INTEGER,
+    CHECK (
+        (status = 'starting' AND started_at IS NULL AND finished_at IS NULL)
+        OR (status = 'running' AND started_at IS NOT NULL AND finished_at IS NULL)
+        OR (
+            status IN ('completed', 'failed', 'interrupted')
+            AND finished_at IS NOT NULL
+        )
+    )
+);
+
+CREATE UNIQUE INDEX one_active_managed_session_per_pool
+    ON managed_sessions(pool_id)
+    WHERE status IN ('starting', 'running');
+CREATE INDEX idx_managed_sessions_status
+    ON managed_sessions(status, created_at);
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -186,6 +224,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 6,
         name: "provider_turn_observations",
         sql: PROVIDER_TURN_OBSERVATIONS,
+    },
+    Migration {
+        version: 7,
+        name: "managed_sessions",
+        sql: MANAGED_SESSIONS,
     },
 ];
 

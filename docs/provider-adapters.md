@@ -55,9 +55,9 @@ Current capability status:
 | Checkpoint refresh | Implemented |
 | Reset rollover | Implemented |
 | Workspace binding | Implemented for any local folder |
-| Managed user session | Not implemented |
+| Managed user session | Implemented through the CLI wrapper |
 | Automatic attribution | Experimental for one uncontended Codex desktop turn |
-| Admission assessment | Implemented as a dry run; not wired to launch |
+| Admission assessment | Implemented as dry run and managed launch gate |
 | Live hard stop | Not supported |
 
 The current Codex adapter implements quota discovery and synchronization:
@@ -74,6 +74,11 @@ The current Codex adapter implements quota discovery and synchronization:
   storage ID;
 - carry allocations into a fresh local window after the provider reset; and
 - stop the transient App Server process after the snapshot is returned.
+
+The managed CLI path resolves the same supported Codex executable, reserves
+the bound workspace, and starts it directly with inherited terminal streams.
+AQM owns the child lifecycle and can refuse a new launch at a stop boundary,
+but does not claim live in-flight quota enforcement.
 
 Only structured quota metadata crosses the quota-detection adapter boundary.
 It does not read `auth.json`, Codex session JSONL, prompts, source files, or
@@ -95,13 +100,9 @@ checkpoint is an account-wide integer percentage, the resulting workspace
 attribution is `inferred`, may remain unchanged for a small turn, and is never
 split across concurrent turns.
 
-The remaining Codex vertical slice is:
-
-1. resolve a workspace allocation from the current folder;
-2. admit and reserve one managed session;
-3. launch and supervise Codex through the CLI wrapper;
-4. attribute and reconcile its usage; and
-5. enforce a visible policy boundary where technically supported.
+The remaining Codex vertical slice is to attribute and reconcile managed usage,
+persist workspace policy overrides, and surface the resulting policy boundary
+without overstating live enforcement.
 
 Only after that slice is stable should the adapter contract be generalized from
 real implementation evidence for a second provider.
