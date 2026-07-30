@@ -190,13 +190,16 @@ function AllocationRow({
         {allocation ? (
           <>
             <div className="progress-meta">
-              <strong>{formatAmount(usableNow, unit)} left</strong>
-              <span>of {formatAmount(allocation.limit, unit)}</span>
+              <strong>{remainingPercent}% of workspace available</strong>
+              <span>
+                {formatAmount(usableNow, unit)} total quota ·{" "}
+                {formatAmount(allocation.limit, unit)} allocated
+              </span>
             </div>
             <div
               className="progress-track"
               role="progressbar"
-              aria-label={`${scope.displayName} quota remaining`}
+              aria-label={`${scope.displayName} has ${remainingPercent}% of its allocation available, equal to ${formatAmount(usableNow, unit)} of total quota`}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={remainingPercent}
