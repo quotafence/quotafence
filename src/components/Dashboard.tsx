@@ -1,15 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   AllocationSnapshot,
   CodexProtectionEvent,
   CodexProtectionStatus,
-  DepletionForecast,
   LocalState,
   QuotaSourceSummary,
   ScopeSummary,
 } from "../types";
 import { Icon } from "./Icon";
-import { SettingsPanel } from "./SettingsPanel";
+import {
+  SettingsPanel,
+  type ThemePreference,
+} from "./SettingsPanel";
 
 export type DashboardView = "overview" | "settings";
 
@@ -29,6 +31,8 @@ type DashboardProps = {
   codexProtectionEvents: CodexProtectionEvent[];
   protectionBusy: boolean;
   onProtection: (enabled: boolean) => void;
+  theme: ThemePreference;
+  onThemeChange: (theme: ThemePreference) => void;
   priorityBusy: boolean;
   onPriorityOrder: (orderedScopeIds: string[]) => void;
 };
@@ -39,32 +43,20 @@ function labelUnit(unit: string): string {
 
 function formatAmount(value: number, unit: string): string {
   if (unit === "percent") {
-    return `${value}%`;
+    return `${Math.round(value)}%`;
   }
-
-  return `${value.toLocaleString()} ${labelUnit(unit)}`;
+  return `${Math.round(value).toLocaleString()} ${labelUnit(unit)}`;
 }
 
-function formatReset(endsAt: number): string {
-  const remaining = endsAt - Date.now();
-  if (remaining <= 0) {
-    return "Window ended";
-  }
-
-  const hours = Math.ceil(remaining / 3_600_000);
-  if (hours < 48) {
-    return `${hours}h remaining`;
-  }
-
-  return `${Math.ceil(hours / 24)}d remaining`;
+function daysRemaining(endsAt: number): number {
+  return Math.max(0, Math.ceil((endsAt - Date.now()) / 86_400_000));
 }
 
-function dateRange(source: QuotaSourceSummary): string {
-  const formatter = new Intl.DateTimeFormat(undefined, {
+function formatDate(timestamp: number): string {
+  return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
-  });
-  return `${formatter.format(source.startsAt)} – ${formatter.format(source.endsAt)}`;
+  }).format(timestamp);
 }
 
 function formatLastSync(timestamp: number | null): string {
@@ -80,66 +72,25 @@ function formatLastSync(timestamp: number | null): string {
   if (minutes < 60) {
     return `Synced ${minutes}m ago`;
   }
-  return `Synced ${Math.floor(minutes / 60)}h ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `Synced ${hours}h ago`;
+  }
+  return `Synced ${Math.floor(hours / 24)}d ago`;
 }
 
-function formatObservationDuration(forecast: DepletionForecast): string {
-  if (forecast.observationStart === null) {
-    return "No observation window";
-  }
-  const hours = Math.max(
-    0,
-    Math.round(
-      (forecast.observationEnd - forecast.observationStart) / 3_600_000,
-    ),
-  );
-  if (hours < 48) {
-    return `${hours}h observed`;
-  }
-  return `${Math.round(hours / 24)}d observed`;
-}
-
-function formatForecast(
-  forecast: DepletionForecast,
-  unit: string,
-): { label: string; detail: string } {
-  const coverage = Math.round(forecast.coverageBasisPoints / 100);
-  const evidence =
-    forecast.sampleCount === 1
-      ? "1 managed session"
-      : `${forecast.sampleCount} managed sessions`;
-  if (forecast.status === "window_ended") {
-    return { label: "Window ended", detail: "Waiting for provider rollover" };
-  }
-  if (forecast.status === "insufficient_data") {
-    return {
-      label: "Forecast not reliable yet",
-      detail: `${evidence} · ${coverage}% coverage · ${forecast.confidence} confidence`,
-    };
-  }
-
-  const rate = forecast.burnRatePerDayMilliunits ?? 0;
-  const rateLabel = `${formatAmount(rate / 1_000, unit)} / day`;
-  const confidence = `${forecast.confidence} confidence`;
-  const detail = `${rateLabel} · ${formatObservationDuration(
-    forecast,
-  )} · ${confidence}`;
-  if (forecast.status === "no_managed_burn") {
-    return { label: "No managed burn observed", detail };
-  }
+function verifiedProtectionAt(
+  protection: CodexProtectionStatus | null,
+  events: CodexProtectionEvent[],
+): number | null {
   if (
-    forecast.status === "depletes_before_reset" &&
-    forecast.projectedDepletionAt !== null
+    protection?.installed !== true ||
+    protection.state !== "configured" ||
+    events.length === 0
   ) {
-    const depletion = new Intl.DateTimeFormat(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(forecast.projectedDepletionAt);
-    return { label: `May run out around ${depletion}`, detail };
+    return null;
   }
-  return { label: "Likely to last until reset", detail };
+  return events[0]?.occurredAt ?? null;
 }
 
 function orderedScopes(
@@ -154,36 +105,99 @@ function orderedScopes(
       (scope) =>
         scope.kind === "workspace" &&
         scope.parentId === null &&
-        scope.workspacePath !== null,
+        scope.workspacePath !== null &&
+        priority.has(scope.id),
     )
-    .sort((left, right) => {
-      const leftPriority = priority.get(left.id);
-      const rightPriority = priority.get(right.id);
-      if (leftPriority !== undefined && rightPriority !== undefined) {
-        return leftPriority - rightPriority;
-      }
-      if (leftPriority !== undefined) {
-        return -1;
-      }
-      if (rightPriority !== undefined) {
-        return 1;
-      }
-      return left.displayName.localeCompare(right.displayName);
-    });
+    .sort(
+      (left, right) =>
+        (priority.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+        (priority.get(right.id) ?? Number.MAX_SAFE_INTEGER),
+    );
 }
 
-function workspaceLabel(scope: ScopeSummary): string {
-  if (!scope.workspacePath) {
-    return scope.kind;
+function SetupDisclosure({
+  source,
+  protection,
+  verifiedAt,
+  onOpenSettings,
+}: {
+  source: QuotaSourceSummary;
+  protection: CodexProtectionStatus | null;
+  verifiedAt: number | null;
+  onOpenSettings: () => void;
+}) {
+  if (source.providerDisplayName.toLowerCase() !== "codex") {
+    return null;
   }
-  const segments = scope.workspacePath.split(/[\\/]/).filter(Boolean);
-  return `workspace · ${segments[segments.length - 1] ?? scope.workspacePath}`;
+
+  const sourceReady = source.lastSyncedAt !== null;
+  const hooksReady = protection?.installed === true;
+  const trustReady = hooksReady && verifiedAt !== null;
+  const completed = [sourceReady, hooksReady, trustReady].filter(Boolean).length;
+
+  if (completed === 3) {
+    return null;
+  }
+
+  return (
+    <details className="setup-disclosure">
+      <summary className="setup-chip">
+        Setup {completed}/3
+      </summary>
+      <section className="setup-panel">
+        <header>
+          <strong>Finish Codex setup</strong>
+          <span>
+            AQM only marks checks complete when it can verify them locally.
+          </span>
+        </header>
+        <ol>
+          <li className={sourceReady ? "complete" : ""}>
+            <Icon name={sourceReady ? "check" : "activity"} size={16} />
+            <div>
+              <strong>Quota source synced</strong>
+              <span>{sourceReady ? formatLastSync(source.lastSyncedAt) : "Sync required"}</span>
+            </div>
+          </li>
+          <li className={hooksReady ? "complete" : ""}>
+            <Icon name={hooksReady ? "check" : "activity"} size={16} />
+            <div>
+              <strong>Lifecycle hooks installed</strong>
+              <span>
+                UserPromptSubmit, Stop, and SessionEnd
+              </span>
+            </div>
+          </li>
+          <li className={trustReady ? "complete" : ""}>
+            <Icon name={trustReady ? "check" : "shield"} size={16} />
+            <div>
+              <strong>Hooks trusted and enabled in Codex</strong>
+              <span>
+                {trustReady
+                  ? `Observed ${formatLastSync(verifiedAt)}`
+                  : "Enable them, restart Codex, then submit a test prompt"}
+              </span>
+            </div>
+          </li>
+        </ol>
+        <button
+          className="button primary wide"
+          type="button"
+          onClick={onOpenSettings}
+        >
+          Fix this
+          <Icon name="arrow-right" size={16} />
+        </button>
+      </section>
+    </details>
+  );
 }
 
 function AllocationRow({
   scope,
   allocation,
   unit,
+  protectionActive,
   priorityBusy,
   dragging,
   dragOver,
@@ -194,8 +208,9 @@ function AllocationRow({
   onEdit,
 }: {
   scope: ScopeSummary;
-  allocation?: AllocationSnapshot;
+  allocation: AllocationSnapshot;
   unit: string;
+  protectionActive: boolean;
   priorityBusy: boolean;
   dragging: boolean;
   dragOver: boolean;
@@ -205,30 +220,38 @@ function AllocationRow({
   onDragEnd: () => void;
   onEdit: () => void;
 }) {
-  const usableNow = allocation?.protectedNow ?? 0;
-  const remainingPercent = allocation?.limit
+  const usedWithinAllocation = Math.min(
+    allocation.attributedUsage,
+    allocation.limit,
+  );
+  const overage = Math.max(
+    0,
+    allocation.attributedUsage - allocation.limit,
+  );
+  const usedPercent = allocation.limit
+    ? Math.round((usedWithinAllocation / allocation.limit) * 100)
+    : 0;
+  const usedWidth = Math.min(100, usedPercent);
+  const protectedPercent = allocation.limit
     ? Math.min(
-        100,
-        Math.round((usableNow / allocation.limit) * 100),
+        100 - usedWidth,
+        Math.round((allocation.protectedNow / allocation.limit) * 100),
       )
     : 0;
-  const decision = allocation?.decision ?? "allow";
+  const fundedLabel = protectionActive ? "protected now" : "planned now";
 
   return (
     <article
-      className={`allocation-row ${dragging ? "dragging" : ""} ${
+      className={`overview-allocation-row ${dragging ? "dragging" : ""} ${
         dragOver ? "drag-over" : ""
       }`}
-      draggable={Boolean(allocation) && !priorityBusy}
+      draggable={!priorityBusy}
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("text/plain", scope.id);
         onDragStart();
       }}
       onDragOver={(event) => {
-        if (!allocation) {
-          return;
-        }
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
         onDragOver();
@@ -239,62 +262,93 @@ function AllocationRow({
       }}
       onDragEnd={onDragEnd}
     >
-      <div className="scope-identity">
-        {allocation && (
-          <span className="drag-handle" title="Drag to change priority">
-            <Icon name="grip" size={18} />
+      <div className="allocation-row-identity">
+        <strong>{scope.displayName}</strong>
+        <span>Priority {allocation.priority + 1}</span>
+      </div>
+      <div className="allocation-quota">
+        <div className="allocation-quota-meta">
+          <span>
+            <strong>{formatAmount(allocation.protectedNow, unit)}</strong>{" "}
+            {fundedLabel}
           </span>
-        )}
-        <span className="scope-icon workspace">
-          <Icon name="folder" size={18} />
-        </span>
-        <div>
-          <strong>{scope.displayName}</strong>
-          <span title={scope.workspacePath ?? undefined}>
-            {workspaceLabel(scope)}
+          <span>
+            {overage > 0 ? (
+              <>
+                {formatAmount(usedWithinAllocation, unit)} allocation used ·{" "}
+                <strong>{formatAmount(overage, unit)} over allocation</strong>
+              </>
+            ) : (
+              <>
+                {formatAmount(allocation.attributedUsage, unit)} used ·{" "}
+                {usedPercent}% of allocation
+              </>
+            )}
           </span>
         </div>
+        <div
+          className="allocation-quota-track"
+          role="progressbar"
+          aria-label={
+            overage > 0
+              ? `${scope.displayName}: ${formatAmount(
+                  allocation.attributedUsage,
+                  unit,
+                )} total usage, including ${formatAmount(
+                  usedWithinAllocation,
+                  unit,
+                )} from its allocation and ${formatAmount(
+                  overage,
+                  unit,
+                )} over its allocation; ${formatAmount(
+                  allocation.protectedNow,
+                  unit,
+                )} ${fundedLabel}`
+              : `${scope.displayName}: ${formatAmount(
+                  allocation.attributedUsage,
+                  unit,
+                )} used and ${formatAmount(
+                  allocation.protectedNow,
+                  unit,
+                )} ${fundedLabel} from a ${formatAmount(
+                  allocation.limit,
+                  unit,
+                )} allocation`
+          }
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.min(100, usedWidth + protectedPercent)}
+        >
+          <span
+            className="allocation-used-segment"
+            style={{ width: `${usedWidth}%` }}
+          />
+          <span
+            className={
+              protectionActive
+                ? "allocation-protected-segment"
+                : "allocation-planned-segment"
+            }
+            style={{ width: `${protectedPercent}%` }}
+          />
+        </div>
       </div>
-
-      <div className="allocation-progress">
-        {allocation ? (
-          <>
-            <div className="progress-meta">
-              <strong>
-                Priority #{allocation.priority + 1} · {remainingPercent}% funded
-              </strong>
-              <span>
-                {formatAmount(usableNow, unit)} protected now ·{" "}
-                {formatAmount(allocation.limit, unit)}{" "}
-                {allocation.protectedNow < allocation.spendable
-                  ? "target after reset"
-                  : "target per window"}
-              </span>
-            </div>
-            <div
-              className="progress-track"
-              role="progressbar"
-              aria-label={`${scope.displayName} has ${formatAmount(usableNow, unit)} protected now toward a ${formatAmount(allocation.limit, unit)} target`}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={remainingPercent}
-            >
-              <span
-                className={`progress-fill ${decision}`}
-                style={{ width: `${remainingPercent}%` }}
-              />
-            </div>
-          </>
-        ) : (
-          <span className="unallocated-label">Not allocated in this window</span>
-        )}
-      </div>
-
-      <div className="row-actions">
-        <button className="button subtle small" type="button" onClick={onEdit}>
-          {allocation ? "Adjust" : "Allocate"}
-        </button>
-      </div>
+      <span className="allocation-limit">
+        <strong>{formatAmount(allocation.limit, unit)}</strong>
+        allocation
+      </span>
+      <button
+        className="row-menu-button"
+        type="button"
+        onClick={onEdit}
+        aria-label={`Adjust ${scope.displayName}`}
+        title={`Adjust ${scope.displayName}`}
+      >
+        …
+      </button>
+      <span className="overview-drag-handle" title="Drag to change priority">
+        <Icon name="grip" size={18} />
+      </span>
     </article>
   );
 }
@@ -315,6 +369,8 @@ export function Dashboard({
   codexProtectionEvents,
   protectionBusy,
   onProtection,
+  theme,
+  onThemeChange,
   priorityBusy,
   onPriorityOrder,
 }: DashboardProps) {
@@ -325,6 +381,24 @@ export function Dashboard({
   } | null>(null);
   const [draggedScopeId, setDraggedScopeId] = useState<string | null>(null);
   const [dragOverScopeId, setDragOverScopeId] = useState<string | null>(null);
+  const mainContentRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    mainContentRef.current?.scrollTo({ top: 0 });
+  }, [view, state.selectedWindowId]);
+
+  useEffect(() => {
+    const handleRefreshShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "r") {
+        event.preventDefault();
+        if (!refreshing) {
+          onRefresh();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleRefreshShortcut);
+    return () => window.removeEventListener("keydown", handleRefreshShortcut);
+  }, [onRefresh, refreshing]);
 
   useEffect(() => {
     if (!sourceMenu) {
@@ -351,6 +425,11 @@ export function Dashboard({
   }
 
   const { window: quotaWindow } = dashboard;
+  const remainingDays = daysRemaining(quotaWindow.endsAt);
+  const dailyBudget =
+    remainingDays > 0
+      ? Math.floor(quotaWindow.providerSpendable / remainingDays)
+      : 0;
   const availablePercent = quotaWindow.capacity
     ? Math.min(
         100,
@@ -359,18 +438,82 @@ export function Dashboard({
         ),
       )
     : 0;
+  const usedPercent = Math.max(0, 100 - availablePercent);
   const allocationByScope = new Map(
     dashboard.allocations.map((allocation) => [allocation.scopeId, allocation]),
   );
-  const protectedTotal = dashboard.allocations
-    .filter((allocation) => allocation.parentId === null)
-    .reduce((total, allocation) => total + allocation.protectedNow, 0);
-  const unallocatedNow = Math.max(
-    0,
-    quotaWindow.providerSpendable - protectedTotal,
-  );
   const scopes = orderedScopes(state.scopes, dashboard.allocations);
-  const forecast = formatForecast(dashboard.forecast, quotaWindow.unit);
+  const codexSource =
+    source.providerDisplayName.toLowerCase() === "codex";
+  const protectionVerifiedAt = codexSource
+    ? verifiedProtectionAt(codexProtection, codexProtectionEvents)
+    : null;
+  const protectionActive = codexSource && protectionVerifiedAt !== null;
+  const plannedCapacityNow = scopes.reduce(
+    (total, scope) =>
+      total + (allocationByScope.get(scope.id)?.protectedNow ?? 0),
+    0,
+  );
+  const unassignedBufferNow = Math.max(
+    0,
+    quotaWindow.providerSpendable - plannedCapacityNow,
+  );
+  const usedAmount = Math.max(
+    0,
+    quotaWindow.capacity - quotaWindow.providerSpendable,
+  );
+  const percentOfWindow = (amount: number) =>
+    quotaWindow.capacity
+      ? Math.min(100, Math.max(0, (amount / quotaWindow.capacity) * 100))
+      : 0;
+  const usedSlicePercent = percentOfWindow(usedAmount);
+  const plannedSlicePercent = percentOfWindow(plannedCapacityNow);
+  const plannedSliceEnd = Math.min(
+    100,
+    usedSlicePercent + plannedSlicePercent,
+  );
+  const plannedLabel = protectionActive ? "Protected" : "Planned";
+  const nextAllocationAtRisk = [...scopes]
+    .reverse()
+    .find(
+      (scope) => (allocationByScope.get(scope.id)?.protectedNow ?? 0) > 0,
+    );
+  const nextAtRiskPriority = nextAllocationAtRisk
+    ? (allocationByScope.get(nextAllocationAtRisk.id)?.priority ?? 0)
+    : null;
+  const capacityErosionOrder = nextAllocationAtRisk
+    ? nextAtRiskPriority !== null && nextAtRiskPriority > 0
+      ? `Funding then erodes from ${nextAllocationAtRisk.displayName} toward higher priorities.`
+      : `Further usage then reduces ${nextAllocationAtRisk.displayName}'s planned capacity.`
+    : "No allocation has funded capacity left.";
+  const forecast = dashboard.forecast;
+  const showForecast =
+    forecast.sampleCount >= 5 &&
+    forecast.status === "depletes_before_reset" &&
+    forecast.projectedDepletionAt !== null;
+  const projectedDays =
+    showForecast && forecast.projectedDepletionAt !== null
+      ? Math.max(
+          0,
+          Math.ceil((forecast.projectedDepletionAt - Date.now()) / 86_400_000),
+        )
+      : 0;
+  const statusTone =
+    availablePercent < 10 ? "danger" : showForecast ? "warning" : "neutral";
+  const statusMessage =
+    availablePercent < 10
+      ? `Only ${formatAmount(
+          quotaWindow.providerSpendable,
+          quotaWindow.unit,
+        )} left. Reserve it for priority work.`
+      : showForecast
+        ? `At your current pace you run out in ${projectedDays} ${
+            projectedDays === 1 ? "day" : "days"
+          }.`
+        : `About ${formatAmount(
+            dailyBudget,
+            quotaWindow.unit,
+          )} a day keeps you safe.`;
   const finishPriorityDrag = (targetScopeId: string) => {
     if (
       draggedScopeId === null ||
@@ -381,9 +524,7 @@ export function Dashboard({
       setDragOverScopeId(null);
       return;
     }
-    const orderedScopeIds = scopes
-      .filter((scope) => allocationByScope.has(scope.id))
-      .map((scope) => scope.id);
+    const orderedScopeIds = scopes.map((scope) => scope.id);
     const from = orderedScopeIds.indexOf(draggedScopeId);
     const to = orderedScopeIds.indexOf(targetScopeId);
     if (from >= 0 && to >= 0) {
@@ -396,7 +537,7 @@ export function Dashboard({
   };
 
   return (
-    <div className="app-layout">
+    <div className="app-layout overview-redesign">
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">
@@ -427,10 +568,14 @@ export function Dashboard({
           </button>
         </nav>
 
-        <div className="sidebar-section">
+        <section className="sidebar-section">
           <div className="sidebar-label">
             <span>Quota sources</span>
-            <button type="button" onClick={onAddSource} aria-label="Add quota source">
+            <button
+              type="button"
+              onClick={onAddSource}
+              aria-label="Add quota source"
+            >
               <Icon name="plus" size={16} />
             </button>
           </div>
@@ -438,12 +583,13 @@ export function Dashboard({
             {state.sources.map((item) => (
               <button
                 className={`source-item ${
-                  view === "overview" && item.windowId === source.windowId
-                    ? "active"
-                    : ""
+                  item.windowId === source.windowId ? "active" : ""
                 }`}
                 type="button"
                 key={item.windowId}
+                title={`${formatLastSync(
+                  item.lastSyncedAt,
+                )}. Right-click for source actions.`}
                 onClick={() => {
                   onViewChange("overview");
                   onSelectSource(item.windowId);
@@ -468,229 +614,236 @@ export function Dashboard({
               </button>
             ))}
           </div>
-        </div>
-
-        <div className="local-card">
-          <Icon name="database" size={20} />
-          <div>
-            <strong>Local-first</strong>
-            <span>Data stays on this device</span>
-          </div>
-          <Icon name="check" size={16} />
-        </div>
+        </section>
       </aside>
 
-      <main className="main-content">
+      <main ref={mainContentRef} className="main-content">
         {view === "settings" ? (
           <SettingsPanel
             protection={codexProtection}
             events={codexProtectionEvents}
             busy={protectionBusy}
+            theme={theme}
+            onThemeChange={onThemeChange}
             onProtection={onProtection}
           />
         ) : (
           <>
-            <header className="topbar">
+            <header className="topbar block-dashboard-header">
               <div>
                 <h1>{source.providerDisplayName}</h1>
                 <p className="topbar-subtitle">{source.poolDisplayName}</p>
               </div>
-              <div className="topbar-actions">
-                <button
-                  className="icon-button bordered"
-                  type="button"
-                  onClick={onRefresh}
-                  disabled={refreshing}
-                  aria-label="Sync latest quota"
-                  title="Sync latest quota from provider"
-                >
-                  <Icon
-                    name="refresh"
-                    size={18}
-                    className={refreshing ? "spin" : ""}
-                  />
-                </button>
-              </div>
+              <SetupDisclosure
+                source={source}
+                protection={codexProtection}
+                verifiedAt={protectionVerifiedAt}
+                onOpenSettings={() => onViewChange("settings")}
+              />
             </header>
 
-            {codexProtection && (
-              <section
-                className={`dashboard-protection-notice ${codexProtection.state}`}
-                role={
-                  codexProtection.state === "configured" ? "status" : "alert"
-                }
-              >
-                <Icon name="shield" size={18} />
-                <div>
-                  <strong>
-                    {codexProtection.state === "configured"
-                      ? "Protection activation is unverified"
-                      : codexProtection.state === "misconfigured"
-                        ? "Protection needs attention"
-                        : "Codex Desktop protection is off"}
-                  </strong>
-                  <span>
-                    {codexProtection.state === "configured"
-                      ? "Confirm that all three AQM hooks are trusted and enabled in Codex."
-                      : codexProtection.state === "misconfigured"
-                        ? codexProtection.issue
-                        : "Codex prompts can run without AQM workspace limits."}
-                  </span>
-                </div>
-                <button
-                  className="button subtle small"
-                  type="button"
-                  onClick={() => onViewChange("settings")}
+            <div className="overview-content block-dashboard-content">
+              {codexSource && scopes.length > 0 && !protectionActive && (
+                <section
+                  className="dashboard-protection-notice unverified"
+                  role="alert"
                 >
-                  Review settings
-                </button>
-              </section>
-            )}
-
-            <section className="quota-summary">
-              <div className="quota-summary-main">
-                <div className="status-line">
-                  <span
-                    className={`status-dot ${source.isActive ? "active" : ""}`}
-                  />
-                  {source.isActive ? "Active window" : "Inactive window"}
-                  <small>{formatLastSync(source.lastSyncedAt)}</small>
-                </div>
-                <div className="quota-amount">
-                  <strong>
-                    {formatAmount(
-                      quotaWindow.providerSpendable,
-                      quotaWindow.unit,
-                    )}
-                  </strong>
-                  <span>quota left</span>
-                </div>
-                <div
-                  className="provider-progress"
-                  role="progressbar"
-                  aria-label="Provider quota remaining"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={availablePercent}
-                >
-                  <span style={{ width: `${availablePercent}%` }} />
-                </div>
-                <div className="forecast-line">
-                  <span>
-                    <Icon name="activity" size={16} />
-                    Managed pace
-                  </span>
-                  <strong>{forecast.label}</strong>
-                  <small>{forecast.detail}</small>
-                </div>
-              </div>
-
-              <dl className="quota-facts">
-                <div>
-                  <dt>
-                    <Icon name="calendar" size={18} />
-                    Resets
-                  </dt>
-                  <dd>{formatReset(quotaWindow.endsAt)}</dd>
-                  <small>{dateRange(source)}</small>
-                </div>
-                <div>
-                  <dt>
-                    <Icon name="activity" size={18} />
-                    Unallocated
-                  </dt>
-                  <dd>
-                    {formatAmount(
-                      quotaWindow.unallocated,
-                      quotaWindow.unit,
-                    )}
-                  </dd>
-                  <small>
-                    {formatAmount(unallocatedNow, quotaWindow.unit)} free now
-                    {quotaWindow.unattributedUsage > 0
-                      ? ` · ${formatAmount(
-                          quotaWindow.unattributedUsage,
-                          quotaWindow.unit,
-                        )} usage unattributed`
-                      : ""}
-                  </small>
-                </div>
-              </dl>
-            </section>
-
-            <section className="allocations-section">
-              <header className="section-header">
-                <div>
-                  <h2>Workspace allocations</h2>
-                  <span>
-                    Drag workspaces to fund the most important folders first.
-                  </span>
-                </div>
-                <div className="section-actions">
+                  <Icon name="shield" size={20} />
+                  <div>
+                    <strong>
+                      Allocations are a priority plan—not enforced yet
+                    </strong>
+                    <span>
+                      {unassignedBufferNow > 0
+                        ? `Unmanaged Codex usage consumes the ${formatAmount(
+                            unassignedBufferNow,
+                            quotaWindow.unit,
+                          )} unassigned capacity still available now. ${capacityErosionOrder}`
+                        : nextAllocationAtRisk
+                          ? `No unassigned capacity remains. The next unmanaged Codex usage reduces ${nextAllocationAtRisk.displayName} first${
+                              nextAtRiskPriority !== null &&
+                              nextAtRiskPriority > 0
+                                ? ", then moves toward higher priorities."
+                                : "."
+                            }`
+                          : "No allocation has funded capacity left. Codex usage can continue until protection is activated."}
+                    </span>
+                  </div>
                   <button
-                    className="button outline"
+                    className="button primary small"
+                    type="button"
+                    onClick={() => onViewChange("settings")}
+                  >
+                    Finish protection
+                  </button>
+                </section>
+              )}
+
+              <section className="overview-block-grid">
+                <article className="dashboard-block quota-dashboard-block">
+                  <div className="block-kicker">
+                    <span className={`status-dot ${source.isActive ? "active" : ""}`} />
+                    {source.isActive ? "Active window" : "Inactive window"}
+                    <small>{formatLastSync(source.lastSyncedAt)}</small>
+                  </div>
+                  <div className={`quota-story ${statusTone}`}>
+                    <h2>
+                      {formatAmount(
+                        quotaWindow.providerSpendable,
+                        quotaWindow.unit,
+                      )}{" "}
+                      left
+                    </h2>
+                    <p>{statusMessage}</p>
+                  </div>
+                  <div className="used-progress-section">
+                    <div
+                      className="used-progress"
+                      role="progressbar"
+                      aria-label={`${usedPercent}% used`}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={usedPercent}
+                    >
+                      <span style={{ width: `${usedPercent}%` }} />
+                    </div>
+                    <div className="used-progress-meta">
+                      <span>{formatDate(quotaWindow.startsAt)}</span>
+                      <strong>{usedPercent}% used</strong>
+                      <span>{formatDate(quotaWindow.endsAt)}</span>
+                    </div>
+                  </div>
+                </article>
+
+                <article className="dashboard-block allocation-summary-block">
+                  <div className="reset-summary">
+                    <span>Resets</span>
+                    <strong>
+                      {remainingDays} {remainingDays === 1 ? "day" : "days"}
+                    </strong>
+                    <small>{formatDate(quotaWindow.endsAt)}</small>
+                  </div>
+                  <div className="allocation-donut-group">
+                    <div
+                      className="allocation-donut"
+                      style={{
+                        background: `conic-gradient(var(--quota-used) 0 ${usedSlicePercent}%, var(--quota-funded) ${usedSlicePercent}% ${plannedSliceEnd}%, var(--ring-track) ${plannedSliceEnd}% 100%)`,
+                      }}
+                      role="img"
+                      aria-label={`${formatAmount(
+                        usedAmount,
+                        quotaWindow.unit,
+                      )} used, ${formatAmount(
+                        plannedCapacityNow,
+                        quotaWindow.unit,
+                      )} ${plannedLabel.toLowerCase()}, and ${formatAmount(
+                        unassignedBufferNow,
+                        quotaWindow.unit,
+                      )} unassigned in the current quota window`}
+                    >
+                      <span>
+                        <strong>
+                          {formatAmount(
+                            quotaWindow.providerSpendable,
+                            quotaWindow.unit,
+                          )}
+                        </strong>
+                        <small>left</small>
+                      </span>
+                    </div>
+                    <dl className="allocation-legend">
+                      <div>
+                        <dt>
+                          <i className="used" />
+                          Used
+                        </dt>
+                        <dd>
+                          {formatAmount(usedAmount, quotaWindow.unit)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>
+                          <i className="funded" />
+                          {plannedLabel}
+                        </dt>
+                        <dd>
+                          {formatAmount(plannedCapacityNow, quotaWindow.unit)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>
+                          <i />
+                          Unassigned
+                        </dt>
+                        <dd>
+                          {formatAmount(
+                            unassignedBufferNow,
+                            quotaWindow.unit,
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                </article>
+              </section>
+
+              <section className="workspace-budget-section dashboard-block">
+                <header>
+                  <div>
+                    <h2>Workspace allocations</h2>
+                    <p>
+                      {protectionActive
+                        ? "Drag to set priority. Higher allocations are protected first."
+                        : "Drag to set the funding plan. Lowest priorities lose capacity first."}
+                    </p>
+                  </div>
+                  <button
+                    className="button primary"
                     type="button"
                     onClick={onAddScope}
                   >
                     <Icon name="plus" size={17} />
-                    Add workspace
+                    Add allocation
                   </button>
+                </header>
+
+                <div className="overview-allocation-list">
+                  {scopes.map((scope) => {
+                    const allocation = allocationByScope.get(scope.id);
+                    if (!allocation) {
+                      return null;
+                    }
+                    return (
+                      <AllocationRow
+                        key={scope.id}
+                        scope={scope}
+                        allocation={allocation}
+                        unit={quotaWindow.unit}
+                        protectionActive={protectionActive}
+                        priorityBusy={priorityBusy}
+                        dragging={draggedScopeId === scope.id}
+                        dragOver={
+                          dragOverScopeId === scope.id &&
+                          draggedScopeId !== scope.id
+                        }
+                        onDragStart={() => setDraggedScopeId(scope.id)}
+                        onDragOver={() => setDragOverScopeId(scope.id)}
+                        onDrop={() => finishPriorityDrag(scope.id)}
+                        onDragEnd={() => {
+                          setDraggedScopeId(null);
+                          setDragOverScopeId(null);
+                        }}
+                        onEdit={() => onEditAllocation(scope)}
+                      />
+                    );
+                  })}
                 </div>
-              </header>
-
-              <div className="allocation-table-header" aria-hidden="true">
-                <span>Workspace</span>
-                <span>Protected now</span>
-                <span />
-              </div>
-
-              <div className="allocation-list">
-                {scopes.length > 0 ? (
-                  scopes.map((scope) => (
-                    <AllocationRow
-                      key={scope.id}
-                      scope={scope}
-                      allocation={allocationByScope.get(scope.id)}
-                      unit={quotaWindow.unit}
-                      priorityBusy={priorityBusy}
-                      dragging={draggedScopeId === scope.id}
-                      dragOver={
-                        dragOverScopeId === scope.id &&
-                        draggedScopeId !== scope.id
-                      }
-                      onDragStart={() => setDraggedScopeId(scope.id)}
-                      onDragOver={() => setDragOverScopeId(scope.id)}
-                      onDrop={() => finishPriorityDrag(scope.id)}
-                      onDragEnd={() => {
-                        setDraggedScopeId(null);
-                        setDragOverScopeId(null);
-                      }}
-                      onEdit={() => onEditAllocation(scope)}
-                    />
-                  ))
-                ) : (
-                  <div className="empty-allocations">
-                    <span>
-                      <Icon name="spark" size={24} />
-                    </span>
-                    <div>
-                      <strong>Allocate quota to your first workspace</strong>
-                      <p>Choose a local folder and set its quota limit.</p>
-                    </div>
-                    <button
-                      className="button dark"
-                      type="button"
-                      onClick={onAddScope}
-                    >
-                      Add workspace
-                    </button>
-                  </div>
-                )}
-              </div>
-            </section>
+              </section>
+            </div>
           </>
         )}
       </main>
+
       {sourceMenu && (
         <div
           className="source-context-menu"

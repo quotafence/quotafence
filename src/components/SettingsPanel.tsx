@@ -4,10 +4,14 @@ import type {
 } from "../types";
 import { Icon } from "./Icon";
 
+export type ThemePreference = "system" | "light" | "dark";
+
 type SettingsPanelProps = {
   protection: CodexProtectionStatus | null;
   events: CodexProtectionEvent[];
   busy: boolean;
+  theme: ThemePreference;
+  onThemeChange: (theme: ThemePreference) => void;
   onProtection: (enabled: boolean) => void;
 };
 
@@ -32,7 +36,13 @@ function folderName(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
-function statusLabel(protection: CodexProtectionStatus): string {
+function statusLabel(
+  protection: CodexProtectionStatus,
+  verifiedAt: number | null,
+): string {
+  if (verifiedAt !== null) {
+    return "Active";
+  }
   switch (protection.state) {
     case "configured":
       return "Verify in Codex";
@@ -47,8 +57,17 @@ export function SettingsPanel({
   protection,
   events,
   busy,
+  theme,
+  onThemeChange,
   onProtection,
 }: SettingsPanelProps) {
+  const verifiedAt =
+    protection?.installed === true &&
+    protection.state === "configured" &&
+    events.length > 0
+      ? events[0]?.occurredAt ?? null
+      : null;
+
   return (
     <>
       <header className="topbar settings-topbar">
@@ -63,6 +82,45 @@ export function SettingsPanel({
       <section className="settings-card">
         <header className="settings-card-header">
           <span className="settings-card-icon">
+            <Icon name="sun" size={20} />
+          </span>
+          <div>
+            <h2>Appearance</h2>
+            <p>Choose a theme or follow your system automatically.</p>
+          </div>
+        </header>
+
+        <div
+          className="theme-options"
+          role="radiogroup"
+          aria-label="Application theme"
+        >
+          {(
+            [
+              ["system", "monitor", "System"],
+              ["light", "sun", "Light"],
+              ["dark", "moon", "Dark"],
+            ] as const
+          ).map(([value, icon, label]) => (
+            <button
+              key={value}
+              className={theme === value ? "active" : ""}
+              type="button"
+              role="radio"
+              aria-checked={theme === value}
+              onClick={() => onThemeChange(value)}
+            >
+              <Icon name={icon} size={18} />
+              <span>{label}</span>
+              {theme === value && <Icon name="check" size={15} />}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="settings-card">
+        <header className="settings-card-header">
+          <span className="settings-card-icon">
             <Icon name="shield" size={20} />
           </span>
           <div>
@@ -70,8 +128,12 @@ export function SettingsPanel({
             <p>Check every new Codex prompt against workspace capacity.</p>
           </div>
           {protection && (
-            <span className={`settings-status ${protection.state}`}>
-              {statusLabel(protection)}
+            <span
+              className={`settings-status ${
+                verifiedAt !== null ? "active" : protection.state
+              }`}
+            >
+              {statusLabel(protection, verifiedAt)}
             </span>
           )}
         </header>
@@ -83,7 +145,11 @@ export function SettingsPanel({
                 <strong>Workspace prompt gate</strong>
                 <p>
                   {protection.state === "configured"
-                    ? "AQM hook files are installed, but Codex trust and enablement still require your review."
+                    ? verifiedAt !== null
+                      ? `AQM observed a Codex prompt decision ${formatRelativeTime(
+                          verifiedAt,
+                        )}.`
+                      : "AQM hook files are installed, but Codex trust and enablement still require your review."
                     : protection.state === "misconfigured"
                       ? protection.issue
                       : "Passive usage tracking stays available, but prompts are not blocked."}
@@ -134,7 +200,7 @@ export function SettingsPanel({
               </div>
             </div>
 
-            {protection.installed && (
+            {protection.installed && verifiedAt === null && (
               <div className="settings-callout warning" role="alert">
                 <Icon name="activity" size={18} />
                 <div>
@@ -153,10 +219,28 @@ export function SettingsPanel({
                       <code>SessionEnd</code>.
                     </li>
                     <li>Restart Codex, then start a new task.</li>
+                    <li>
+                      Submit a test prompt in an allocated workspace. AQM marks
+                      protection active after it receives that hook decision.
+                    </li>
                   </ol>
                   <p>
-                    AQM cannot currently verify Codex's trust state, so this
-                    warning remains visible. Codex is the source of truth.
+                    Until AQM observes that decision, the dashboard treats
+                    allocations as a priority plan rather than guaranteed
+                    protection.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {verifiedAt !== null && (
+              <div className="settings-callout" role="status">
+                <Icon name="check" size={18} />
+                <div>
+                  <strong>Protection observed in Codex Desktop</strong>
+                  <p>
+                    The prompt gate last returned a decision{" "}
+                    {formatRelativeTime(verifiedAt)}.
                   </p>
                 </div>
               </div>
@@ -213,7 +297,7 @@ export function SettingsPanel({
           <Icon name="database" size={20} />
         </span>
         <div>
-          <h2>Local data</h2>
+          <h2>Local-first storage</h2>
           <p>
             AQM keeps quota state and up to 100 recent protection decisions on
             this device. Prompt text, responses, transcripts, source code, and

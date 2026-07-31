@@ -107,6 +107,17 @@ The window summary distinguishes:
 - unattributed provider usage; and
 - provider-level remaining and spendable capacity.
 
+The overview derives its live window composition from the same snapshot:
+
+- used capacity is `capacity - provider_spendable`;
+- planned/protected capacity is the sum of priority-funded `protected_now`;
+- unassigned capacity is the remainder of `provider_spendable` after that
+  funding.
+
+These three values account for the full provider window. They are intentionally
+different from the static sum of allocation targets, especially after usage has
+already consumed part of the window.
+
 `QuotaDashboard::forecast` uses only terminal managed sessions reconciled in
 the selected window. The pure calculation receives an explicit current time,
 reports its observation interval, sample count, attribution coverage, and
@@ -141,6 +152,10 @@ rejects non-interactive confirmation or stop before the prompt starts. Usage
 outside a trusted AQM gate can still reduce real provider capacity and therefore
 current protection; AQM cannot recreate capacity already consumed. A dry run
 has no audit side effect, and an already-running Codex turn is not terminated.
+The dashboard may still compute the same priority-funded amounts while the
+Desktop hook is unverified, but the UI labels them as planned capacity. Provider
+usage consumes the remaining unassigned buffer before reducing funded
+allocations from lowest to highest priority.
 
 ## Tauri boundary
 

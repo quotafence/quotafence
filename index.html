@@ -8,6 +8,21 @@
       content="Allocate and enforce coding-agent subscription quota by project."
     />
     <title>Agent Quota Manager</title>
+    <script>
+      try {
+        const preference = localStorage.getItem("aqm-theme") || "system";
+        const theme =
+          preference === "system"
+            ? matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light"
+            : preference;
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+      } catch {
+        document.documentElement.dataset.theme = "dark";
+      }
+    </script>
   </head>
 
   <body>
