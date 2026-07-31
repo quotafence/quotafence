@@ -587,10 +587,18 @@ struct ManagedProcessResult {
 }
 
 fn wait_for_managed_child(child: &mut Child) -> Result<ManagedProcessResult, String> {
+    wait_for_managed_child_after_signal_setup(child, || {})
+}
+
+fn wait_for_managed_child_after_signal_setup(
+    child: &mut Child,
+    after_signal_setup: impl FnOnce(),
+) -> Result<ManagedProcessResult, String> {
     let _signal_guard = SIGNAL_HANDLER_LOCK
         .lock()
         .map_err(|_| "managed process signal handler lock is poisoned".to_owned())?;
     install_signal_forwarding();
+    after_signal_setup();
     loop {
         let status = match child.try_wait() {
             Ok(status) => status,
@@ -1407,13 +1415,10 @@ mod tests {
             .args(["-c", "sleep 5"])
             .spawn()
             .unwrap();
-        let signal = thread::spawn(|| {
-            thread::sleep(Duration::from_millis(100));
+        let result = wait_for_managed_child_after_signal_setup(&mut child, || {
             FORWARDED_SIGNAL.store(libc::SIGTERM, Ordering::SeqCst);
-        });
-
-        let result = wait_for_managed_child(&mut child).unwrap();
-        signal.join().unwrap();
+        })
+        .unwrap();
 
         assert_eq!(result.outcome, ManagedSessionOutcome::Interrupted);
         assert_eq!(result.provider_exit_code, None);
