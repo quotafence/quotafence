@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
+import type {
   AllocationSnapshot,
   CodexProtectionEvent,
   CodexProtectionStatus,
@@ -201,10 +205,11 @@ function AllocationRow({
   priorityBusy,
   dragging,
   dragOver,
-  onDragStart,
-  onDragOver,
-  onDrop,
-  onDragEnd,
+  onPointerDragStart,
+  onPointerDragMove,
+  onPointerDragEnd,
+  onPointerDragCancel,
+  onMoveBy,
   onEdit,
 }: {
   scope: ScopeSummary;
@@ -214,10 +219,11 @@ function AllocationRow({
   priorityBusy: boolean;
   dragging: boolean;
   dragOver: boolean;
-  onDragStart: () => void;
-  onDragOver: () => void;
-  onDrop: () => void;
-  onDragEnd: () => void;
+  onPointerDragStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onPointerDragMove: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onPointerDragEnd: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onPointerDragCancel: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onMoveBy: (direction: -1 | 1) => void;
   onEdit: () => void;
 }) {
   const overage = Math.max(
@@ -234,25 +240,10 @@ function AllocationRow({
 
   return (
     <article
+      data-allocation-scope-id={scope.id}
       className={`overview-allocation-row ${
         overage > 0 ? "over-allocation" : ""
       } ${dragging ? "dragging" : ""} ${dragOver ? "drag-over" : ""}`}
-      draggable={!priorityBusy}
-      onDragStart={(event) => {
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", scope.id);
-        onDragStart();
-      }}
-      onDragOver={(event) => {
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-        onDragOver();
-      }}
-      onDrop={(event) => {
-        event.preventDefault();
-        onDrop();
-      }}
-      onDragEnd={onDragEnd}
     >
       <div className="allocation-row-identity">
         <strong>{scope.displayName}</strong>
@@ -323,9 +314,29 @@ function AllocationRow({
       >
         …
       </button>
-      <span className="overview-drag-handle" title="Drag to change priority">
+      <button
+        className="overview-drag-handle"
+        type="button"
+        disabled={priorityBusy}
+        aria-label={`Change priority for ${scope.displayName}. Drag, or use the up and down arrow keys.`}
+        aria-pressed={dragging}
+        title="Drag to change priority, or use the arrow keys"
+        onPointerDown={onPointerDragStart}
+        onPointerMove={onPointerDragMove}
+        onPointerUp={onPointerDragEnd}
+        onPointerCancel={onPointerDragCancel}
+        onKeyDown={(event: ReactKeyboardEvent<HTMLButtonElement>) => {
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            onMoveBy(-1);
+          } else if (event.key === "ArrowDown") {
+            event.preventDefault();
+            onMoveBy(1);
+          }
+        }}
+      >
         <Icon name="grip" size={18} />
-      </span>
+      </button>
     </article>
   );
 }
@@ -358,6 +369,8 @@ export function Dashboard({
   } | null>(null);
   const [draggedScopeId, setDraggedScopeId] = useState<string | null>(null);
   const [dragOverScopeId, setDragOverScopeId] = useState<string | null>(null);
+  const draggedScopeIdRef = useRef<string | null>(null);
+  const dragOverScopeIdRef = useRef<string | null>(null);
   const mainContentRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -490,26 +503,96 @@ export function Dashboard({
             dailyBudget,
             quotaWindow.unit,
           )} a day keeps you safe.`;
-  const finishPriorityDrag = (targetScopeId: string) => {
+  const clearPriorityDrag = () => {
+    draggedScopeIdRef.current = null;
+    dragOverScopeIdRef.current = null;
+    setDraggedScopeId(null);
+    setDragOverScopeId(null);
+  };
+  const finishPriorityDrag = (targetScopeId: string | null) => {
+    const draggedId = draggedScopeIdRef.current;
     if (
-      draggedScopeId === null ||
-      draggedScopeId === targetScopeId ||
+      draggedId === null ||
+      targetScopeId === null ||
+      draggedId === targetScopeId ||
       priorityBusy
     ) {
-      setDraggedScopeId(null);
-      setDragOverScopeId(null);
+      clearPriorityDrag();
       return;
     }
     const orderedScopeIds = scopes.map((scope) => scope.id);
-    const from = orderedScopeIds.indexOf(draggedScopeId);
+    const from = orderedScopeIds.indexOf(draggedId);
     const to = orderedScopeIds.indexOf(targetScopeId);
     if (from >= 0 && to >= 0) {
       const [moved] = orderedScopeIds.splice(from, 1);
       orderedScopeIds.splice(to, 0, moved);
       onPriorityOrder(orderedScopeIds);
     }
-    setDraggedScopeId(null);
-    setDragOverScopeId(null);
+    clearPriorityDrag();
+  };
+  const beginPriorityDrag = (
+    scopeId: string,
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (priorityBusy || event.button !== 0) {
+      return;
+    }
+    event.currentTarget.setPointerCapture(event.pointerId);
+    draggedScopeIdRef.current = scopeId;
+    dragOverScopeIdRef.current = scopeId;
+    setDraggedScopeId(scopeId);
+    setDragOverScopeId(scopeId);
+  };
+  const updatePriorityDrag = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (draggedScopeIdRef.current === null) {
+      return;
+    }
+    event.preventDefault();
+    const row = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>("[data-allocation-scope-id]");
+    const targetScopeId = row?.dataset.allocationScopeId ?? null;
+    if (
+      targetScopeId !== null &&
+      targetScopeId !== dragOverScopeIdRef.current
+    ) {
+      dragOverScopeIdRef.current = targetScopeId;
+      setDragOverScopeId(targetScopeId);
+    }
+  };
+  const endPriorityDrag = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    finishPriorityDrag(dragOverScopeIdRef.current);
+  };
+  const cancelPriorityDrag = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    clearPriorityDrag();
+  };
+  const movePriorityBy = (scopeId: string, direction: -1 | 1) => {
+    if (priorityBusy) {
+      return;
+    }
+    const orderedScopeIds = scopes.map((scope) => scope.id);
+    const from = orderedScopeIds.indexOf(scopeId);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= orderedScopeIds.length) {
+      return;
+    }
+    [orderedScopeIds[from], orderedScopeIds[to]] = [
+      orderedScopeIds[to],
+      orderedScopeIds[from],
+    ];
+    onPriorityOrder(orderedScopeIds);
   };
 
   return (
@@ -610,12 +693,29 @@ export function Dashboard({
                 <h1>{source.providerDisplayName}</h1>
                 <p className="topbar-subtitle">{source.poolDisplayName}</p>
               </div>
-              <SetupDisclosure
-                source={source}
-                protection={codexProtection}
-                verifiedAt={protectionVerifiedAt}
-                onOpenSettings={() => onViewChange("settings")}
-              />
+              <div className="topbar-actions">
+                <button
+                  className="button primary dashboard-sync-button"
+                  type="button"
+                  onClick={onRefresh}
+                  disabled={refreshing}
+                  aria-label={refreshing ? "Syncing quota" : "Sync quota now"}
+                  title="Sync provider quota and Codex Desktop usage"
+                >
+                  <Icon
+                    className={refreshing ? "spin" : undefined}
+                    name="refresh"
+                    size={17}
+                  />
+                  {refreshing ? "Syncing…" : "Sync"}
+                </button>
+                <SetupDisclosure
+                  source={source}
+                  protection={codexProtection}
+                  verifiedAt={protectionVerifiedAt}
+                  onOpenSettings={() => onViewChange("settings")}
+                />
+              </div>
             </header>
 
             <div className="overview-content block-dashboard-content">
@@ -806,13 +906,15 @@ export function Dashboard({
                           dragOverScopeId === scope.id &&
                           draggedScopeId !== scope.id
                         }
-                        onDragStart={() => setDraggedScopeId(scope.id)}
-                        onDragOver={() => setDragOverScopeId(scope.id)}
-                        onDrop={() => finishPriorityDrag(scope.id)}
-                        onDragEnd={() => {
-                          setDraggedScopeId(null);
-                          setDragOverScopeId(null);
-                        }}
+                        onPointerDragStart={(event) =>
+                          beginPriorityDrag(scope.id, event)
+                        }
+                        onPointerDragMove={updatePriorityDrag}
+                        onPointerDragEnd={endPriorityDrag}
+                        onPointerDragCancel={cancelPriorityDrag}
+                        onMoveBy={(direction) =>
+                          movePriorityBy(scope.id, direction)
+                        }
                         onEdit={() => onEditAllocation(scope)}
                       />
                     );

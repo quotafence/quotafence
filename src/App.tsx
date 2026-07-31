@@ -42,6 +42,7 @@ type ModalState =
   | null;
 
 const THEME_STORAGE_KEY = "aqm-theme";
+const AUTO_SYNC_INTERVAL_MS = 2 * 60_000;
 
 function storedTheme(): ThemePreference {
   const value = localStorage.getItem(THEME_STORAGE_KEY);
@@ -173,6 +174,7 @@ function App() {
   const [view, setView] = useState<DashboardView>("overview");
   const [theme, setTheme] = useState<ThemePreference>(storedTheme);
   const initialSyncStarted = useRef(false);
+  const syncInFlight = useRef(false);
 
   const loadState = useCallback(async (windowId: string | null = null) => {
     const nextState = await getLocalState(windowId);
@@ -223,9 +225,17 @@ function App() {
         const source = nextState.sources.find(
           (candidate) => candidate.windowId === nextState.selectedWindowId,
         );
-        if (source?.providerDisplayName.toLowerCase() === "codex") {
-          const sync = await syncCodexQuota(source.windowId);
-          await loadState(sync.windowId ?? source.windowId);
+        if (
+          source?.providerDisplayName.toLowerCase() === "codex" &&
+          !syncInFlight.current
+        ) {
+          syncInFlight.current = true;
+          try {
+            const sync = await syncCodexQuota(source.windowId);
+            await loadState(sync.windowId ?? source.windowId);
+          } finally {
+            syncInFlight.current = false;
+          }
         }
       } catch (reason) {
         setError(getErrorMessage(reason));
@@ -255,6 +265,63 @@ function App() {
       ) ?? null,
     [localState],
   );
+
+  useEffect(() => {
+    const windowId = localState?.selectedWindowId ?? null;
+    if (
+      !windowId ||
+      selectedSource?.providerDisplayName.toLowerCase() !== "codex"
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const syncInBackground = async () => {
+      if (
+        cancelled ||
+        document.visibilityState !== "visible" ||
+        syncInFlight.current
+      ) {
+        return;
+      }
+      syncInFlight.current = true;
+      try {
+        const sync = await syncCodexQuota(windowId);
+        if (cancelled || sync.status !== "synced") {
+          return;
+        }
+        await Promise.all([
+          loadState(sync.windowId ?? windowId),
+          getCodexProtectionEvents().then(setCodexProtectionEvents),
+        ]);
+      } catch {
+        // Background refresh stays silent. The visible Sync action reports errors.
+      } finally {
+        syncInFlight.current = false;
+      }
+    };
+    const syncWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void syncInBackground();
+      }
+    };
+    const intervalId = window.setInterval(
+      () => void syncInBackground(),
+      AUTO_SYNC_INTERVAL_MS,
+    );
+    window.addEventListener("focus", syncWhenVisible);
+    document.addEventListener("visibilitychange", syncWhenVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", syncWhenVisible);
+      document.removeEventListener("visibilitychange", syncWhenVisible);
+    };
+  }, [
+    loadState,
+    localState?.selectedWindowId,
+    selectedSource?.providerDisplayName,
+  ]);
 
   async function runMutation(operation: () => Promise<void>, close = true) {
     setSubmitting(true);
@@ -287,6 +354,10 @@ function App() {
   }
 
   async function handleRefresh() {
+    if (syncInFlight.current) {
+      return;
+    }
+    syncInFlight.current = true;
     setRefreshing(true);
     setError(null);
     setNotice(null);
@@ -346,6 +417,7 @@ function App() {
     } catch (reason) {
       setError(getErrorMessage(reason));
     } finally {
+      syncInFlight.current = false;
       setRefreshing(false);
     }
   }

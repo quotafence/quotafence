@@ -2950,14 +2950,34 @@ h3,
 }
 
 .overview-drag-handle {
+  width: 28px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--quiet);
+  background: transparent;
   cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.overview-allocation-row:active .overview-drag-handle {
+.overview-drag-handle:hover,
+.overview-drag-handle:focus-visible {
+  color: var(--ink);
+  background: var(--control-hover);
+}
+
+.overview-drag-handle:disabled {
+  opacity: 0.45;
+  cursor: wait;
+}
+
+.overview-allocation-row.dragging .overview-drag-handle {
   cursor: grabbing;
 }
 
@@ -3074,6 +3094,10 @@ h3,
 
 .block-dashboard-header {
   margin-bottom: 24px;
+}
+
+.dashboard-sync-button {
+  min-width: 94px;
 }
 
 .block-dashboard-header h1,
