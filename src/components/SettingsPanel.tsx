@@ -258,7 +258,7 @@ export function SettingsPanel({
           <Icon name="database" size={20} />
         </span>
         <div>
-          <h2>Local data</h2>
+          <h2>Local-first storage</h2>
           <p>
             AQM keeps quota state and up to 100 recent protection decisions on
             this device. Prompt text, responses, transcripts, source code, and

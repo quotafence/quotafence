@@ -32,16 +32,16 @@ Claude adapter is installed.
 
 For the selected quota window, the UI can:
 
-- show capacity, provider-level usage, remaining quota, and reset time;
-- distinguish folder allocations from unallocated capacity;
+- lead with remaining quota, days until reset, and a daily safe-spend guide;
+- show provider usage as one compact progress line for the active window;
+- list folder budgets and unassigned capacity in one priority-ordered list;
 - choose any local folder and create one workspace allocation for it;
 - update existing allocation limits;
 - reorder workspaces by drag and drop so scarce current capacity funds the
   highest-priority folders first;
 - distinguish the full-window target from the amount protected in the current
   window;
-- show canonical folder paths on explicitly bound workspace allocations;
-- refresh the selected Codex source on startup or on demand;
+- refresh the selected Codex source on startup or with `Cmd+R`/`Ctrl+R`;
 - establish a Codex Desktop activity baseline at startup and reconcile later
   refreshes to one unambiguous mapped folder;
 - carry allocations into the next provider reset window;
@@ -49,11 +49,12 @@ For the selected quota window, the UI can:
 - archive a quota source without deleting its ledger history;
 - show folder-level reservations and policy decisions;
 - configure per-folder warn, confirmation, and stop thresholds;
-- show an evidence-gated managed burn rate and depletion signal; and
+- show a depletion warning only after at least five managed sessions; and
 - install and report the configuration status of Codex Desktop workspace
   protection from Settings, turn it on or off without changing unrelated hooks,
   and show recent allow/block decisions;
-- switch between locally configured quota sources; and
+- switch between locally configured quota sources from the Overview header;
+- surface incomplete Codex setup as a compact, actionable header check; and
 - follow the system appearance or persist an explicit light/dark theme.
 
 Creating a workspace, its first allocation, and its folder binding is atomic.

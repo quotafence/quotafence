@@ -240,8 +240,8 @@ AQM's “Installed” control confirms only that the local hook definitions poin
 to the current application. Codex remains the source of truth for whether each
 definition is trusted and enabled. Until all three hooks are trusted and
 switched on, Codex prompts can still run without AQM protection. Overview keeps
-an explicit protection warning visible when protection is off, misconfigured,
-or its Codex activation cannot be verified.
+an actionable setup check in its header while activation is incomplete; the
+detailed status, on/off control, and trust instructions live in Settings.
 
 These development commands use the same local database as the desktop.
 Admission refreshes the matching Codex checkpoint and evaluates both workspace
