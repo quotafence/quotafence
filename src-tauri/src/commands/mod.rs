@@ -13,10 +13,11 @@ use crate::providers::codex::{self, CodexDetection, CodexSyncResult};
 use crate::providers::codex_hooks::{self, CodexProtectionStatus};
 use crate::{
     application::{
-        ArchiveQuotaSource, CreateAccount, CreateAllocatedWorkspace, CreateProvider,
-        CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow, GetLocalState, GetQuotaDashboard,
-        LocalState, PolicySummary, QuotaDashboard, ReleaseReservation, ReserveQuota,
-        ResetWorkspacePolicy, SetAllocation, SetAllocationPriorityOrder, SetWorkspacePolicy,
+        ArchiveQuotaSource, CodexProtectionEventSummary, CreateAccount, CreateAllocatedWorkspace,
+        CreateProvider, CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow,
+        GetCodexProtectionEvents, GetLocalState, GetQuotaDashboard, LocalState, PolicySummary,
+        QuotaDashboard, ReleaseReservation, ReserveQuota, ResetWorkspacePolicy, SetAllocation,
+        SetAllocationPriorityOrder, SetWorkspacePolicy,
     },
     paths::DATABASE_FILENAME,
     workspace::canonicalize_workspace_path,
@@ -205,6 +206,14 @@ pub(crate) fn install_codex_protection() -> IpcResult<CodexProtectionStatus> {
 #[tauri::command]
 pub(crate) fn uninstall_codex_protection() -> IpcResult<CodexProtectionStatus> {
     codex_hooks::uninstall_protection().map_err(IpcError::integration_error)
+}
+
+#[tauri::command]
+pub(crate) fn get_codex_protection_events(
+    state: State<'_, AppState>,
+    request: GetCodexProtectionEvents,
+) -> IpcResult<Vec<CodexProtectionEventSummary>> {
+    state.execute(|service| service.codex_protection_events(request))
 }
 
 fn current_time_millis() -> i64 {

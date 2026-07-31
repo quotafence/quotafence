@@ -41,6 +41,7 @@ The approved product commands are:
 - `get_codex_protection_status`
 - `install_codex_protection`
 - `uninstall_codex_protection`
+- `get_codex_protection_events`
 
 Mutation and ledger query commands accept one camelCase `request` object. For
 example:
@@ -131,9 +132,16 @@ gate is not met.
 The Codex protection commands manage only AQM's entries in the user-level
 Codex hooks file. Installation is an explicit user action and points the hook
 at the current desktop executable's non-GUI `hook codex` entrypoint. Codex
-remains the source of truth for review and trust, so `installed` means the
-configuration is present, not that Codex has trusted its current hash. The
-frontend must tell the user to review `/hooks` and restart Codex.
+remains the source of truth for review and trust. Status distinguishes
+`disabled`, `configured`, and `misconfigured`; `configured` means every AQM
+handler points at the current executable, not that Codex has trusted its current
+hash. The frontend must tell the user to review `/hooks` and restart Codex.
+Uninstall removes only AQM-owned handlers.
+
+`get_codex_protection_events` returns at most 20 recent prompt admission
+decisions from the local ledger. Entries contain the canonical folder, optional
+workspace identity, allow/block outcome, reason, and timestamp; they do not
+contain prompt or source-code content.
 
 ID creation remains a caller concern for now, allowing the frontend to keep a
 stable identity when retrying a request.

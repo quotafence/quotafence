@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   CodexDetection,
+  CodexProtectionEvent,
   CodexProtectionStatus,
   CodexSyncResult,
   IpcError,
@@ -48,6 +49,14 @@ export async function installCodexProtection(): Promise<CodexProtectionStatus> {
 
 export async function uninstallCodexProtection(): Promise<CodexProtectionStatus> {
   return invoke<CodexProtectionStatus>("uninstall_codex_protection");
+}
+
+export async function getCodexProtectionEvents(
+  limit = 5,
+): Promise<CodexProtectionEvent[]> {
+  return invoke<CodexProtectionEvent[]>("get_codex_protection_events", {
+    request: { limit },
+  });
 }
 
 export async function createQuotaSource(

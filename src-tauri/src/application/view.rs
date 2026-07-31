@@ -294,6 +294,17 @@ pub struct TurnReconciliationResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CodexProtectionEventSummary {
+    pub canonical_path: String,
+    pub scope_id: Option<String>,
+    pub workspace_name: Option<String>,
+    pub outcome: String,
+    pub reason: String,
+    pub occurred_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AllocationSnapshot {
     pub scope_id: String,
     pub parent_id: Option<String>,

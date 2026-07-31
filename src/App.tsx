@@ -11,6 +11,7 @@ import {
   createAllocatedWorkspace,
   createQuotaSource,
   getErrorMessage,
+  getCodexProtectionEvents,
   getCodexProtectionStatus,
   getLocalState,
   installCodexProtection,
@@ -19,9 +20,11 @@ import {
   setAllocationPriorityOrder,
   setWorkspacePolicy,
   syncCodexQuota,
+  uninstallCodexProtection,
 } from "./lib/api";
 import type {
   LocalState,
+  CodexProtectionEvent,
   CodexProtectionStatus,
   QuotaSourceInput,
   QuotaSourceSummary,
@@ -152,6 +155,9 @@ function App() {
   const [modal, setModal] = useState<ModalState>(null);
   const [codexProtection, setCodexProtection] =
     useState<CodexProtectionStatus | null>(null);
+  const [codexProtectionEvents, setCodexProtectionEvents] = useState<
+    CodexProtectionEvent[]
+  >([]);
   const [protectionBusy, setProtectionBusy] = useState(false);
   const [priorityBusy, setPriorityBusy] = useState(false);
   const initialSyncStarted = useRef(false);
@@ -170,10 +176,16 @@ function App() {
           .catch(() =>
             setCodexProtection({
               installed: false,
+              hasAqmHooks: false,
               requiresReview: false,
               configPath: "",
+              state: "misconfigured",
+              issue: "AQM could not inspect the Codex hook configuration.",
             }),
           );
+        getCodexProtectionEvents().then(setCodexProtectionEvents).catch(() => {
+          setCodexProtectionEvents([]);
+        });
         const nextState = await loadState();
         if (initialSyncStarted.current) {
           return;
@@ -195,6 +207,17 @@ function App() {
 
     void initialize();
   }, [loadState]);
+
+  useEffect(() => {
+    const refreshProtection = () => {
+      getCodexProtectionStatus().then(setCodexProtection).catch(() => undefined);
+      getCodexProtectionEvents()
+        .then(setCodexProtectionEvents)
+        .catch(() => undefined);
+    };
+    window.addEventListener("focus", refreshProtection);
+    return () => window.removeEventListener("focus", refreshProtection);
+  }, []);
 
   const selectedSource = useMemo(
     () =>
@@ -251,7 +274,10 @@ function App() {
       }
 
       const sync = await syncCodexQuota(windowId);
-      await loadState(sync.windowId ?? windowId);
+      await Promise.all([
+        loadState(sync.windowId ?? windowId),
+        getCodexProtectionEvents().then(setCodexProtectionEvents),
+      ]);
       if (sync.status !== "synced") {
         setError(
           sync.message ??
@@ -321,21 +347,19 @@ function App() {
     }
   }
 
-  async function handleProtection() {
-    if (codexProtection?.installed) {
-      setNotice(
-        "In Codex, run /hooks, review and trust the AQM hooks, then restart Codex. AQM cannot verify Codex trust state automatically.",
-      );
-      return;
-    }
+  async function handleProtection(enabled: boolean) {
     setProtectionBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const status = await installCodexProtection();
+      const status = enabled
+        ? await installCodexProtection()
+        : await uninstallCodexProtection();
       setCodexProtection(status);
       setNotice(
-        "Protection hook installed. In Codex, run /hooks, review and trust the AQM hooks, then restart Codex.",
+        enabled
+          ? "Protection is configured. In Codex, run /hooks, review and trust the AQM hooks, then restart Codex."
+          : "Codex Desktop protection is off. Other Codex hooks were left unchanged.",
       );
     } catch (reason) {
       setError(getErrorMessage(reason));
@@ -431,8 +455,9 @@ function App() {
             ? codexProtection
             : null
         }
+        codexProtectionEvents={codexProtectionEvents}
         protectionBusy={protectionBusy}
-        onProtection={() => void handleProtection()}
+        onProtection={(enabled) => void handleProtection(enabled)}
         priorityBusy={priorityBusy}
         onPriorityOrder={(orderedScopeIds) => {
           if (localState.selectedWindowId) {

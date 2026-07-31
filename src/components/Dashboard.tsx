@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type {
   AllocationSnapshot,
+  CodexProtectionEvent,
   CodexProtectionStatus,
   DepletionForecast,
   LocalState,
@@ -20,8 +21,9 @@ type DashboardProps = {
   onRemoveSource: (source: QuotaSourceSummary) => void;
   removingSource: boolean;
   codexProtection: CodexProtectionStatus | null;
+  codexProtectionEvents: CodexProtectionEvent[];
   protectionBusy: boolean;
-  onProtection: () => void;
+  onProtection: (enabled: boolean) => void;
   priorityBusy: boolean;
   onPriorityOrder: (orderedScopeIds: string[]) => void;
 };
@@ -74,6 +76,27 @@ function formatLastSync(timestamp: number | null): string {
     return `Synced ${minutes}m ago`;
   }
   return `Synced ${Math.floor(minutes / 60)}h ago`;
+}
+
+function formatRelativeTime(timestamp: number): string {
+  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1_000));
+  if (seconds < 60) {
+    return "just now";
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function folderName(path: string): string {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] ?? path;
 }
 
 function formatObservationDuration(forecast: DepletionForecast): string {
@@ -303,6 +326,7 @@ export function Dashboard({
   onRemoveSource,
   removingSource,
   codexProtection,
+  codexProtectionEvents,
   protectionBusy,
   onProtection,
   priorityBusy,
@@ -468,37 +492,98 @@ export function Dashboard({
 
         {codexProtection && (
           <section
-            className={`protection-banner ${
-              codexProtection.installed ? "installed" : ""
-            }`}
+            className={`protection-banner ${codexProtection.state}`}
           >
             <span>
               <Icon name="shield" size={19} />
             </span>
-            <div>
+            <div className="protection-copy">
               <strong>
-                {codexProtection.installed
-                  ? "Workspace gate installed"
-                  : "Tracking only — quota is not protected"}
+                {codexProtection.state === "configured"
+                  ? "Codex Desktop protection is on"
+                  : codexProtection.state === "misconfigured"
+                    ? "Protection needs attention"
+                    : "Codex Desktop protection is off"}
               </strong>
               <small>
-                {codexProtection.installed
-                  ? "Review and trust the AQM hooks in Codex, then restart Codex to activate blocking."
-                  : "Codex Desktop can still consume quota from folders without an allocation."}
+                {codexProtection.state === "configured"
+                  ? "AQM hooks are configured. Review /hooks in Codex, trust them, then restart Codex."
+                  : codexProtection.state === "misconfigured"
+                    ? codexProtection.issue
+                    : "Tracking remains available, but new Codex prompts will not be blocked."}
               </small>
             </div>
-            <button
-              className="button subtle small"
-              type="button"
-              disabled={protectionBusy}
-              onClick={onProtection}
-            >
-              {codexProtection.installed
-                ? "Activation steps"
-                : protectionBusy
-                  ? "Installing…"
-                  : "Enable protection"}
-            </button>
+            <div className="protection-actions">
+              {codexProtection.state === "misconfigured" &&
+                codexProtection.hasAqmHooks && (
+                  <button
+                    className="button subtle small"
+                    type="button"
+                    disabled={protectionBusy}
+                    onClick={() => onProtection(true)}
+                  >
+                    Repair
+                  </button>
+                )}
+              <button
+                className={`protection-toggle ${
+                  codexProtection.installed ? "enabled" : ""
+                }`}
+                type="button"
+                disabled={protectionBusy}
+                onClick={() =>
+                  onProtection(
+                    codexProtection.state === "misconfigured"
+                      ? !codexProtection.hasAqmHooks
+                      : !codexProtection.installed,
+                  )
+                }
+                role="switch"
+                aria-checked={codexProtection.installed}
+                aria-label={
+                  codexProtection.installed || codexProtection.hasAqmHooks
+                    ? "Turn off Codex Desktop protection"
+                    : "Turn on Codex Desktop protection"
+                }
+              >
+                <i />
+                {protectionBusy
+                  ? "Updating…"
+                  : codexProtection.installed
+                    ? "On"
+                    : codexProtection.hasAqmHooks
+                      ? "Turn off"
+                      : "Off"}
+              </button>
+            </div>
+            {codexProtectionEvents.length > 0 && (
+              <details className="protection-activity">
+                <summary>
+                  Recent decisions
+                  <span>
+                    Latest: {codexProtectionEvents[0].outcome}{" "}
+                    {codexProtectionEvents[0].workspaceName ??
+                      folderName(codexProtectionEvents[0].canonicalPath)}
+                  </span>
+                </summary>
+                <div>
+                  {codexProtectionEvents.map((event) => (
+                    <article
+                      key={`${event.occurredAt}-${event.canonicalPath}-${event.outcome}`}
+                    >
+                      <i className={event.outcome} />
+                      <span>
+                        <strong>
+                          {event.workspaceName ?? folderName(event.canonicalPath)}
+                        </strong>
+                        <small>{event.reason}</small>
+                      </span>
+                      <time>{formatRelativeTime(event.occurredAt)}</time>
+                    </article>
+                  ))}
+                </div>
+              </details>
+            )}
           </section>
         )}
 

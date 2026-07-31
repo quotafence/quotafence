@@ -197,6 +197,23 @@ pub struct AbandonProviderSessionObservations {
     pub session_id: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordCodexProtectionEvent {
+    pub session_id: String,
+    pub turn_id: String,
+    pub canonical_path: String,
+    pub scope_id: Option<String>,
+    pub blocked: bool,
+    pub reason: String,
+    pub occurred_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetCodexProtectionEvents {
+    pub limit: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateScope {

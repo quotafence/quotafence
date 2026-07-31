@@ -296,6 +296,22 @@ CREATE TABLE allocation_priorities (
 );
 "#;
 
+const CODEX_PROTECTION_EVENTS: &str = r#"
+CREATE TABLE codex_protection_events (
+    session_id TEXT NOT NULL CHECK (length(trim(session_id)) > 0),
+    turn_id TEXT NOT NULL CHECK (length(trim(turn_id)) > 0),
+    canonical_path TEXT NOT NULL CHECK (length(trim(canonical_path)) > 0),
+    scope_id TEXT REFERENCES scopes(id) ON DELETE SET NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('allowed', 'blocked')),
+    reason TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+    occurred_at INTEGER NOT NULL,
+    PRIMARY KEY (session_id, turn_id)
+);
+
+CREATE INDEX idx_codex_protection_events_occurred_at
+    ON codex_protection_events(occurred_at DESC);
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -356,6 +372,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 12,
         name: "allocation_priorities",
         sql: ALLOCATION_PRIORITIES,
+    },
+    Migration {
+        version: 13,
+        name: "codex_protection_events",
+        sql: CODEX_PROTECTION_EVENTS,
     },
 ];
 

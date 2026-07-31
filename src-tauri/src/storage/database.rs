@@ -70,6 +70,10 @@ impl Database {
         super::WorkspacePolicyRepository::new(&self.connection)
     }
 
+    pub fn codex_protection_events(&self) -> super::CodexProtectionEventRepository<'_> {
+        super::CodexProtectionEventRepository::new(&self.connection)
+    }
+
     pub fn schema_version(&self) -> StorageResult<i64> {
         Ok(self.connection.query_row(
             "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",

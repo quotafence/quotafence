@@ -226,6 +226,11 @@ npm run aqm -- hooks uninstall codex
 `status` verifies the AQM definitions in the JSON file; Codex remains the source
 of truth for whether their current hash has been trusted.
 
+The desktop exposes the same integration as an on/off control. Turning it off
+removes only handlers marked as AQM-owned. A partial configuration or one that
+points at an old application executable is shown as needing repair; turning
+protection on again replaces those entries with the current executable.
+
 Explicit allocation and policy decisions may return the official
 `{"decision":"block"}` response. Infrastructure failures remain fail-open so a
 broken local integration cannot permanently lock Codex. Set
@@ -247,7 +252,9 @@ Current precision limits:
 Codex includes prompt and transcript fields in some lifecycle event payloads.
 AQM's typed hook parser ignores those fields and stores only session ID, turn
 ID, event type, canonical folder, optional scope, window baseline, timestamps,
-and contention state.
+and contention state. For visibility, each admitted or blocked
+`UserPromptSubmit` also stores its folder, optional workspace, outcome, reason,
+and timestamp. It never stores prompt text.
 
 Installation from the desktop points the hook at the installed Agent Quota
 Manager executable, which has a non-GUI `hook codex` entrypoint. Development

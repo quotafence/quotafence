@@ -13,7 +13,8 @@ use crate::{
         AbandonProviderSessionObservations, AbandonProviderTurnObservation,
         BeginProviderTurnObservation, EvaluateWorkspaceAdmission, GetLocalState,
         GetProviderTurnObservation, GetWorkspaceContext, QuotaService,
-        ReconcileProviderTurnObservation, TurnReconciliationResult, WorkspaceContext,
+        ReconcileProviderTurnObservation, RecordCodexProtectionEvent, TurnReconciliationResult,
+        WorkspaceContext,
     },
     domain::EnforcementDecision,
     paths,
@@ -96,8 +97,19 @@ pub enum CodexHookOutcome {
 #[serde(rename_all = "camelCase")]
 pub struct CodexProtectionStatus {
     pub installed: bool,
+    pub has_aqm_hooks: bool,
     pub requires_review: bool,
     pub config_path: String,
+    pub state: CodexProtectionState,
+    pub issue: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CodexProtectionState {
+    Disabled,
+    Configured,
+    Misconfigured,
 }
 
 pub fn hook_output(outcome: &CodexHookOutcome) -> Value {
@@ -112,24 +124,113 @@ pub fn hook_output(outcome: &CodexHookOutcome) -> Value {
 
 pub fn protection_status() -> Result<CodexProtectionStatus, String> {
     let config_path = default_user_hooks_path()?;
-    let installed = user_hooks_installed(&config_path)?;
-    Ok(CodexProtectionStatus {
-        installed,
-        requires_review: installed,
-        config_path: config_path.display().to_string(),
-    })
+    let executable = env::current_exe()
+        .map_err(|error| format!("cannot resolve the Agent Quota Manager executable: {error}"))?;
+    Ok(protection_status_for(&config_path, &executable))
 }
 
 pub fn install_protection(executable: &Path) -> Result<CodexProtectionStatus, String> {
     let config_path = default_user_hooks_path()?;
     install_user_hooks(&config_path, executable)?;
-    protection_status()
+    Ok(protection_status_for(&config_path, executable))
 }
 
 pub fn uninstall_protection() -> Result<CodexProtectionStatus, String> {
     let config_path = default_user_hooks_path()?;
     uninstall_user_hooks(&config_path)?;
-    protection_status()
+    let executable = env::current_exe()
+        .map_err(|error| format!("cannot resolve the Agent Quota Manager executable: {error}"))?;
+    Ok(protection_status_for(&config_path, &executable))
+}
+
+fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtectionStatus {
+    let config_path_text = config_path.display().to_string();
+    let config = match read_hook_config(config_path) {
+        Ok(config) => config,
+        Err(issue) => {
+            return CodexProtectionStatus {
+                installed: false,
+                has_aqm_hooks: false,
+                requires_review: false,
+                config_path: config_path_text,
+                state: CodexProtectionState::Misconfigured,
+                issue: Some(issue),
+            };
+        }
+    };
+    let expected_command = hook_command(executable);
+    let Some(hooks) = config.get("hooks").and_then(Value::as_object) else {
+        return CodexProtectionStatus {
+            installed: false,
+            has_aqm_hooks: false,
+            requires_review: false,
+            config_path: config_path_text,
+            state: CodexProtectionState::Disabled,
+            issue: None,
+        };
+    };
+    let aqm_handlers = TRACKED_EVENTS
+        .iter()
+        .flat_map(|(event, _, _)| {
+            hooks
+                .get(*event)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|group| group.get("hooks").and_then(Value::as_array))
+                .flatten()
+                .filter(|handler| is_aqm_handler(handler))
+        })
+        .collect::<Vec<_>>();
+    if aqm_handlers.is_empty() {
+        return CodexProtectionStatus {
+            installed: false,
+            has_aqm_hooks: false,
+            requires_review: false,
+            config_path: config_path_text,
+            state: CodexProtectionState::Disabled,
+            issue: None,
+        };
+    }
+
+    let every_event_is_current = TRACKED_EVENTS.iter().all(|(event, _, _)| {
+        hooks
+            .get(*event)
+            .and_then(Value::as_array)
+            .is_some_and(|groups| {
+                groups
+                    .iter()
+                    .filter_map(|group| group.get("hooks").and_then(Value::as_array))
+                    .flatten()
+                    .any(|handler| {
+                        is_aqm_handler(handler)
+                            && handler.get("command").and_then(Value::as_str)
+                                == Some(expected_command.as_str())
+                    })
+            })
+    });
+    if every_event_is_current && executable.is_file() {
+        CodexProtectionStatus {
+            installed: true,
+            has_aqm_hooks: true,
+            requires_review: true,
+            config_path: config_path_text,
+            state: CodexProtectionState::Configured,
+            issue: None,
+        }
+    } else {
+        CodexProtectionStatus {
+            installed: false,
+            has_aqm_hooks: true,
+            requires_review: false,
+            config_path: config_path_text,
+            state: CodexProtectionState::Misconfigured,
+            issue: Some(
+                "AQM hook entries are incomplete or point to a different app executable. Enable protection again to repair them."
+                    .to_owned(),
+            ),
+        }
+    }
 }
 
 pub fn run_installed_hook(reader: impl Read) -> Result<Value, String> {
@@ -141,14 +242,47 @@ pub fn run_installed_hook(reader: impl Read) -> Result<Value, String> {
         .map_err(|error| format!("cannot resolve database: {error}"))?;
     let database = Database::open(database_path).map_err(|error| error.to_string())?;
     let mut service = QuotaService::new(database);
-    let outcome = handle_event(&mut service, &event, current_time_millis(), || {
+    let observed_at = current_time_millis();
+    let outcome = handle_event(&mut service, &event, observed_at, || {
         matches!(
             event.kind(),
             CodexHookEventKind::UserPromptSubmit | CodexHookEventKind::Stop
         )
         .then(codex::detect)
     })?;
+    record_prompt_decision(&mut service, &event, &outcome, observed_at);
     Ok(hook_output(&outcome))
+}
+
+fn record_prompt_decision(
+    service: &mut QuotaService,
+    event: &CodexHookEvent,
+    outcome: &CodexHookOutcome,
+    occurred_at: i64,
+) {
+    if event.kind() != CodexHookEventKind::UserPromptSubmit {
+        return;
+    }
+    let (blocked, scope_id, reason) = match outcome {
+        CodexHookOutcome::ObservationStarted { scope_id, .. } => (
+            false,
+            scope_id.clone(),
+            "Prompt admitted within the workspace's protected quota.".to_owned(),
+        ),
+        CodexHookOutcome::Blocked { reason } => (true, None, reason.clone()),
+        _ => return,
+    };
+    let canonical_path =
+        canonicalize_workspace_path(&event.cwd).unwrap_or_else(|_| event.cwd.clone());
+    let _ = service.record_codex_protection_event(RecordCodexProtectionEvent {
+        session_id: event.session_id.clone(),
+        turn_id: event.turn_id.clone().unwrap_or_default(),
+        canonical_path,
+        scope_id,
+        blocked,
+        reason,
+        occurred_at,
+    });
 }
 
 fn current_time_millis() -> i64 {
@@ -743,6 +877,38 @@ mod tests {
     }
 
     #[test]
+    fn protection_status_distinguishes_disabled_current_and_stale_hooks() {
+        let directory = temporary_folder("protection-status");
+        let config_path = directory.join("hooks.json");
+        let executable = directory.join("Agent Quota Manager");
+        std::fs::write(&executable, "test executable").unwrap();
+
+        let disabled = protection_status_for(&config_path, &executable);
+        assert_eq!(disabled.state, CodexProtectionState::Disabled);
+        assert!(!disabled.installed);
+
+        install_user_hooks(&config_path, &executable).unwrap();
+        let configured = protection_status_for(&config_path, &executable);
+        assert_eq!(configured.state, CodexProtectionState::Configured);
+        assert!(configured.installed);
+        assert!(configured.requires_review);
+
+        let replacement = directory.join("replacement");
+        std::fs::write(&replacement, "replacement executable").unwrap();
+        let stale = protection_status_for(&config_path, &replacement);
+        assert_eq!(stale.state, CodexProtectionState::Misconfigured);
+        assert!(!stale.installed);
+        assert!(stale.issue.is_some());
+
+        uninstall_user_hooks(&config_path).unwrap();
+        assert_eq!(
+            protection_status_for(&config_path, &executable).state,
+            CodexProtectionState::Disabled
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn hook_turn_attributes_checkpoint_delta_to_the_bound_folder() {
         let folder = temporary_folder("attribution");
         let canonical_path = canonicalize_workspace_path(&folder).unwrap();
@@ -789,6 +955,7 @@ mod tests {
             hook_event_name: "UserPromptSubmit".to_owned(),
         };
         let outcome = handle_event(&mut service, &start, 3_000, || Some(detection(10))).unwrap();
+        record_prompt_decision(&mut service, &start, &outcome, 3_000);
         assert!(matches!(
             outcome,
             CodexHookOutcome::ObservationStarted {
@@ -797,6 +964,12 @@ mod tests {
                 ..
             } if scope_id == "workspace-a"
         ));
+        let decisions = service
+            .codex_protection_events(crate::application::GetCodexProtectionEvents { limit: 5 })
+            .unwrap();
+        assert_eq!(decisions.len(), 1);
+        assert_eq!(decisions[0].outcome, "allowed");
+        assert_eq!(decisions[0].workspace_name.as_deref(), Some("Workspace A"));
 
         let stop = CodexHookEvent {
             hook_event_name: "Stop".to_owned(),
