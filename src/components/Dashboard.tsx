@@ -220,8 +220,16 @@ function AllocationRow({
   onDragEnd: () => void;
   onEdit: () => void;
 }) {
+  const usedWithinAllocation = Math.min(
+    allocation.attributedUsage,
+    allocation.limit,
+  );
+  const overage = Math.max(
+    0,
+    allocation.attributedUsage - allocation.limit,
+  );
   const usedPercent = allocation.limit
-    ? Math.round((allocation.attributedUsage / allocation.limit) * 100)
+    ? Math.round((usedWithinAllocation / allocation.limit) * 100)
     : 0;
   const usedWidth = Math.min(100, usedPercent);
   const protectedPercent = allocation.limit
@@ -265,23 +273,48 @@ function AllocationRow({
             {fundedLabel}
           </span>
           <span>
-            {formatAmount(allocation.attributedUsage, unit)} used ·{" "}
-            {usedPercent}%
+            {overage > 0 ? (
+              <>
+                {formatAmount(usedWithinAllocation, unit)} allocation used ·{" "}
+                <strong>{formatAmount(overage, unit)} over allocation</strong>
+              </>
+            ) : (
+              <>
+                {formatAmount(allocation.attributedUsage, unit)} used ·{" "}
+                {usedPercent}% of allocation
+              </>
+            )}
           </span>
         </div>
         <div
           className="allocation-quota-track"
           role="progressbar"
-          aria-label={`${scope.displayName}: ${formatAmount(
-            allocation.attributedUsage,
-            unit,
-          )} used and ${formatAmount(
-            allocation.protectedNow,
-            unit,
-          )} ${fundedLabel} from a ${formatAmount(
-            allocation.limit,
-            unit,
-          )} allocation`}
+          aria-label={
+            overage > 0
+              ? `${scope.displayName}: ${formatAmount(
+                  allocation.attributedUsage,
+                  unit,
+                )} total usage, including ${formatAmount(
+                  usedWithinAllocation,
+                  unit,
+                )} from its allocation and ${formatAmount(
+                  overage,
+                  unit,
+                )} over its allocation; ${formatAmount(
+                  allocation.protectedNow,
+                  unit,
+                )} ${fundedLabel}`
+              : `${scope.displayName}: ${formatAmount(
+                  allocation.attributedUsage,
+                  unit,
+                )} used and ${formatAmount(
+                  allocation.protectedNow,
+                  unit,
+                )} ${fundedLabel} from a ${formatAmount(
+                  allocation.limit,
+                  unit,
+                )} allocation`
+          }
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.min(100, usedWidth + protectedPercent)}
@@ -406,14 +439,6 @@ export function Dashboard({
       )
     : 0;
   const usedPercent = Math.max(0, 100 - availablePercent);
-  const allocatedPercent = quotaWindow.capacity
-    ? Math.min(
-        100,
-        Math.round(
-          (quotaWindow.allocatedToRootScopes / quotaWindow.capacity) * 100,
-        ),
-      )
-    : 0;
   const allocationByScope = new Map(
     dashboard.allocations.map((allocation) => [allocation.scopeId, allocation]),
   );
@@ -433,6 +458,21 @@ export function Dashboard({
     0,
     quotaWindow.providerSpendable - plannedCapacityNow,
   );
+  const usedAmount = Math.max(
+    0,
+    quotaWindow.capacity - quotaWindow.providerSpendable,
+  );
+  const percentOfWindow = (amount: number) =>
+    quotaWindow.capacity
+      ? Math.min(100, Math.max(0, (amount / quotaWindow.capacity) * 100))
+      : 0;
+  const usedSlicePercent = percentOfWindow(usedAmount);
+  const plannedSlicePercent = percentOfWindow(plannedCapacityNow);
+  const plannedSliceEnd = Math.min(
+    100,
+    usedSlicePercent + plannedSlicePercent,
+  );
+  const plannedLabel = protectionActive ? "Protected" : "Planned";
   const nextAllocationAtRisk = [...scopes]
     .reverse()
     .find(
@@ -687,27 +727,47 @@ export function Dashboard({
                     <div
                       className="allocation-donut"
                       style={{
-                        background: `conic-gradient(var(--progress-fill) 0 ${allocatedPercent}%, var(--ring-track) ${allocatedPercent}% 100%)`,
+                        background: `conic-gradient(var(--quota-used) 0 ${usedSlicePercent}%, var(--quota-funded) ${usedSlicePercent}% ${plannedSliceEnd}%, var(--ring-track) ${plannedSliceEnd}% 100%)`,
                       }}
                       role="img"
-                      aria-label={`${allocatedPercent}% of total quota is allocated`}
+                      aria-label={`${formatAmount(
+                        usedAmount,
+                        quotaWindow.unit,
+                      )} used, ${formatAmount(
+                        plannedCapacityNow,
+                        quotaWindow.unit,
+                      )} ${plannedLabel.toLowerCase()}, and ${formatAmount(
+                        unassignedBufferNow,
+                        quotaWindow.unit,
+                      )} unassigned in the current quota window`}
                     >
                       <span>
-                        <strong>{allocatedPercent}%</strong>
-                        <small>allocated</small>
+                        <strong>
+                          {formatAmount(
+                            quotaWindow.providerSpendable,
+                            quotaWindow.unit,
+                          )}
+                        </strong>
+                        <small>left</small>
                       </span>
                     </div>
                     <dl className="allocation-legend">
                       <div>
                         <dt>
-                          <i className="allocated" />
-                          Allocated
+                          <i className="used" />
+                          Used
                         </dt>
                         <dd>
-                          {formatAmount(
-                            quotaWindow.allocatedToRootScopes,
-                            quotaWindow.unit,
-                          )}
+                          {formatAmount(usedAmount, quotaWindow.unit)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>
+                          <i className="funded" />
+                          {plannedLabel}
+                        </dt>
+                        <dd>
+                          {formatAmount(plannedCapacityNow, quotaWindow.unit)}
                         </dd>
                       </div>
                       <div>
@@ -717,7 +777,7 @@ export function Dashboard({
                         </dt>
                         <dd>
                           {formatAmount(
-                            quotaWindow.unallocated,
+                            unassignedBufferNow,
                             quotaWindow.unit,
                           )}
                         </dd>

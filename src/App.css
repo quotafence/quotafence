@@ -29,6 +29,8 @@
   --avatar-background: #e5e5e3;
   --avatar-ink: #111;
   --progress-fill: #ededeb;
+  --quota-used: #68686d;
+  --quota-funded: #ededeb;
   --focus-ring: #fff;
   --danger: #ef777d;
   --warning: #d7b477;
@@ -60,6 +62,8 @@
   --avatar-background: #171716;
   --avatar-ink: #ffffff;
   --progress-fill: #20201e;
+  --quota-used: #9b9b95;
+  --quota-funded: #20201e;
   --focus-ring: #171716;
   --danger: #b83f48;
   --warning: #94651f;
@@ -3231,8 +3235,8 @@ h3,
   min-width: 0;
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .allocation-legend > div {
@@ -3257,8 +3261,12 @@ h3,
   background: var(--ring-track);
 }
 
-.allocation-legend dt i.allocated {
-  background: var(--progress-fill);
+.allocation-legend dt i.used {
+  background: var(--quota-used);
+}
+
+.allocation-legend dt i.funded {
+  background: var(--quota-funded);
 }
 
 .allocation-legend dd {

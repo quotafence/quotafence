@@ -107,6 +107,17 @@ The window summary distinguishes:
 - unattributed provider usage; and
 - provider-level remaining and spendable capacity.
 
+The overview derives its live window composition from the same snapshot:
+
+- used capacity is `capacity - provider_spendable`;
+- planned/protected capacity is the sum of priority-funded `protected_now`;
+- unassigned capacity is the remainder of `provider_spendable` after that
+  funding.
+
+These three values account for the full provider window. They are intentionally
+different from the static sum of allocation targets, especially after usage has
+already consumed part of the window.
+
 `QuotaDashboard::forecast` uses only terminal managed sessions reconciled in
 the selected window. The pure calculation receives an explicit current time,
 reports its observation interval, sample count, attribution coverage, and

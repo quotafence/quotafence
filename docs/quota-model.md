@@ -97,6 +97,12 @@ capacity first, followed by progressively higher priorities. This calculation
 is a plan until an enforcement adapter is observed working; it must not be
 presented as a hard guarantee while Codex Desktop protection is unverified.
 
+The UI reports the allocation target separately from the live window
+composition. The latter is always split into used, currently
+priority-funded, and unassigned capacity. Usage attributed beyond a workspace
+target is shown as over-allocation usage instead of as a percentage above 100%
+of that allocation.
+
 The persisted scope codec still reads legacy project/task rows so an older
 local database can be opened without deleting history. Those legacy kinds are
 not exposed as new allocation choices.
