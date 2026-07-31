@@ -574,7 +574,7 @@ function App() {
 
       {modal?.type === "scope" && dashboard && (
         <Modal
-          eyebrow="Workspace budget"
+          eyebrow="Workspace allocation"
           title="Create an allocation"
           onClose={() => setModal(null)}
         >

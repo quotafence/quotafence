@@ -34,7 +34,8 @@ For the selected quota window, the UI can:
 
 - lead with remaining quota, days until reset, and a daily safe-spend guide;
 - show provider usage as one compact progress line for the active window;
-- list folder budgets and unassigned capacity in one priority-ordered list;
+- summarize allocated versus unassigned capacity with a donut chart;
+- list workspace allocations with their used and currently protected shares;
 - choose any local folder and create one workspace allocation for it;
 - update existing allocation limits;
 - reorder workspaces by drag and drop so scarce current capacity funds the

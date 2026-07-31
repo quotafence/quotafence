@@ -99,7 +99,7 @@ export function ScopeForm({
         type="submit"
         disabled={submitting || !workspacePath}
       >
-        {submitting ? "Adding…" : "Add workspace"}
+        {submitting ? "Adding…" : "Add allocation"}
         {!submitting && <Icon name="arrow-right" size={18} />}
       </button>
     </form>

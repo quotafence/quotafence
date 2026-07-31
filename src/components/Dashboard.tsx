@@ -202,6 +202,17 @@ function AllocationRow({
   onDragEnd: () => void;
   onEdit: () => void;
 }) {
+  const usedPercent = allocation.limit
+    ? Math.round((allocation.attributedUsage / allocation.limit) * 100)
+    : 0;
+  const usedWidth = Math.min(100, usedPercent);
+  const protectedPercent = allocation.limit
+    ? Math.min(
+        100 - usedWidth,
+        Math.round((allocation.protectedNow / allocation.limit) * 100),
+      )
+    : 0;
+
   return (
     <article
       className={`overview-allocation-row ${dragging ? "dragging" : ""} ${
@@ -224,8 +235,52 @@ function AllocationRow({
       }}
       onDragEnd={onDragEnd}
     >
-      <strong>{scope.displayName}</strong>
-      <span>{formatAmount(allocation.limit, unit)}</span>
+      <div className="allocation-row-identity">
+        <strong>{scope.displayName}</strong>
+        <span>Priority {allocation.priority + 1}</span>
+      </div>
+      <div className="allocation-quota">
+        <div className="allocation-quota-meta">
+          <span>
+            <strong>{formatAmount(allocation.protectedNow, unit)}</strong>{" "}
+            protected now
+          </span>
+          <span>
+            {formatAmount(allocation.attributedUsage, unit)} used ·{" "}
+            {usedPercent}%
+          </span>
+        </div>
+        <div
+          className="allocation-quota-track"
+          role="progressbar"
+          aria-label={`${scope.displayName}: ${formatAmount(
+            allocation.attributedUsage,
+            unit,
+          )} used and ${formatAmount(
+            allocation.protectedNow,
+            unit,
+          )} protected now from a ${formatAmount(
+            allocation.limit,
+            unit,
+          )} allocation`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.min(100, usedWidth + protectedPercent)}
+        >
+          <span
+            className="allocation-used-segment"
+            style={{ width: `${usedWidth}%` }}
+          />
+          <span
+            className="allocation-protected-segment"
+            style={{ width: `${protectedPercent}%` }}
+          />
+        </div>
+      </div>
+      <span className="allocation-limit">
+        <strong>{formatAmount(allocation.limit, unit)}</strong>
+        allocation
+      </span>
       <button
         className="row-menu-button"
         type="button"
@@ -328,6 +383,14 @@ export function Dashboard({
       )
     : 0;
   const usedPercent = Math.max(0, 100 - availablePercent);
+  const allocatedPercent = quotaWindow.capacity
+    ? Math.min(
+        100,
+        Math.round(
+          (quotaWindow.allocatedToRootScopes / quotaWindow.capacity) * 100,
+        ),
+      )
+    : 0;
   const allocationByScope = new Map(
     dashboard.allocations.map((allocation) => [allocation.scopeId, allocation]),
   );
@@ -524,97 +587,108 @@ export function Dashboard({
                   </div>
                 </article>
 
-                <article className="dashboard-block window-facts-block">
-                  <div>
+                <article className="dashboard-block allocation-summary-block">
+                  <div className="reset-summary">
                     <span>Resets</span>
                     <strong>
                       {remainingDays} {remainingDays === 1 ? "day" : "days"}
                     </strong>
                     <small>{formatDate(quotaWindow.endsAt)}</small>
                   </div>
-                  <div>
-                    <span>Reserved</span>
-                    <strong>
-                      {formatAmount(
-                        quotaWindow.allocatedToRootScopes,
-                        quotaWindow.unit,
-                      )}
-                    </strong>
-                    <small>Across {scopes.length} workspaces</small>
-                  </div>
-                  <div>
-                    <span>Unassigned</span>
-                    <strong>
-                      {formatAmount(
-                        quotaWindow.unallocated,
-                        quotaWindow.unit,
-                      )}
-                    </strong>
-                    <small>Available for new workspace budgets</small>
+                  <div className="allocation-donut-group">
+                    <div
+                      className="allocation-donut"
+                      style={{
+                        background: `conic-gradient(var(--progress-fill) 0 ${allocatedPercent}%, var(--ring-track) ${allocatedPercent}% 100%)`,
+                      }}
+                      role="img"
+                      aria-label={`${allocatedPercent}% of total quota is allocated`}
+                    >
+                      <span>
+                        <strong>{allocatedPercent}%</strong>
+                        <small>allocated</small>
+                      </span>
+                    </div>
+                    <dl className="allocation-legend">
+                      <div>
+                        <dt>
+                          <i className="allocated" />
+                          Allocated
+                        </dt>
+                        <dd>
+                          {formatAmount(
+                            quotaWindow.allocatedToRootScopes,
+                            quotaWindow.unit,
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>
+                          <i />
+                          Unassigned
+                        </dt>
+                        <dd>
+                          {formatAmount(
+                            quotaWindow.unallocated,
+                            quotaWindow.unit,
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
                   </div>
                 </article>
               </section>
 
               <section className="workspace-budget-section dashboard-block">
-              <header>
-                <div>
-                  <h2>Workspace budgets</h2>
-                  <p>
-                    Drag to set priority. Higher workspaces are reserved first.
-                  </p>
-                </div>
-                <button
-                  className="button primary"
-                  type="button"
-                  onClick={onAddScope}
-                >
-                  <Icon name="plus" size={17} />
-                  Add workspace
-                </button>
-              </header>
+                <header>
+                  <div>
+                    <h2>Workspace allocations</h2>
+                    <p>
+                      Drag to set priority. Higher allocations are protected
+                      first.
+                    </p>
+                  </div>
+                  <button
+                    className="button primary"
+                    type="button"
+                    onClick={onAddScope}
+                  >
+                    <Icon name="plus" size={17} />
+                    Add allocation
+                  </button>
+                </header>
 
-              <div className="overview-allocation-list">
-                {scopes.map((scope) => {
-                  const allocation = allocationByScope.get(scope.id);
-                  if (!allocation) {
-                    return null;
-                  }
-                  return (
-                    <AllocationRow
-                      key={scope.id}
-                      scope={scope}
-                      allocation={allocation}
-                      unit={quotaWindow.unit}
-                      priorityBusy={priorityBusy}
-                      dragging={draggedScopeId === scope.id}
-                      dragOver={
-                        dragOverScopeId === scope.id &&
-                        draggedScopeId !== scope.id
-                      }
-                      onDragStart={() => setDraggedScopeId(scope.id)}
-                      onDragOver={() => setDragOverScopeId(scope.id)}
-                      onDrop={() => finishPriorityDrag(scope.id)}
-                      onDragEnd={() => {
-                        setDraggedScopeId(null);
-                        setDragOverScopeId(null);
-                      }}
-                      onEdit={() => onEditAllocation(scope)}
-                    />
-                  );
-                })}
-                <div className="overview-allocation-row unassigned-row">
-                  <strong>Unassigned</strong>
-                  <span>
-                    {formatAmount(
-                      quotaWindow.unallocated,
-                      quotaWindow.unit,
-                    )}
-                  </span>
-                  <span />
-                  <span />
+                <div className="overview-allocation-list">
+                  {scopes.map((scope) => {
+                    const allocation = allocationByScope.get(scope.id);
+                    if (!allocation) {
+                      return null;
+                    }
+                    return (
+                      <AllocationRow
+                        key={scope.id}
+                        scope={scope}
+                        allocation={allocation}
+                        unit={quotaWindow.unit}
+                        priorityBusy={priorityBusy}
+                        dragging={draggedScopeId === scope.id}
+                        dragOver={
+                          dragOverScopeId === scope.id &&
+                          draggedScopeId !== scope.id
+                        }
+                        onDragStart={() => setDraggedScopeId(scope.id)}
+                        onDragOver={() => setDragOverScopeId(scope.id)}
+                        onDrop={() => finishPriorityDrag(scope.id)}
+                        onDragEnd={() => {
+                          setDraggedScopeId(null);
+                          setDragOverScopeId(null);
+                        }}
+                        onEdit={() => onEditAllocation(scope)}
+                      />
+                    );
+                  })}
                 </div>
-              </div>
-            </section>
+              </section>
             </div>
           </>
         )}
