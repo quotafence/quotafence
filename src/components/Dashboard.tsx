@@ -242,9 +242,9 @@ function AllocationRow({
 
   return (
     <article
-      className={`overview-allocation-row ${dragging ? "dragging" : ""} ${
-        dragOver ? "drag-over" : ""
-      }`}
+      className={`overview-allocation-row ${
+        overage > 0 ? "over-allocation" : ""
+      } ${dragging ? "dragging" : ""} ${dragOver ? "drag-over" : ""}`}
       draggable={!priorityBusy}
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = "move";
@@ -276,7 +276,9 @@ function AllocationRow({
             {overage > 0 ? (
               <>
                 {formatAmount(usedWithinAllocation, unit)} allocation used ·{" "}
-                <strong>{formatAmount(overage, unit)} over allocation</strong>
+                <strong className="allocation-overage">
+                  {formatAmount(overage, unit)} over allocation
+                </strong>
               </>
             ) : (
               <>
@@ -698,7 +700,7 @@ export function Dashboard({
                   </div>
                   <div className="used-progress-section">
                     <div
-                      className="used-progress"
+                      className={`used-progress ${statusTone}`}
                       role="progressbar"
                       aria-label={`${usedPercent}% used`}
                       aria-valuemin={0}
@@ -727,7 +729,7 @@ export function Dashboard({
                     <div
                       className="allocation-donut"
                       style={{
-                        background: `conic-gradient(var(--quota-used) 0 ${usedSlicePercent}%, var(--quota-funded) ${usedSlicePercent}% ${plannedSliceEnd}%, var(--ring-track) ${plannedSliceEnd}% 100%)`,
+                        background: `conic-gradient(${statusTone === "danger" ? "var(--danger)" : "var(--quota-used)"} 0 ${usedSlicePercent}%, ${protectionActive ? "var(--success)" : "var(--warning)"} ${usedSlicePercent}% ${plannedSliceEnd}%, var(--success) ${plannedSliceEnd}% 100%)`,
                       }}
                       role="img"
                       aria-label={`${formatAmount(
@@ -763,7 +765,11 @@ export function Dashboard({
                       </div>
                       <div>
                         <dt>
-                          <i className="funded" />
+                          <i
+                            className={`funded ${
+                              protectionActive ? "protected" : ""
+                            }`}
+                          />
                           {plannedLabel}
                         </dt>
                         <dd>
@@ -772,7 +778,7 @@ export function Dashboard({
                       </div>
                       <div>
                         <dt>
-                          <i />
+                          <i className="unassigned" />
                           Unassigned
                         </dt>
                         <dd>

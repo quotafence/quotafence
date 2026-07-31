@@ -1,5 +1,7 @@
 :root {
-  font-family: "Outfit Variable", "Outfit", sans-serif;
+  font-family:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+    sans-serif;
   color: var(--ink);
   background: var(--background);
   font-synthesis: none;
@@ -30,10 +32,10 @@
   --avatar-ink: #111;
   --progress-fill: #ededeb;
   --quota-used: #68686d;
-  --quota-funded: #ededeb;
+  --success: #62c98f;
   --focus-ring: #fff;
-  --danger: #ef777d;
-  --warning: #d7b477;
+  --danger: #f06f78;
+  --warning: #f06f78;
   --shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
 }
 
@@ -63,10 +65,10 @@
   --avatar-ink: #ffffff;
   --progress-fill: #20201e;
   --quota-used: #9b9b95;
-  --quota-funded: #20201e;
+  --success: #188754;
   --focus-ring: #171716;
-  --danger: #b83f48;
-  --warning: #94651f;
+  --danger: #c83f4b;
+  --warning: #c83f4b;
   --shadow: 0 24px 70px rgba(30, 30, 25, 0.16);
 }
 
@@ -118,7 +120,7 @@ h3,
 .brand strong,
 .quota-amount strong,
 .quota-facts dd {
-  font-family: "Outfit Variable", "Outfit", sans-serif;
+  font-family: inherit;
 }
 
 .button {
@@ -634,7 +636,7 @@ h3,
 }
 
 .detection-panel.unavailable {
-  border-color: rgba(215, 180, 119, 0.28);
+  border-color: rgba(240, 111, 120, 0.28);
 }
 
 .detection-mark {
@@ -948,7 +950,7 @@ h3,
 }
 
 .form-note.warm {
-  border-color: rgba(215, 180, 119, 0.24);
+  border-color: rgba(240, 111, 120, 0.24);
   color: var(--warning);
 }
 
@@ -1401,19 +1403,19 @@ h3,
 }
 
 .settings-status.configured {
-  border-color: rgba(215, 180, 119, 0.36);
+  border-color: rgba(240, 111, 120, 0.36);
   color: var(--warning);
-  background: rgba(215, 180, 119, 0.08);
+  background: rgba(240, 111, 120, 0.08);
 }
 
 .settings-status.active {
-  border-color: var(--line-strong);
-  color: var(--ink);
-  background: var(--control-hover);
+  border-color: var(--success);
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 8%, transparent);
 }
 
 .settings-status.misconfigured {
-  border-color: rgba(232, 175, 86, 0.3);
+  border-color: rgba(240, 111, 120, 0.3);
   color: var(--warning);
 }
 
@@ -1492,9 +1494,9 @@ h3,
 }
 
 .settings-callout.warning {
-  border-color: rgba(215, 180, 119, 0.36);
+  border-color: rgba(240, 111, 120, 0.36);
   color: var(--warning);
-  background: rgba(215, 180, 119, 0.08);
+  background: rgba(240, 111, 120, 0.08);
 }
 
 .settings-callout.warning > div > p:first-of-type {
@@ -1628,14 +1630,14 @@ h3,
   min-height: 66px;
   margin-bottom: 18px;
   padding: 14px 16px;
-  border: 1px solid rgba(215, 180, 119, 0.32);
+  border: 1px solid rgba(240, 111, 120, 0.32);
   border-radius: 12px;
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   color: var(--warning);
-  background: rgba(215, 180, 119, 0.07);
+  background: rgba(240, 111, 120, 0.07);
 }
 
 .dashboard-protection-notice.disabled,
@@ -1725,7 +1727,7 @@ h3,
 }
 
 .status-dot.active {
-  background: var(--accent);
+  background: var(--success);
 }
 
 .quota-amount {
@@ -2005,11 +2007,11 @@ h3,
 }
 
 .progress-fill.warn {
-  background: #cbb084;
+  background: var(--danger);
 }
 
 .progress-fill.require_confirmation {
-  background: #c78c70;
+  background: var(--danger);
 }
 
 .progress-fill.stop {
@@ -2710,12 +2712,12 @@ h3,
 .setup-chip {
   min-height: 40px;
   padding: 0 13px;
-  border: 1px solid rgba(215, 180, 119, 0.42);
+  border: 1px solid rgba(240, 111, 120, 0.42);
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
   color: var(--warning);
-  background: rgba(215, 180, 119, 0.08);
+  background: rgba(240, 111, 120, 0.08);
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
@@ -2836,6 +2838,14 @@ h3,
   border-radius: inherit;
   background: var(--progress-fill);
   transition: width 220ms ease;
+}
+
+.used-progress.warning > span {
+  background: var(--warning);
+}
+
+.used-progress.danger > span {
+  background: var(--danger);
 }
 
 .used-progress-meta {
@@ -3231,19 +3241,20 @@ h3,
 }
 
 .allocation-legend {
-  width: 100%;
+  width: min(100%, 190px);
   min-width: 0;
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
 }
 
 .allocation-legend > div {
-  display: flex;
-  flex-direction: column;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 3px;
+  gap: 12px;
 }
 
 .allocation-legend dt {
@@ -3252,6 +3263,7 @@ h3,
   gap: 7px;
   color: var(--muted);
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .allocation-legend dt i {
@@ -3266,13 +3278,22 @@ h3,
 }
 
 .allocation-legend dt i.funded {
-  background: var(--quota-funded);
+  background: var(--warning);
+}
+
+.allocation-legend dt i.funded.protected {
+  background: var(--success);
+}
+
+.allocation-legend dt i.unassigned {
+  background: var(--success);
 }
 
 .allocation-legend dd {
   margin: 0;
   font-size: 15px;
   font-weight: 570;
+  text-align: right;
 }
 
 .workspace-budget-section.dashboard-block {
@@ -3345,6 +3366,10 @@ h3,
   font-weight: 570;
 }
 
+.allocation-quota-meta strong.allocation-overage {
+  color: var(--danger);
+}
+
 .allocation-quota-track {
   width: 100%;
   height: 8px;
@@ -3363,8 +3388,12 @@ h3,
   background: var(--quiet);
 }
 
+.overview-allocation-row.over-allocation .allocation-used-segment {
+  background: var(--danger);
+}
+
 .allocation-protected-segment {
-  background: var(--progress-fill);
+  background: var(--success);
 }
 
 .allocation-planned-segment {
