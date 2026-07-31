@@ -35,7 +35,7 @@ function folderName(path: string): string {
 function statusLabel(protection: CodexProtectionStatus): string {
   switch (protection.state) {
     case "configured":
-      return "Hooks installed";
+      return "Verify in Codex";
     case "misconfigured":
       return "Needs attention";
     case "disabled":
@@ -83,7 +83,7 @@ export function SettingsPanel({
                 <strong>Workspace prompt gate</strong>
                 <p>
                   {protection.state === "configured"
-                    ? "AQM hook files point to this application. Codex trust and enablement are reviewed separately."
+                    ? "AQM hook files are installed, but Codex trust and enablement still require your review."
                     : protection.state === "misconfigured"
                       ? protection.issue
                       : "Passive usage tracking stays available, but prompts are not blocked."}
@@ -135,10 +135,14 @@ export function SettingsPanel({
             </div>
 
             {protection.installed && (
-              <div className="settings-callout">
+              <div className="settings-callout warning" role="alert">
                 <Icon name="activity" size={18} />
                 <div>
-                  <strong>Finish activation in Codex Desktop</strong>
+                  <strong>Protection is not active until you finish this</strong>
+                  <p>
+                    Codex can still run prompts without AQM protection until
+                    all three hooks are trusted and switched on.
+                  </p>
                   <ol>
                     <li>
                       Open <b>Settings → Hooks → User config</b>.
@@ -151,9 +155,8 @@ export function SettingsPanel({
                     <li>Restart Codex, then start a new task.</li>
                   </ol>
                   <p>
-                    “Hooks installed” only confirms the local configuration
-                    file. Codex remains the source of truth for trust and
-                    enablement.
+                    AQM cannot currently verify Codex's trust state, so this
+                    warning remains visible. Codex is the source of truth.
                   </p>
                 </div>
               </div>

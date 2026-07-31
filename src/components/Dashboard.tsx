@@ -513,6 +513,40 @@ export function Dashboard({
               </div>
             </header>
 
+            {codexProtection && (
+              <section
+                className={`dashboard-protection-notice ${codexProtection.state}`}
+                role={
+                  codexProtection.state === "configured" ? "status" : "alert"
+                }
+              >
+                <Icon name="shield" size={18} />
+                <div>
+                  <strong>
+                    {codexProtection.state === "configured"
+                      ? "Protection activation is unverified"
+                      : codexProtection.state === "misconfigured"
+                        ? "Protection needs attention"
+                        : "Codex Desktop protection is off"}
+                  </strong>
+                  <span>
+                    {codexProtection.state === "configured"
+                      ? "Confirm that all three AQM hooks are trusted and enabled in Codex."
+                      : codexProtection.state === "misconfigured"
+                        ? codexProtection.issue
+                        : "Codex prompts can run without AQM workspace limits."}
+                  </span>
+                </div>
+                <button
+                  className="button subtle small"
+                  type="button"
+                  onClick={() => onViewChange("settings")}
+                >
+                  Review settings
+                </button>
+              </section>
+            )}
+
             <section className="quota-summary">
               <div className="quota-summary-main">
                 <div className="status-line">

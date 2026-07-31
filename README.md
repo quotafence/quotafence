@@ -236,9 +236,12 @@ After installing from AQM, finish activation in Codex Desktop:
    `Stop`, and `SessionEnd`.
 3. Restart Codex, then start a new task.
 
-AQM's “Hooks installed” status confirms only that the local hook definitions
-point to the current application. Codex remains the source of truth for whether
-each definition is trusted and enabled.
+AQM's “Installed” control confirms only that the local hook definitions point
+to the current application. Codex remains the source of truth for whether each
+definition is trusted and enabled. Until all three hooks are trusted and
+switched on, Codex prompts can still run without AQM protection. Overview keeps
+an explicit protection warning visible when protection is off, misconfigured,
+or its Codex activation cannot be verified.
 
 These development commands use the same local database as the desktop.
 Admission refreshes the matching Codex checkpoint and evaluates both workspace

@@ -209,7 +209,8 @@ In Codex Desktop:
    configuration.
 
 In Codex CLI, run `/hooks` and review the same three entries before restarting
-the session.
+the session. Until all three hooks are trusted and switched on, Codex prompts
+can still run without AQM protection.
 
 The installed lifecycle is:
 
