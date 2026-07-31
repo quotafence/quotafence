@@ -277,11 +277,7 @@ function App() {
 
     let cancelled = false;
     const syncInBackground = async () => {
-      if (
-        cancelled ||
-        document.visibilityState !== "visible" ||
-        syncInFlight.current
-      ) {
+      if (cancelled || syncInFlight.current) {
         return;
       }
       syncInFlight.current = true;
