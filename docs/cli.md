@@ -226,10 +226,11 @@ npm run aqm -- hooks uninstall codex
 `status` verifies the AQM definitions in the JSON file; Codex remains the source
 of truth for whether their current hash has been trusted.
 
-The desktop exposes the same integration as an on/off control. Turning it off
-removes only handlers marked as AQM-owned. A partial configuration or one that
-points at an old application executable is shown as needing repair; turning
-protection on again replaces those entries with the current executable.
+The desktop exposes the same integration in Settings as an on/off control.
+Turning it off removes only handlers marked as AQM-owned. A partial
+configuration or one that points at an old application executable is shown as
+needing repair; turning protection on again replaces those entries with the
+current executable.
 
 Explicit allocation and policy decisions may return the official
 `{"decision":"block"}` response. Infrastructure failures remain fail-open so a

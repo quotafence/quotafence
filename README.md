@@ -214,7 +214,7 @@ workspace's current spendable capacity, refuses a stop boundary, forwards
 termination signals, preserves the Codex exit code, and releases its
 reservation on completion, failure, or interruption.
 
-Enable Codex Desktop workspace protection from the dashboard, or install it
+Enable Codex Desktop workspace protection from Settings, or install it
 with the development CLI:
 
 ```bash
@@ -223,7 +223,7 @@ npm run aqm -- hooks install codex
 
 Codex requires non-managed hooks to be reviewed and trusted. See the
 [CLI guide](docs/cli.md) for the trust step, current precision limits, status,
-and uninstall command. The dashboard can turn protection on or off without
+and uninstall command. Settings can turn protection on or off without
 changing unrelated Codex hooks, distinguishes a complete current configuration
 from a stale or partial one, and shows recent allow/block decisions. Once
 active, an unallocated folder receives a blocked prompt instead of consuming
