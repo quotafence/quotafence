@@ -3274,7 +3274,7 @@ h3,
 }
 
 .allocation-legend dt i.used {
-  background: var(--danger);
+  background: var(--quiet);
 }
 
 .allocation-legend dt i.funded {
