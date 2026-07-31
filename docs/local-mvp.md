@@ -53,7 +53,8 @@ For the selected quota window, the UI can:
 - install and report the configuration status of Codex Desktop workspace
   protection from Settings, turn it on or off without changing unrelated hooks,
   and show recent allow/block decisions;
-- switch between locally configured quota sources from the Overview header;
+- switch between locally configured quota sources from a fixed sidebar whose
+  source list scrolls independently;
 - surface incomplete Codex setup as a compact, actionable header check; and
 - follow the system appearance or persist an explicit light/dark theme.
 

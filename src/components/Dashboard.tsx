@@ -270,7 +270,6 @@ export function Dashboard({
   } | null>(null);
   const [draggedScopeId, setDraggedScopeId] = useState<string | null>(null);
   const [dragOverScopeId, setDragOverScopeId] = useState<string | null>(null);
-  const sourcePickerRef = useRef<HTMLDetailsElement>(null);
   const mainContentRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -385,84 +384,86 @@ export function Dashboard({
 
   return (
     <div className="app-layout overview-redesign">
-      <main ref={mainContentRef} className="main-content">
-        <header className="overview-toolbar">
-          <details ref={sourcePickerRef} className="source-picker">
-            <summary title={formatLastSync(source.lastSyncedAt)}>
-              <span>
-                <strong>{source.providerDisplayName}</strong>
-                <small>{source.poolDisplayName}</small>
-              </span>
-              <Icon name="chevron-down" size={17} />
-            </summary>
-            <div className="source-picker-menu">
-              {state.sources.map((item) => (
-                <button
-                  className={item.windowId === source.windowId ? "active" : ""}
-                  type="button"
-                  key={item.windowId}
-                  title="Right-click for source actions"
-                  onClick={() => {
-                    onViewChange("overview");
-                    onSelectSource(item.windowId);
-                    sourcePickerRef.current?.removeAttribute("open");
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    setSourceMenu({
-                      source: item,
-                      x: Math.min(event.clientX, window.innerWidth - 180),
-                      y: Math.min(event.clientY, window.innerHeight - 64),
-                    });
-                  }}
-                >
-                  <span>
-                    <strong>{item.providerDisplayName}</strong>
-                    <small>{item.poolDisplayName}</small>
-                  </span>
-                  {item.windowId === source.windowId && (
-                    <Icon name="check" size={15} />
-                  )}
-                </button>
-              ))}
-              <button
-                className="add-source-option"
-                type="button"
-                onClick={() => {
-                  sourcePickerRef.current?.removeAttribute("open");
-                  onAddSource();
-                }}
-              >
-                <Icon name="plus" size={16} />
-                Add source
-              </button>
-            </div>
-          </details>
+      <aside className="sidebar">
+        <div className="brand">
+          <span className="brand-mark">
+            <Icon name="gauge" size={22} />
+          </span>
+          <div>
+            <strong>Agent Quota</strong>
+            <span>Manager</span>
+          </div>
+        </div>
 
-          <div className="overview-toolbar-actions">
-            {view === "overview" && (
-              <SetupDisclosure
-                source={source}
-                protection={codexProtection}
-                onOpenSettings={() => onViewChange("settings")}
-              />
-            )}
+        <nav className="sidebar-navigation" aria-label="Application">
+          <button
+            className={view === "overview" ? "active" : ""}
+            type="button"
+            onClick={() => onViewChange("overview")}
+          >
+            <Icon name="gauge" size={18} />
+            <span>Overview</span>
+          </button>
+          <button
+            className={view === "settings" ? "active" : ""}
+            type="button"
+            onClick={() => onViewChange("settings")}
+          >
+            <Icon name="settings" size={18} />
+            <span>Settings</span>
+          </button>
+        </nav>
+
+        <section className="sidebar-section">
+          <div className="sidebar-label">
+            <span>Quota sources</span>
             <button
-              className={`icon-button bordered ${
-                view === "settings" ? "active" : ""
-              }`}
               type="button"
-              onClick={() =>
-                onViewChange(view === "settings" ? "overview" : "settings")
-              }
-              aria-label={view === "settings" ? "Back to overview" : "Settings"}
-              title={view === "settings" ? "Back to overview" : "Settings"}
+              onClick={onAddSource}
+              aria-label="Add quota source"
             >
-              <Icon name="settings" size={19} />
+              <Icon name="plus" size={16} />
             </button>
           </div>
-        </header>
+          <div className="source-list">
+            {state.sources.map((item) => (
+              <button
+                className={`source-item ${
+                  item.windowId === source.windowId ? "active" : ""
+                }`}
+                type="button"
+                key={item.windowId}
+                title={`${formatLastSync(
+                  item.lastSyncedAt,
+                )}. Right-click for source actions.`}
+                onClick={() => {
+                  onViewChange("overview");
+                  onSelectSource(item.windowId);
+                }}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setSourceMenu({
+                    source: item,
+                    x: Math.min(event.clientX, window.innerWidth - 180),
+                    y: Math.min(event.clientY, window.innerHeight - 64),
+                  });
+                }}
+              >
+                <span className="source-avatar">
+                  {item.providerDisplayName.slice(0, 2).toUpperCase()}
+                </span>
+                <span>
+                  <strong>{item.providerDisplayName}</strong>
+                  <small>{item.poolDisplayName}</small>
+                </span>
+                {item.isActive && <i />}
+              </button>
+            ))}
+          </div>
+        </section>
+      </aside>
 
+      <main ref={mainContentRef} className="main-content">
         {view === "settings" ? (
           <SettingsPanel
             protection={codexProtection}
@@ -473,38 +474,88 @@ export function Dashboard({
             onProtection={onProtection}
           />
         ) : (
-          <div className="overview-content">
-            <section className={`quota-story ${statusTone}`}>
-              <h1>
-                {formatAmount(
-                  quotaWindow.providerSpendable,
-                  quotaWindow.unit,
-                )}{" "}
-                left, {remainingDays} {remainingDays === 1 ? "day" : "days"} to
-                go.
-              </h1>
-              <p>{statusMessage}</p>
-            </section>
-
-            <section className="used-progress-section">
-              <div
-                className="used-progress"
-                role="progressbar"
-                aria-label={`${usedPercent}% used`}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={usedPercent}
-              >
-                <span style={{ width: `${usedPercent}%` }} />
+          <>
+            <header className="topbar block-dashboard-header">
+              <div>
+                <h1>{source.providerDisplayName}</h1>
+                <p className="topbar-subtitle">{source.poolDisplayName}</p>
               </div>
-              <div className="used-progress-meta">
-                <span>{formatDate(quotaWindow.startsAt)}</span>
-                <strong>{usedPercent}% used</strong>
-                <span>{formatDate(quotaWindow.endsAt)}</span>
-              </div>
-            </section>
+              <SetupDisclosure
+                source={source}
+                protection={codexProtection}
+                onOpenSettings={() => onViewChange("settings")}
+              />
+            </header>
 
-            <section className="workspace-budget-section">
+            <div className="overview-content block-dashboard-content">
+              <section className="overview-block-grid">
+                <article className="dashboard-block quota-dashboard-block">
+                  <div className="block-kicker">
+                    <span className={`status-dot ${source.isActive ? "active" : ""}`} />
+                    {source.isActive ? "Active window" : "Inactive window"}
+                    <small>{formatLastSync(source.lastSyncedAt)}</small>
+                  </div>
+                  <div className={`quota-story ${statusTone}`}>
+                    <h2>
+                      {formatAmount(
+                        quotaWindow.providerSpendable,
+                        quotaWindow.unit,
+                      )}{" "}
+                      left
+                    </h2>
+                    <p>{statusMessage}</p>
+                  </div>
+                  <div className="used-progress-section">
+                    <div
+                      className="used-progress"
+                      role="progressbar"
+                      aria-label={`${usedPercent}% used`}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={usedPercent}
+                    >
+                      <span style={{ width: `${usedPercent}%` }} />
+                    </div>
+                    <div className="used-progress-meta">
+                      <span>{formatDate(quotaWindow.startsAt)}</span>
+                      <strong>{usedPercent}% used</strong>
+                      <span>{formatDate(quotaWindow.endsAt)}</span>
+                    </div>
+                  </div>
+                </article>
+
+                <article className="dashboard-block window-facts-block">
+                  <div>
+                    <span>Resets</span>
+                    <strong>
+                      {remainingDays} {remainingDays === 1 ? "day" : "days"}
+                    </strong>
+                    <small>{formatDate(quotaWindow.endsAt)}</small>
+                  </div>
+                  <div>
+                    <span>Reserved</span>
+                    <strong>
+                      {formatAmount(
+                        quotaWindow.allocatedToRootScopes,
+                        quotaWindow.unit,
+                      )}
+                    </strong>
+                    <small>Across {scopes.length} workspaces</small>
+                  </div>
+                  <div>
+                    <span>Unassigned</span>
+                    <strong>
+                      {formatAmount(
+                        quotaWindow.unallocated,
+                        quotaWindow.unit,
+                      )}
+                    </strong>
+                    <small>Available for new workspace budgets</small>
+                  </div>
+                </article>
+              </section>
+
+              <section className="workspace-budget-section dashboard-block">
               <header>
                 <div>
                   <h2>Workspace budgets</h2>
@@ -564,7 +615,8 @@ export function Dashboard({
                 </div>
               </div>
             </section>
-          </div>
+            </div>
+          </>
         )}
       </main>
 
