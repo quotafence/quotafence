@@ -36,7 +36,13 @@ function folderName(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
-function statusLabel(protection: CodexProtectionStatus): string {
+function statusLabel(
+  protection: CodexProtectionStatus,
+  verifiedAt: number | null,
+): string {
+  if (verifiedAt !== null) {
+    return "Active";
+  }
   switch (protection.state) {
     case "configured":
       return "Verify in Codex";
@@ -55,6 +61,13 @@ export function SettingsPanel({
   onThemeChange,
   onProtection,
 }: SettingsPanelProps) {
+  const verifiedAt =
+    protection?.installed === true &&
+    protection.state === "configured" &&
+    events.length > 0
+      ? events[0]?.occurredAt ?? null
+      : null;
+
   return (
     <>
       <header className="topbar settings-topbar">
@@ -115,8 +128,12 @@ export function SettingsPanel({
             <p>Check every new Codex prompt against workspace capacity.</p>
           </div>
           {protection && (
-            <span className={`settings-status ${protection.state}`}>
-              {statusLabel(protection)}
+            <span
+              className={`settings-status ${
+                verifiedAt !== null ? "active" : protection.state
+              }`}
+            >
+              {statusLabel(protection, verifiedAt)}
             </span>
           )}
         </header>
@@ -128,7 +145,11 @@ export function SettingsPanel({
                 <strong>Workspace prompt gate</strong>
                 <p>
                   {protection.state === "configured"
-                    ? "AQM hook files are installed, but Codex trust and enablement still require your review."
+                    ? verifiedAt !== null
+                      ? `AQM observed a Codex prompt decision ${formatRelativeTime(
+                          verifiedAt,
+                        )}.`
+                      : "AQM hook files are installed, but Codex trust and enablement still require your review."
                     : protection.state === "misconfigured"
                       ? protection.issue
                       : "Passive usage tracking stays available, but prompts are not blocked."}
@@ -179,7 +200,7 @@ export function SettingsPanel({
               </div>
             </div>
 
-            {protection.installed && (
+            {protection.installed && verifiedAt === null && (
               <div className="settings-callout warning" role="alert">
                 <Icon name="activity" size={18} />
                 <div>
@@ -198,10 +219,28 @@ export function SettingsPanel({
                       <code>SessionEnd</code>.
                     </li>
                     <li>Restart Codex, then start a new task.</li>
+                    <li>
+                      Submit a test prompt in an allocated workspace. AQM marks
+                      protection active after it receives that hook decision.
+                    </li>
                   </ol>
                   <p>
-                    AQM cannot currently verify Codex's trust state, so this
-                    warning remains visible. Codex is the source of truth.
+                    Until AQM observes that decision, the dashboard treats
+                    allocations as a priority plan rather than guaranteed
+                    protection.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {verifiedAt !== null && (
+              <div className="settings-callout" role="status">
+                <Icon name="check" size={18} />
+                <div>
+                  <strong>Protection observed in Codex Desktop</strong>
+                  <p>
+                    The prompt gate last returned a decision{" "}
+                    {formatRelativeTime(verifiedAt)}.
                   </p>
                 </div>
               </div>

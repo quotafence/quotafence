@@ -1703,6 +1703,88 @@ mod tests {
         );
     }
 
+    #[test]
+    fn unassigned_capacity_is_spent_before_low_priority_workspace_funding() {
+        let mut service = QuotaService::new(Database::open_in_memory().unwrap());
+        service
+            .create_quota_source(CreateQuotaSource {
+                provider_id: "codex".to_owned(),
+                provider_display_name: "Codex".to_owned(),
+                account_id: "subscription".to_owned(),
+                account_display_name: "Subscription".to_owned(),
+                pool_id: "codex-weekly".to_owned(),
+                pool_display_name: "Weekly".to_owned(),
+                window_id: "week-1".to_owned(),
+                starts_at: 1_000,
+                ends_at: 10_000,
+                capacity: 100,
+                unit: "percent".to_owned(),
+                provider_snapshot: Some(ProviderQuotaSnapshotInput {
+                    adapter: "codex_app_server".to_owned(),
+                    remote_limit_id: "codex".to_owned(),
+                    remote_window_kind: "secondary".to_owned(),
+                    used: 50,
+                    observed_at: 2_000,
+                    resets_at: 10_000,
+                }),
+            })
+            .unwrap();
+        for (id, path) in [("workspace-a", "/code/a"), ("workspace-b", "/code/b")] {
+            service
+                .create_allocated_workspace(CreateAllocatedWorkspace {
+                    id: id.to_owned(),
+                    display_name: id.to_owned(),
+                    canonical_path: path.to_owned(),
+                    window_id: "week-1".to_owned(),
+                    amount: 20,
+                    unit: "percent".to_owned(),
+                    bound_at: 2_000,
+                })
+                .unwrap();
+        }
+        service
+            .set_allocation_priority_order(SetAllocationPriorityOrder {
+                window_id: "week-1".to_owned(),
+                ordered_scope_ids: vec!["workspace-a".to_owned(), "workspace-b".to_owned()],
+            })
+            .unwrap();
+
+        let before_buffer_is_spent = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 2_500,
+            })
+            .unwrap();
+        assert_eq!(before_buffer_is_spent.window.unallocated, 60);
+        assert_eq!(before_buffer_is_spent.allocations[0].protected_now, 20);
+        assert_eq!(before_buffer_is_spent.allocations[1].protected_now, 20);
+
+        service
+            .sync_provider_quota(SyncProviderQuota {
+                current_window_id: "week-1".to_owned(),
+                adapter: "codex_app_server".to_owned(),
+                remote_limit_id: "codex".to_owned(),
+                remote_window_kind: "secondary".to_owned(),
+                starts_at: 1_000,
+                ends_at: 10_000,
+                capacity: 100,
+                used: 65,
+                unit: "percent".to_owned(),
+                observed_at: 3_000,
+                desktop_observations: None,
+            })
+            .unwrap();
+
+        let after_buffer_is_spent = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 3_500,
+            })
+            .unwrap();
+        assert_eq!(after_buffer_is_spent.allocations[0].protected_now, 20);
+        assert_eq!(after_buffer_is_spent.allocations[1].protected_now, 15);
+    }
+
     fn detected_codex_source(suffix: &str) -> CreateQuotaSource {
         CreateQuotaSource {
             provider_id: format!("codex-{suffix}"),

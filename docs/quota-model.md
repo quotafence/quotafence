@@ -86,9 +86,16 @@ protected_now[workspace] =
 ```
 
 For example, with 12% provider quota left, a priority-one workspace targeting
-20% receives 12% protected now; lower-priority workspaces receive 0%. Reordering
+20% is funded for 12% now; lower-priority workspaces receive 0%. Reordering
 does not rewrite target allocations or historical usage. This allocation
 funding priority is narrower than future workload priority/deadline routing.
+
+The same calculation also defines a capacity waterfall for usage that is not
+attributed to an allocation. Current unassigned capacity is consumed first.
+Once that buffer reaches zero, the lowest-priority funded workspace loses
+capacity first, followed by progressively higher priorities. This calculation
+is a plan until an enforcement adapter is observed working; it must not be
+presented as a hard guarantee while Codex Desktop protection is unverified.
 
 The persisted scope codec still reads legacy project/task rows so an older
 local database can be opened without deleting history. Those legacy kinds are

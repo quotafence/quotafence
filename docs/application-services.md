@@ -141,6 +141,10 @@ rejects non-interactive confirmation or stop before the prompt starts. Usage
 outside a trusted AQM gate can still reduce real provider capacity and therefore
 current protection; AQM cannot recreate capacity already consumed. A dry run
 has no audit side effect, and an already-running Codex turn is not terminated.
+The dashboard may still compute the same priority-funded amounts while the
+Desktop hook is unverified, but the UI labels them as planned capacity. Provider
+usage consumes the remaining unassigned buffer before reducing funded
+allocations from lowest to highest priority.
 
 ## Tauri boundary
 

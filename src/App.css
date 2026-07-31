@@ -1402,6 +1402,12 @@ h3,
   background: rgba(215, 180, 119, 0.08);
 }
 
+.settings-status.active {
+  border-color: var(--line-strong);
+  color: var(--ink);
+  background: var(--control-hover);
+}
+
 .settings-status.misconfigured {
   border-color: rgba(232, 175, 86, 0.3);
   color: var(--warning);
@@ -1654,6 +1660,19 @@ h3,
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.dashboard-protection-notice.unverified {
+  min-height: 76px;
+  margin-bottom: 0;
+}
+
+.dashboard-protection-notice.unverified span {
+  overflow: visible;
+  font-size: 13px;
+  line-height: 1.45;
+  text-overflow: initial;
+  white-space: normal;
 }
 
 .quota-summary {
@@ -3338,6 +3357,10 @@ h3,
 
 .allocation-protected-segment {
   background: var(--progress-fill);
+}
+
+.allocation-planned-segment {
+  background: var(--warning);
 }
 
 .allocation-limit {

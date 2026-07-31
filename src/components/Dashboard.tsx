@@ -79,6 +79,20 @@ function formatLastSync(timestamp: number | null): string {
   return `Synced ${Math.floor(hours / 24)}d ago`;
 }
 
+function verifiedProtectionAt(
+  protection: CodexProtectionStatus | null,
+  events: CodexProtectionEvent[],
+): number | null {
+  if (
+    protection?.installed !== true ||
+    protection.state !== "configured" ||
+    events.length === 0
+  ) {
+    return null;
+  }
+  return events[0]?.occurredAt ?? null;
+}
+
 function orderedScopes(
   scopes: ScopeSummary[],
   allocations: AllocationSnapshot[],
@@ -104,10 +118,12 @@ function orderedScopes(
 function SetupDisclosure({
   source,
   protection,
+  verifiedAt,
   onOpenSettings,
 }: {
   source: QuotaSourceSummary;
   protection: CodexProtectionStatus | null;
+  verifiedAt: number | null;
   onOpenSettings: () => void;
 }) {
   if (source.providerDisplayName.toLowerCase() !== "codex") {
@@ -116,7 +132,7 @@ function SetupDisclosure({
 
   const sourceReady = source.lastSyncedAt !== null;
   const hooksReady = protection?.installed === true;
-  const trustReady = hooksReady && protection?.requiresReview === false;
+  const trustReady = hooksReady && verifiedAt !== null;
   const completed = [sourceReady, hooksReady, trustReady].filter(Boolean).length;
 
   if (completed === 3) {
@@ -158,8 +174,8 @@ function SetupDisclosure({
               <strong>Hooks trusted and enabled in Codex</strong>
               <span>
                 {trustReady
-                  ? "Verified"
-                  : "Codex does not expose this state to AQM yet"}
+                  ? `Observed ${formatLastSync(verifiedAt)}`
+                  : "Enable them, restart Codex, then submit a test prompt"}
               </span>
             </div>
           </li>
@@ -181,6 +197,7 @@ function AllocationRow({
   scope,
   allocation,
   unit,
+  protectionActive,
   priorityBusy,
   dragging,
   dragOver,
@@ -193,6 +210,7 @@ function AllocationRow({
   scope: ScopeSummary;
   allocation: AllocationSnapshot;
   unit: string;
+  protectionActive: boolean;
   priorityBusy: boolean;
   dragging: boolean;
   dragOver: boolean;
@@ -212,6 +230,7 @@ function AllocationRow({
         Math.round((allocation.protectedNow / allocation.limit) * 100),
       )
     : 0;
+  const fundedLabel = protectionActive ? "protected now" : "planned now";
 
   return (
     <article
@@ -243,7 +262,7 @@ function AllocationRow({
         <div className="allocation-quota-meta">
           <span>
             <strong>{formatAmount(allocation.protectedNow, unit)}</strong>{" "}
-            protected now
+            {fundedLabel}
           </span>
           <span>
             {formatAmount(allocation.attributedUsage, unit)} used ·{" "}
@@ -259,7 +278,7 @@ function AllocationRow({
           )} used and ${formatAmount(
             allocation.protectedNow,
             unit,
-          )} protected now from a ${formatAmount(
+          )} ${fundedLabel} from a ${formatAmount(
             allocation.limit,
             unit,
           )} allocation`}
@@ -272,7 +291,11 @@ function AllocationRow({
             style={{ width: `${usedWidth}%` }}
           />
           <span
-            className="allocation-protected-segment"
+            className={
+              protectionActive
+                ? "allocation-protected-segment"
+                : "allocation-planned-segment"
+            }
             style={{ width: `${protectedPercent}%` }}
           />
         </div>
@@ -395,6 +418,34 @@ export function Dashboard({
     dashboard.allocations.map((allocation) => [allocation.scopeId, allocation]),
   );
   const scopes = orderedScopes(state.scopes, dashboard.allocations);
+  const codexSource =
+    source.providerDisplayName.toLowerCase() === "codex";
+  const protectionVerifiedAt = codexSource
+    ? verifiedProtectionAt(codexProtection, codexProtectionEvents)
+    : null;
+  const protectionActive = codexSource && protectionVerifiedAt !== null;
+  const plannedCapacityNow = scopes.reduce(
+    (total, scope) =>
+      total + (allocationByScope.get(scope.id)?.protectedNow ?? 0),
+    0,
+  );
+  const unassignedBufferNow = Math.max(
+    0,
+    quotaWindow.providerSpendable - plannedCapacityNow,
+  );
+  const nextAllocationAtRisk = [...scopes]
+    .reverse()
+    .find(
+      (scope) => (allocationByScope.get(scope.id)?.protectedNow ?? 0) > 0,
+    );
+  const nextAtRiskPriority = nextAllocationAtRisk
+    ? (allocationByScope.get(nextAllocationAtRisk.id)?.priority ?? 0)
+    : null;
+  const capacityErosionOrder = nextAllocationAtRisk
+    ? nextAtRiskPriority !== null && nextAtRiskPriority > 0
+      ? `Funding then erodes from ${nextAllocationAtRisk.displayName} toward higher priorities.`
+      : `Further usage then reduces ${nextAllocationAtRisk.displayName}'s planned capacity.`
+    : "No allocation has funded capacity left.";
   const forecast = dashboard.forecast;
   const showForecast =
     forecast.sampleCount >= 5 &&
@@ -546,11 +597,48 @@ export function Dashboard({
               <SetupDisclosure
                 source={source}
                 protection={codexProtection}
+                verifiedAt={protectionVerifiedAt}
                 onOpenSettings={() => onViewChange("settings")}
               />
             </header>
 
             <div className="overview-content block-dashboard-content">
+              {codexSource && scopes.length > 0 && !protectionActive && (
+                <section
+                  className="dashboard-protection-notice unverified"
+                  role="alert"
+                >
+                  <Icon name="shield" size={20} />
+                  <div>
+                    <strong>
+                      Allocations are a priority plan—not enforced yet
+                    </strong>
+                    <span>
+                      {unassignedBufferNow > 0
+                        ? `Unmanaged Codex usage consumes the ${formatAmount(
+                            unassignedBufferNow,
+                            quotaWindow.unit,
+                          )} unassigned capacity still available now. ${capacityErosionOrder}`
+                        : nextAllocationAtRisk
+                          ? `No unassigned capacity remains. The next unmanaged Codex usage reduces ${nextAllocationAtRisk.displayName} first${
+                              nextAtRiskPriority !== null &&
+                              nextAtRiskPriority > 0
+                                ? ", then moves toward higher priorities."
+                                : "."
+                            }`
+                          : "No allocation has funded capacity left. Codex usage can continue until protection is activated."}
+                    </span>
+                  </div>
+                  <button
+                    className="button primary small"
+                    type="button"
+                    onClick={() => onViewChange("settings")}
+                  >
+                    Finish protection
+                  </button>
+                </section>
+              )}
+
               <section className="overview-block-grid">
                 <article className="dashboard-block quota-dashboard-block">
                   <div className="block-kicker">
@@ -644,8 +732,9 @@ export function Dashboard({
                   <div>
                     <h2>Workspace allocations</h2>
                     <p>
-                      Drag to set priority. Higher allocations are protected
-                      first.
+                      {protectionActive
+                        ? "Drag to set priority. Higher allocations are protected first."
+                        : "Drag to set the funding plan. Lowest priorities lose capacity first."}
                     </p>
                   </div>
                   <button
@@ -670,6 +759,7 @@ export function Dashboard({
                         scope={scope}
                         allocation={allocation}
                         unit={quotaWindow.unit}
+                        protectionActive={protectionActive}
                         priorityBusy={priorityBusy}
                         dragging={draggedScopeId === scope.id}
                         dragOver={

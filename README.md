@@ -61,9 +61,11 @@ Sparse or mostly unattributed history stays explicitly “insufficient” instea
 of producing a precise-looking ETA.
 
 Allocation targets remain stable even when created mid-window. For example, a
-20% target created with only 12% provider quota left shows 12% protected now
-and becomes fully funded after reset. Reordering folders changes which target
-is funded first without rewriting usage or allocation amounts.
+20% target created with only 12% provider quota left can fund 12% now and
+becomes fully funded after reset. Reordering folders changes which target is
+funded first without rewriting usage or allocation amounts. The UI calls that
+funding **planned** until it observes the Codex prompt gate working; only then
+does it describe the capacity as protected.
 
 The desktop UI remains useful for setup and policy visibility, but dashboard
 analytics alone are not the product. Longer term, the same control layer may
@@ -240,8 +242,12 @@ AQM's “Installed” control confirms only that the local hook definitions poin
 to the current application. Codex remains the source of truth for whether each
 definition is trusted and enabled. Until all three hooks are trusted and
 switched on, Codex prompts can still run without AQM protection. Overview keeps
-an actionable setup check in its header while activation is incomplete; the
-detailed status, on/off control, and trust instructions live in Settings.
+an actionable warning visible and treats allocation funding as a priority plan.
+Unmanaged usage consumes currently unassigned capacity first, then erodes
+funding from the lowest-priority workspace upward. After setup, submit one test
+prompt in an allocated workspace so AQM can observe a hook decision and mark
+protection active. The detailed status, on/off control, and instructions live
+in Settings.
 
 These development commands use the same local database as the desktop.
 Admission refreshes the matching Codex checkpoint and evaluates both workspace
