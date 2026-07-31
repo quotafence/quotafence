@@ -23,6 +23,8 @@ The `src-tauri/src/storage` module provides:
 - passive Codex Desktop thread cursors and pending activity metadata;
 - persisted managed-session process state linked to its workspace reservation;
 - persisted workspace policy overrides and managed confirmation audit records;
+- the 100 most recent Codex Desktop prompt admission decisions for protection
+  visibility;
 - reconciled managed-session history queries for depletion forecasting;
 - atomic usage recording and reservation consumption; and
 - append-only usage events.
@@ -64,6 +66,7 @@ workspace_bindings ── workspace scopes
 allocation_priorities ── quota pools, workspace scopes
 workspace_policies ── workspace scopes
 managed_session_policy_overrides ── managed_sessions, workspace scopes
+codex_protection_events ── workspace scopes (optional)
 ```
 
 Amounts are stored as non-negative SQLite integers. Their unit is defined by the

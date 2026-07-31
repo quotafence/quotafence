@@ -72,8 +72,20 @@ export type CodexSyncResult = {
 
 export type CodexProtectionStatus = {
   installed: boolean;
+  hasAqmHooks: boolean;
   requiresReview: boolean;
   configPath: string;
+  state: "disabled" | "configured" | "misconfigured";
+  issue: string | null;
+};
+
+export type CodexProtectionEvent = {
+  canonicalPath: string;
+  scopeId: string | null;
+  workspaceName: string | null;
+  outcome: "allowed" | "blocked";
+  reason: string;
+  occurredAt: number;
 };
 
 export type QuotaSourceSummary = {

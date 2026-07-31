@@ -8,6 +8,7 @@ mod ledger;
 mod managed_sessions;
 mod migrations;
 mod policies;
+mod protection_events;
 mod provider_snapshots;
 mod turn_observations;
 mod workspace_bindings;
@@ -28,6 +29,10 @@ pub use managed_sessions::{
     ManagedSessionRepository, ManagedSessionStatus, NewManagedSession, ReconciliationStatus,
 };
 pub use policies::{PolicyOverrideAudit, WorkspacePolicy, WorkspacePolicyRepository};
+pub use protection_events::{
+    CodexProtectionEvent, CodexProtectionEventOutcome, CodexProtectionEventRepository,
+    NewCodexProtectionEvent,
+};
 pub use provider_snapshots::ProviderQuotaSnapshot;
 pub use turn_observations::{
     BeginObservationResult, BeginObservationStatus, ProviderTurnObservation,

@@ -223,8 +223,11 @@ npm run aqm -- hooks install codex
 
 Codex requires non-managed hooks to be reviewed and trusted. See the
 [CLI guide](docs/cli.md) for the trust step, current precision limits, status,
-and uninstall command. Once active, an unallocated folder receives a blocked
-prompt instead of consuming quota reserved for allocated workspaces.
+and uninstall command. The dashboard can turn protection on or off without
+changing unrelated Codex hooks, distinguishes a complete current configuration
+from a stale or partial one, and shows recent allow/block decisions. Once
+active, an unallocated folder receives a blocked prompt instead of consuming
+quota reserved for allocated workspaces.
 
 These development commands use the same local database as the desktop.
 Admission refreshes the matching Codex checkpoint and evaluates both workspace

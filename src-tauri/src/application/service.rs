@@ -11,9 +11,10 @@ use crate::{
         WindowId,
     },
     storage::{
-        BeginObservationStatus, Database, DesktopReconciliationStatus, DesktopThreadObservation,
-        ManagedSessionReconciliationOutcome, ManagedSessionReconciliationResult,
-        ManagedSessionStatus, NewManagedSession, ProviderQuotaSnapshot, ProviderTurnObservation,
+        BeginObservationStatus, CodexProtectionEventOutcome, Database, DesktopReconciliationStatus,
+        DesktopThreadObservation, ManagedSessionReconciliationOutcome,
+        ManagedSessionReconciliationResult, ManagedSessionStatus, NewCodexProtectionEvent,
+        NewManagedSession, ProviderQuotaSnapshot, ProviderTurnObservation,
         ReconcileObservationResult, StorageError, WorkspaceBinding, WorkspacePolicy,
     },
     workspace::{contains_path, path_depth},
@@ -24,14 +25,15 @@ use super::{
     error::to_view_integer, AbandonProviderSessionObservations, AbandonProviderTurnObservation,
     ActiveManagedSession, AdmissionAssessment, AllocationSnapshot, ApplicationError,
     ApplicationResult, ArchiveQuotaSource, BeginProviderTurnObservation, BindWorkspace,
-    CreateAccount, CreateAllocatedScope, CreateAllocatedWorkspace, CreateProvider, CreateQuotaPool,
-    CreateQuotaSource, CreateQuotaWindow, CreateScope, DesktopUsageReconciliation,
-    DesktopUsageReconciliationStatus, EvaluateWorkspaceAdmission, FinishManagedSession,
-    GetLocalState, GetProviderTurnObservation, GetQuotaDashboard, GetWorkspaceContext,
-    GetWorkspacePolicy, LocalState, ManagedSessionLaunch, ManagedSessionOutcome,
-    ManagedSessionReconciliation, ManagedSessionReconciliationStatus, MarkManagedSessionRunning,
-    PolicySummary, PrepareManagedSession, ProviderTurnObservationSummary, QuotaDashboard,
-    QuotaSourceSummary, ReconcileProviderTurnObservation, RecordUsage, ReleaseReservation,
+    CodexProtectionEventSummary, CreateAccount, CreateAllocatedScope, CreateAllocatedWorkspace,
+    CreateProvider, CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow, CreateScope,
+    DesktopUsageReconciliation, DesktopUsageReconciliationStatus, EvaluateWorkspaceAdmission,
+    FinishManagedSession, GetCodexProtectionEvents, GetLocalState, GetProviderTurnObservation,
+    GetQuotaDashboard, GetWorkspaceContext, GetWorkspacePolicy, LocalState, ManagedSessionLaunch,
+    ManagedSessionOutcome, ManagedSessionReconciliation, ManagedSessionReconciliationStatus,
+    MarkManagedSessionRunning, PolicySummary, PrepareManagedSession,
+    ProviderTurnObservationSummary, QuotaDashboard, QuotaSourceSummary,
+    ReconcileProviderTurnObservation, RecordCodexProtectionEvent, RecordUsage, ReleaseReservation,
     ReserveQuota, ResetWorkspacePolicy, ScopeSummary, SetAllocation, SetAllocationPriorityOrder,
     SetWorkspacePolicy, SyncProviderQuota, SyncProviderQuotaResult, TurnObservationStartResult,
     TurnObservationStartStatus, TurnReconciliationResult, TurnReconciliationStatus, WindowSummary,
@@ -422,6 +424,56 @@ impl QuotaService {
             .database
             .turn_observations()
             .abandon_session(&session_id)?)
+    }
+
+    pub fn record_codex_protection_event(
+        &mut self,
+        command: RecordCodexProtectionEvent,
+    ) -> ApplicationResult<()> {
+        let event = NewCodexProtectionEvent {
+            session_id: required_request_text(command.session_id, "session ID")?,
+            turn_id: required_request_text(command.turn_id, "turn ID")?,
+            canonical_path: required_request_text(command.canonical_path, "workspace path")?,
+            scope_id: command
+                .scope_id
+                .map(ScopeId::new)
+                .transpose()?
+                .map(|scope_id| scope_id.to_string()),
+            outcome: if command.blocked {
+                CodexProtectionEventOutcome::Blocked
+            } else {
+                CodexProtectionEventOutcome::Allowed
+            },
+            reason: required_request_text(command.reason, "protection reason")?,
+            occurred_at: command.occurred_at,
+        };
+        self.database.codex_protection_events().record(&event)?;
+        Ok(())
+    }
+
+    pub fn codex_protection_events(
+        &self,
+        command: GetCodexProtectionEvents,
+    ) -> ApplicationResult<Vec<CodexProtectionEventSummary>> {
+        let limit = command.limit.clamp(1, 20);
+        Ok(self
+            .database
+            .codex_protection_events()
+            .list_recent(limit)?
+            .into_iter()
+            .map(|event| CodexProtectionEventSummary {
+                canonical_path: event.canonical_path,
+                scope_id: event.scope_id,
+                workspace_name: event.workspace_name,
+                outcome: match event.outcome {
+                    CodexProtectionEventOutcome::Allowed => "allowed",
+                    CodexProtectionEventOutcome::Blocked => "blocked",
+                }
+                .to_owned(),
+                reason: event.reason,
+                occurred_at: event.occurred_at,
+            })
+            .collect())
     }
 
     pub fn create_scope(&mut self, command: CreateScope) -> ApplicationResult<()> {
