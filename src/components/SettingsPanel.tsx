@@ -35,7 +35,7 @@ function folderName(path: string): string {
 function statusLabel(protection: CodexProtectionStatus): string {
   switch (protection.state) {
     case "configured":
-      return "Configured";
+      return "Hooks installed";
     case "misconfigured":
       return "Needs attention";
     case "disabled":
@@ -83,7 +83,7 @@ export function SettingsPanel({
                 <strong>Workspace prompt gate</strong>
                 <p>
                   {protection.state === "configured"
-                    ? "AQM hook entries point to this application. Codex trust still needs to be reviewed separately."
+                    ? "AQM hook files point to this application. Codex trust and enablement are reviewed separately."
                     : protection.state === "misconfigured"
                       ? protection.issue
                       : "Passive usage tracking stays available, but prompts are not blocked."}
@@ -126,7 +126,7 @@ export function SettingsPanel({
                   {busy
                     ? "Updating…"
                     : protection.installed
-                      ? "On"
+                      ? "Installed"
                       : protection.hasAqmHooks
                         ? "Turn off"
                         : "Off"}
@@ -138,10 +138,22 @@ export function SettingsPanel({
               <div className="settings-callout">
                 <Icon name="activity" size={18} />
                 <div>
-                  <strong>Finish activation in Codex</strong>
+                  <strong>Finish activation in Codex Desktop</strong>
+                  <ol>
+                    <li>
+                      Open <b>Settings → Hooks → User config</b>.
+                    </li>
+                    <li>
+                      Review, trust, and switch on the AQM entries under{" "}
+                      <code>UserPromptSubmit</code>, <code>Stop</code>, and{" "}
+                      <code>SessionEnd</code>.
+                    </li>
+                    <li>Restart Codex, then start a new task.</li>
+                  </ol>
                   <p>
-                    Run <code>/hooks</code>, review and trust the three AQM
-                    hooks, restart Codex, then start a new task.
+                    “Hooks installed” only confirms the local configuration
+                    file. Codex remains the source of truth for trust and
+                    enablement.
                   </p>
                 </div>
               </div>

@@ -13,6 +13,7 @@
   --panel-soft: #1d1d1f;
   --ink: #f4f4f3;
   --muted: #96969b;
+  --muted-strong: #b8b8bc;
   --quiet: #67676c;
   --line: #29292c;
   --line-strong: #3a3a3e;
@@ -1214,7 +1215,7 @@ h3,
 }
 
 .protection-toggle {
-  min-width: 76px;
+  min-width: 104px;
   height: 36px;
   padding: 0 12px 0 7px;
   border: 1px solid var(--line-strong);
@@ -1246,8 +1247,9 @@ h3,
 }
 
 .protection-toggle.enabled {
-  color: var(--background);
-  background: var(--text);
+  border-color: var(--accent);
+  color: #101011;
+  background: var(--accent);
 }
 
 .protection-toggle.enabled i {
@@ -1356,6 +1358,18 @@ h3,
 
 .settings-callout p {
   margin-top: 2px;
+}
+
+.settings-callout ol {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.settings-callout li + li {
+  margin-top: 3px;
 }
 
 .settings-callout code,

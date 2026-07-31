@@ -229,6 +229,17 @@ from a stale or partial one, and shows recent allow/block decisions. Once
 active, an unallocated folder receives a blocked prompt instead of consuming
 quota reserved for allocated workspaces.
 
+After installing from AQM, finish activation in Codex Desktop:
+
+1. Open **Settings → Hooks → User config**.
+2. Review, trust, and switch on the AQM entries under `UserPromptSubmit`,
+   `Stop`, and `SessionEnd`.
+3. Restart Codex, then start a new task.
+
+AQM's “Hooks installed” status confirms only that the local hook definitions
+point to the current application. Codex remains the source of truth for whether
+each definition is trusted and enabled.
+
 These development commands use the same local database as the desktop.
 Admission refreshes the matching Codex checkpoint and evaluates both workspace
 allocation and provider capacity. See the [CLI guide](docs/cli.md) for its exit

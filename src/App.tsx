@@ -359,7 +359,7 @@ function App() {
       setCodexProtection(status);
       setNotice(
         enabled
-          ? "Protection is configured. In Codex, run /hooks, review and trust the AQM hooks, then restart Codex."
+          ? "AQM hooks were installed. In Codex Settings → Hooks → User config, trust and enable all three AQM hooks, then restart Codex."
           : "Codex Desktop protection is off. Other Codex hooks were left unchanged.",
       );
     } catch (reason) {
