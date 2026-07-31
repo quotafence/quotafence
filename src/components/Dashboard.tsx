@@ -9,9 +9,14 @@ import type {
   ScopeSummary,
 } from "../types";
 import { Icon } from "./Icon";
+import { SettingsPanel } from "./SettingsPanel";
+
+export type DashboardView = "overview" | "settings";
 
 type DashboardProps = {
   state: LocalState;
+  view: DashboardView;
+  onViewChange: (view: DashboardView) => void;
   refreshing: boolean;
   onSelectSource: (windowId: string) => void;
   onAddSource: () => void;
@@ -76,27 +81,6 @@ function formatLastSync(timestamp: number | null): string {
     return `Synced ${minutes}m ago`;
   }
   return `Synced ${Math.floor(minutes / 60)}h ago`;
-}
-
-function formatRelativeTime(timestamp: number): string {
-  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1_000));
-  if (seconds < 60) {
-    return "just now";
-  }
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) {
-    return `${minutes}m ago`;
-  }
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours}h ago`;
-  }
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
-function folderName(path: string): string {
-  const parts = path.split(/[\\/]/).filter(Boolean);
-  return parts[parts.length - 1] ?? path;
 }
 
 function formatObservationDuration(forecast: DepletionForecast): string {
@@ -317,6 +301,8 @@ function AllocationRow({
 
 export function Dashboard({
   state,
+  view,
+  onViewChange,
   refreshing,
   onSelectSource,
   onAddSource,
@@ -422,6 +408,25 @@ export function Dashboard({
           </div>
         </div>
 
+        <nav className="sidebar-navigation" aria-label="Application">
+          <button
+            className={view === "overview" ? "active" : ""}
+            type="button"
+            onClick={() => onViewChange("overview")}
+          >
+            <Icon name="gauge" size={18} />
+            <span>Overview</span>
+          </button>
+          <button
+            className={view === "settings" ? "active" : ""}
+            type="button"
+            onClick={() => onViewChange("settings")}
+          >
+            <Icon name="settings" size={18} />
+            <span>Settings</span>
+          </button>
+        </nav>
+
         <div className="sidebar-section">
           <div className="sidebar-label">
             <span>Quota sources</span>
@@ -433,11 +438,16 @@ export function Dashboard({
             {state.sources.map((item) => (
               <button
                 className={`source-item ${
-                  item.windowId === source.windowId ? "active" : ""
+                  view === "overview" && item.windowId === source.windowId
+                    ? "active"
+                    : ""
                 }`}
                 type="button"
                 key={item.windowId}
-                onClick={() => onSelectSource(item.windowId)}
+                onClick={() => {
+                  onViewChange("overview");
+                  onSelectSource(item.windowId);
+                }}
                 onContextMenu={(event) => {
                   event.preventDefault();
                   setSourceMenu({
@@ -471,253 +481,215 @@ export function Dashboard({
       </aside>
 
       <main className="main-content">
-        <header className="topbar">
-          <div>
-            <h1>{source.providerDisplayName}</h1>
-            <p className="topbar-subtitle">{source.poolDisplayName}</p>
-          </div>
-          <div className="topbar-actions">
-            <button
-              className="icon-button bordered"
-              type="button"
-              onClick={onRefresh}
-              disabled={refreshing}
-              aria-label="Sync latest quota"
-              title="Sync latest quota from provider"
-            >
-              <Icon name="refresh" size={18} className={refreshing ? "spin" : ""} />
-            </button>
-          </div>
-        </header>
-
-        {codexProtection && (
-          <section
-            className={`protection-banner ${codexProtection.state}`}
-          >
-            <span>
-              <Icon name="shield" size={19} />
-            </span>
-            <div className="protection-copy">
-              <strong>
-                {codexProtection.state === "configured"
-                  ? "Codex Desktop protection is on"
-                  : codexProtection.state === "misconfigured"
-                    ? "Protection needs attention"
-                    : "Codex Desktop protection is off"}
-              </strong>
-              <small>
-                {codexProtection.state === "configured"
-                  ? "AQM hooks are configured. Review /hooks in Codex, trust them, then restart Codex."
-                  : codexProtection.state === "misconfigured"
-                    ? codexProtection.issue
-                    : "Tracking remains available, but new Codex prompts will not be blocked."}
-              </small>
-            </div>
-            <div className="protection-actions">
-              {codexProtection.state === "misconfigured" &&
-                codexProtection.hasAqmHooks && (
-                  <button
-                    className="button subtle small"
-                    type="button"
-                    disabled={protectionBusy}
-                    onClick={() => onProtection(true)}
-                  >
-                    Repair
-                  </button>
-                )}
-              <button
-                className={`protection-toggle ${
-                  codexProtection.installed ? "enabled" : ""
-                }`}
-                type="button"
-                disabled={protectionBusy}
-                onClick={() =>
-                  onProtection(
-                    codexProtection.state === "misconfigured"
-                      ? !codexProtection.hasAqmHooks
-                      : !codexProtection.installed,
-                  )
-                }
-                role="switch"
-                aria-checked={codexProtection.installed}
-                aria-label={
-                  codexProtection.installed || codexProtection.hasAqmHooks
-                    ? "Turn off Codex Desktop protection"
-                    : "Turn on Codex Desktop protection"
-                }
-              >
-                <i />
-                {protectionBusy
-                  ? "Updating…"
-                  : codexProtection.installed
-                    ? "On"
-                    : codexProtection.hasAqmHooks
-                      ? "Turn off"
-                      : "Off"}
-              </button>
-            </div>
-            {codexProtectionEvents.length > 0 && (
-              <details className="protection-activity">
-                <summary>
-                  Recent decisions
-                  <span>
-                    Latest: {codexProtectionEvents[0].outcome}{" "}
-                    {codexProtectionEvents[0].workspaceName ??
-                      folderName(codexProtectionEvents[0].canonicalPath)}
-                  </span>
-                </summary>
-                <div>
-                  {codexProtectionEvents.map((event) => (
-                    <article
-                      key={`${event.occurredAt}-${event.canonicalPath}-${event.outcome}`}
-                    >
-                      <i className={event.outcome} />
-                      <span>
-                        <strong>
-                          {event.workspaceName ?? folderName(event.canonicalPath)}
-                        </strong>
-                        <small>{event.reason}</small>
-                      </span>
-                      <time>{formatRelativeTime(event.occurredAt)}</time>
-                    </article>
-                  ))}
-                </div>
-              </details>
-            )}
-          </section>
-        )}
-
-        <section className="quota-summary">
-          <div className="quota-summary-main">
-            <div className="status-line">
-              <span className={`status-dot ${source.isActive ? "active" : ""}`} />
-              {source.isActive ? "Active window" : "Inactive window"}
-              <small>{formatLastSync(source.lastSyncedAt)}</small>
-            </div>
-            <div className="quota-amount">
-              <strong>
-                {formatAmount(
-                  quotaWindow.providerSpendable,
-                  quotaWindow.unit,
-                )}
-              </strong>
-              <span>quota left</span>
-            </div>
-            <div
-              className="provider-progress"
-              role="progressbar"
-              aria-label="Provider quota remaining"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={availablePercent}
-            >
-              <span style={{ width: `${availablePercent}%` }} />
-            </div>
-            <div className="forecast-line">
-              <span>
-                <Icon name="activity" size={16} />
-                Managed pace
-              </span>
-              <strong>{forecast.label}</strong>
-              <small>{forecast.detail}</small>
-            </div>
-          </div>
-
-          <dl className="quota-facts">
-            <div>
-              <dt>
-                <Icon name="calendar" size={18} />
-                Resets
-              </dt>
-              <dd>{formatReset(quotaWindow.endsAt)}</dd>
-              <small>{dateRange(source)}</small>
-            </div>
-            <div>
-              <dt>
-                <Icon name="activity" size={18} />
-                Unallocated
-              </dt>
-              <dd>
-                {formatAmount(
-                  quotaWindow.unallocated,
-                  quotaWindow.unit,
-                )}
-              </dd>
-              <small>
-                {formatAmount(unallocatedNow, quotaWindow.unit)} free now
-                {quotaWindow.unattributedUsage > 0
-                  ? ` · ${formatAmount(
-                      quotaWindow.unattributedUsage,
-                      quotaWindow.unit,
-                    )} usage unattributed`
-                  : ""}
-              </small>
-            </div>
-          </dl>
-        </section>
-
-        <section className="allocations-section">
-          <header className="section-header">
-            <div>
-              <h2>Workspace allocations</h2>
-              <span>
-                Drag workspaces to fund the most important folders first.
-              </span>
-            </div>
-            <div className="section-actions">
-              <button className="button outline" type="button" onClick={onAddScope}>
-                <Icon name="plus" size={17} />
-                Add workspace
-              </button>
-            </div>
-          </header>
-
-          <div className="allocation-table-header" aria-hidden="true">
-            <span>Workspace</span>
-            <span>Protected now</span>
-            <span />
-          </div>
-
-          <div className="allocation-list">
-            {scopes.length > 0 ? (
-              scopes.map((scope) => (
-                <AllocationRow
-                  key={scope.id}
-                  scope={scope}
-                  allocation={allocationByScope.get(scope.id)}
-                  unit={quotaWindow.unit}
-                  priorityBusy={priorityBusy}
-                  dragging={draggedScopeId === scope.id}
-                  dragOver={
-                    dragOverScopeId === scope.id &&
-                    draggedScopeId !== scope.id
-                  }
-                  onDragStart={() => setDraggedScopeId(scope.id)}
-                  onDragOver={() => setDragOverScopeId(scope.id)}
-                  onDrop={() => finishPriorityDrag(scope.id)}
-                  onDragEnd={() => {
-                    setDraggedScopeId(null);
-                    setDragOverScopeId(null);
-                  }}
-                  onEdit={() => onEditAllocation(scope)}
-                />
-              ))
-            ) : (
-              <div className="empty-allocations">
-                <span>
-                  <Icon name="spark" size={24} />
-                </span>
-                <div>
-                  <strong>Allocate quota to your first workspace</strong>
-                  <p>Choose a local folder and set its quota limit.</p>
-                </div>
-                <button className="button dark" type="button" onClick={onAddScope}>
-                  Add workspace
+        {view === "settings" ? (
+          <SettingsPanel
+            protection={codexProtection}
+            events={codexProtectionEvents}
+            busy={protectionBusy}
+            onProtection={onProtection}
+          />
+        ) : (
+          <>
+            <header className="topbar">
+              <div>
+                <h1>{source.providerDisplayName}</h1>
+                <p className="topbar-subtitle">{source.poolDisplayName}</p>
+              </div>
+              <div className="topbar-actions">
+                <button
+                  className="icon-button bordered"
+                  type="button"
+                  onClick={onRefresh}
+                  disabled={refreshing}
+                  aria-label="Sync latest quota"
+                  title="Sync latest quota from provider"
+                >
+                  <Icon
+                    name="refresh"
+                    size={18}
+                    className={refreshing ? "spin" : ""}
+                  />
                 </button>
               </div>
+            </header>
+
+            {codexProtection && (
+              <section
+                className={`dashboard-protection-notice ${codexProtection.state}`}
+                role={
+                  codexProtection.state === "configured" ? "status" : "alert"
+                }
+              >
+                <Icon name="shield" size={18} />
+                <div>
+                  <strong>
+                    {codexProtection.state === "configured"
+                      ? "Protection activation is unverified"
+                      : codexProtection.state === "misconfigured"
+                        ? "Protection needs attention"
+                        : "Codex Desktop protection is off"}
+                  </strong>
+                  <span>
+                    {codexProtection.state === "configured"
+                      ? "Confirm that all three AQM hooks are trusted and enabled in Codex."
+                      : codexProtection.state === "misconfigured"
+                        ? codexProtection.issue
+                        : "Codex prompts can run without AQM workspace limits."}
+                  </span>
+                </div>
+                <button
+                  className="button subtle small"
+                  type="button"
+                  onClick={() => onViewChange("settings")}
+                >
+                  Review settings
+                </button>
+              </section>
             )}
-          </div>
-        </section>
+
+            <section className="quota-summary">
+              <div className="quota-summary-main">
+                <div className="status-line">
+                  <span
+                    className={`status-dot ${source.isActive ? "active" : ""}`}
+                  />
+                  {source.isActive ? "Active window" : "Inactive window"}
+                  <small>{formatLastSync(source.lastSyncedAt)}</small>
+                </div>
+                <div className="quota-amount">
+                  <strong>
+                    {formatAmount(
+                      quotaWindow.providerSpendable,
+                      quotaWindow.unit,
+                    )}
+                  </strong>
+                  <span>quota left</span>
+                </div>
+                <div
+                  className="provider-progress"
+                  role="progressbar"
+                  aria-label="Provider quota remaining"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={availablePercent}
+                >
+                  <span style={{ width: `${availablePercent}%` }} />
+                </div>
+                <div className="forecast-line">
+                  <span>
+                    <Icon name="activity" size={16} />
+                    Managed pace
+                  </span>
+                  <strong>{forecast.label}</strong>
+                  <small>{forecast.detail}</small>
+                </div>
+              </div>
+
+              <dl className="quota-facts">
+                <div>
+                  <dt>
+                    <Icon name="calendar" size={18} />
+                    Resets
+                  </dt>
+                  <dd>{formatReset(quotaWindow.endsAt)}</dd>
+                  <small>{dateRange(source)}</small>
+                </div>
+                <div>
+                  <dt>
+                    <Icon name="activity" size={18} />
+                    Unallocated
+                  </dt>
+                  <dd>
+                    {formatAmount(
+                      quotaWindow.unallocated,
+                      quotaWindow.unit,
+                    )}
+                  </dd>
+                  <small>
+                    {formatAmount(unallocatedNow, quotaWindow.unit)} free now
+                    {quotaWindow.unattributedUsage > 0
+                      ? ` · ${formatAmount(
+                          quotaWindow.unattributedUsage,
+                          quotaWindow.unit,
+                        )} usage unattributed`
+                      : ""}
+                  </small>
+                </div>
+              </dl>
+            </section>
+
+            <section className="allocations-section">
+              <header className="section-header">
+                <div>
+                  <h2>Workspace allocations</h2>
+                  <span>
+                    Drag workspaces to fund the most important folders first.
+                  </span>
+                </div>
+                <div className="section-actions">
+                  <button
+                    className="button outline"
+                    type="button"
+                    onClick={onAddScope}
+                  >
+                    <Icon name="plus" size={17} />
+                    Add workspace
+                  </button>
+                </div>
+              </header>
+
+              <div className="allocation-table-header" aria-hidden="true">
+                <span>Workspace</span>
+                <span>Protected now</span>
+                <span />
+              </div>
+
+              <div className="allocation-list">
+                {scopes.length > 0 ? (
+                  scopes.map((scope) => (
+                    <AllocationRow
+                      key={scope.id}
+                      scope={scope}
+                      allocation={allocationByScope.get(scope.id)}
+                      unit={quotaWindow.unit}
+                      priorityBusy={priorityBusy}
+                      dragging={draggedScopeId === scope.id}
+                      dragOver={
+                        dragOverScopeId === scope.id &&
+                        draggedScopeId !== scope.id
+                      }
+                      onDragStart={() => setDraggedScopeId(scope.id)}
+                      onDragOver={() => setDragOverScopeId(scope.id)}
+                      onDrop={() => finishPriorityDrag(scope.id)}
+                      onDragEnd={() => {
+                        setDraggedScopeId(null);
+                        setDragOverScopeId(null);
+                      }}
+                      onEdit={() => onEditAllocation(scope)}
+                    />
+                  ))
+                ) : (
+                  <div className="empty-allocations">
+                    <span>
+                      <Icon name="spark" size={24} />
+                    </span>
+                    <div>
+                      <strong>Allocate quota to your first workspace</strong>
+                      <p>Choose a local folder and set its quota limit.</p>
+                    </div>
+                    <button
+                      className="button dark"
+                      type="button"
+                      onClick={onAddScope}
+                    >
+                      Add workspace
+                    </button>
+                  </div>
+                )}
+              </div>
+            </section>
+          </>
+        )}
       </main>
       {sourceMenu && (
         <div

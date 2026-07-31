@@ -214,7 +214,7 @@ workspace's current spendable capacity, refuses a stop boundary, forwards
 termination signals, preserves the Codex exit code, and releases its
 reservation on completion, failure, or interruption.
 
-Enable Codex Desktop workspace protection from the dashboard, or install it
+Enable Codex Desktop workspace protection from Settings, or install it
 with the development CLI:
 
 ```bash
@@ -223,11 +223,25 @@ npm run aqm -- hooks install codex
 
 Codex requires non-managed hooks to be reviewed and trusted. See the
 [CLI guide](docs/cli.md) for the trust step, current precision limits, status,
-and uninstall command. The dashboard can turn protection on or off without
+and uninstall command. Settings can turn protection on or off without
 changing unrelated Codex hooks, distinguishes a complete current configuration
 from a stale or partial one, and shows recent allow/block decisions. Once
 active, an unallocated folder receives a blocked prompt instead of consuming
 quota reserved for allocated workspaces.
+
+After installing from AQM, finish activation in Codex Desktop:
+
+1. Open **Settings → Hooks → User config**.
+2. Review, trust, and switch on the AQM entries under `UserPromptSubmit`,
+   `Stop`, and `SessionEnd`.
+3. Restart Codex, then start a new task.
+
+AQM's “Installed” control confirms only that the local hook definitions point
+to the current application. Codex remains the source of truth for whether each
+definition is trusted and enabled. Until all three hooks are trusted and
+switched on, Codex prompts can still run without AQM protection. Overview keeps
+an explicit protection warning visible when protection is off, misconfigured,
+or its Codex activation cannot be verified.
 
 These development commands use the same local database as the desktop.
 Admission refreshes the matching Codex checkpoint and evaluates both workspace

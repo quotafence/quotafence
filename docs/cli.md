@@ -198,9 +198,19 @@ unrelated hooks, and creates `~/.codex/hooks.json.aqm.bak` before its first
 change to an existing file. Re-running it is idempotent.
 
 Codex does not run a new non-managed command hook until the exact definition is
-reviewed and trusted. Open Codex CLI, run `/hooks`, review the three AQM hooks,
-and trust them. If Codex app was already open, restart it, then start a new task
-so the session loads the updated configuration.
+reviewed, trusted, and enabled.
+
+In Codex Desktop:
+
+1. Open **Settings → Hooks → User config**.
+2. Review, trust, and switch on the AQM entries under `UserPromptSubmit`,
+   `Stop`, and `SessionEnd`.
+3. Restart Codex, then start a new task so the session loads the updated
+   configuration.
+
+In Codex CLI, run `/hooks` and review the same three entries before restarting
+the session. Until all three hooks are trusted and switched on, Codex prompts
+can still run without AQM protection.
 
 The installed lifecycle is:
 
@@ -224,12 +234,14 @@ npm run aqm -- hooks uninstall codex
 ```
 
 `status` verifies the AQM definitions in the JSON file; Codex remains the source
-of truth for whether their current hash has been trusted.
+of truth for whether their current hash has been trusted and the hook is
+enabled.
 
-The desktop exposes the same integration as an on/off control. Turning it off
-removes only handlers marked as AQM-owned. A partial configuration or one that
-points at an old application executable is shown as needing repair; turning
-protection on again replaces those entries with the current executable.
+The desktop exposes the same integration in Settings as an on/off control.
+Turning it off removes only handlers marked as AQM-owned. A partial
+configuration or one that points at an old application executable is shown as
+needing repair; turning protection on again replaces those entries with the
+current executable.
 
 Explicit allocation and policy decisions may return the official
 `{"decision":"block"}` response. Infrastructure failures remain fail-open so a

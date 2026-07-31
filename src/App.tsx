@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { AllocationForm } from "./components/AllocationForm";
-import { Dashboard } from "./components/Dashboard";
+import { Dashboard, type DashboardView } from "./components/Dashboard";
 import { Icon } from "./components/Icon";
 import { Modal } from "./components/Modal";
 import { ScopeForm } from "./components/ScopeForm";
@@ -160,6 +160,7 @@ function App() {
   >([]);
   const [protectionBusy, setProtectionBusy] = useState(false);
   const [priorityBusy, setPriorityBusy] = useState(false);
+  const [view, setView] = useState<DashboardView>("overview");
   const initialSyncStarted = useRef(false);
 
   const loadState = useCallback(async (windowId: string | null = null) => {
@@ -358,7 +359,7 @@ function App() {
       setCodexProtection(status);
       setNotice(
         enabled
-          ? "Protection is configured. In Codex, run /hooks, review and trust the AQM hooks, then restart Codex."
+          ? "Action required: protection is not active yet. In Codex Settings → Hooks → User config, trust and enable all three AQM hooks, then restart Codex."
           : "Codex Desktop protection is off. Other Codex hooks were left unchanged.",
       );
     } catch (reason) {
@@ -442,6 +443,8 @@ function App() {
     <>
       <Dashboard
         state={localState}
+        view={view}
+        onViewChange={setView}
         refreshing={refreshing}
         onSelectSource={handleSelectSource}
         onAddSource={() => setModal({ type: "source" })}
@@ -450,11 +453,7 @@ function App() {
         onRefresh={handleRefresh}
         onRemoveSource={(source) => setModal({ type: "remove-source", source })}
         removingSource={submitting}
-        codexProtection={
-          selectedSource?.providerId === "codex"
-            ? codexProtection
-            : null
-        }
+        codexProtection={codexProtection}
         codexProtectionEvents={codexProtectionEvents}
         protectionBusy={protectionBusy}
         onProtection={(enabled) => void handleProtection(enabled)}
