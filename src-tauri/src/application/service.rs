@@ -32,8 +32,8 @@ use super::{
     ManagedSessionReconciliation, ManagedSessionReconciliationStatus, MarkManagedSessionRunning,
     PolicySummary, PrepareManagedSession, ProviderTurnObservationSummary, QuotaDashboard,
     QuotaSourceSummary, ReconcileProviderTurnObservation, RecordUsage, ReleaseReservation,
-    ReserveQuota, ResetWorkspacePolicy, ScopeSummary, SetAllocation, SetWorkspacePolicy,
-    SyncProviderQuota, SyncProviderQuotaResult, TurnObservationStartResult,
+    ReserveQuota, ResetWorkspacePolicy, ScopeSummary, SetAllocation, SetAllocationPriorityOrder,
+    SetWorkspacePolicy, SyncProviderQuota, SyncProviderQuotaResult, TurnObservationStartResult,
     TurnObservationStartStatus, TurnReconciliationResult, TurnReconciliationStatus, WindowSummary,
     WorkspaceAllocationContext, WorkspaceBindingSummary, WorkspaceContext, WorkspacePolicySummary,
 };
@@ -584,7 +584,11 @@ impl QuotaService {
             {
                 let provider_decision =
                     self.provider_decision(&dashboard.window, &workspace_policy)?;
-                let allocation_decision = allocation.decision;
+                let allocation_decision = if allocation.protected_now == 0 {
+                    crate::domain::EnforcementDecision::Stop
+                } else {
+                    allocation.decision
+                };
                 allocations.push(WorkspaceAllocationContext {
                     provider_id: source.provider_id,
                     provider_display_name: source.provider_display_name,
@@ -596,6 +600,7 @@ impl QuotaService {
                     limit: allocation.limit,
                     remaining: allocation.remaining,
                     spendable: allocation.spendable,
+                    protected_now: allocation.protected_now,
                     provider_capacity: dashboard.window.capacity,
                     provider_remaining: dashboard.window.provider_remaining,
                     provider_spendable: dashboard.window.provider_spendable,
@@ -680,6 +685,7 @@ impl QuotaService {
             unit: allocation.unit,
             allocation_limit: allocation.limit,
             allocation_remaining: allocation.remaining,
+            protected_now: allocation.protected_now,
             provider_capacity: allocation.provider_capacity,
             provider_remaining: allocation.provider_remaining,
             allocation_decision: allocation.allocation_decision,
@@ -1048,6 +1054,23 @@ impl QuotaService {
         Ok(())
     }
 
+    pub fn set_allocation_priority_order(
+        &mut self,
+        command: SetAllocationPriorityOrder,
+    ) -> ApplicationResult<()> {
+        let window_id = WindowId::new(command.window_id)?;
+        let ordered_scope_ids = command
+            .ordered_scope_ids
+            .into_iter()
+            .map(ScopeId::new)
+            .collect::<Result<Vec<_>, _>>()?;
+        self.database
+            .allocations()
+            .set_priority_order(&window_id, &ordered_scope_ids)
+            .map_err(map_input_storage_error)?;
+        Ok(())
+    }
+
     pub fn reserve_quota(&mut self, command: ReserveQuota) -> ApplicationResult<()> {
         let admitted_at = UnixMillis::new(command.admitted_at);
         let reservation = Reservation::new(
@@ -1107,6 +1130,13 @@ impl QuotaService {
             .into_iter()
             .map(|scope| (scope.id().clone(), scope))
             .collect();
+        let bound_scope_ids = self
+            .database
+            .workspace_bindings()
+            .list()?
+            .into_iter()
+            .map(|binding| binding.scope_id().to_string())
+            .collect::<HashSet<_>>();
         let allocations = self.database.allocations().list_for_window(&window_id)?;
         let provider_snapshot = self.database.provider_quota_snapshot(&window_id)?;
         let unattributed = if provider_snapshot.is_some() {
@@ -1123,7 +1153,7 @@ impl QuotaService {
         let mut root_attributed_usage = 0_u64;
         let mut root_active_reservations = 0_u64;
 
-        for allocation in allocations {
+        for (priority, allocation) in allocations.into_iter().enumerate() {
             let scope = scopes.get(allocation.scope_id()).ok_or_else(|| {
                 ApplicationError::InconsistentData {
                     message: format!(
@@ -1156,12 +1186,19 @@ impl QuotaService {
                 parent_id: scope.parent_id().map(ToString::to_string),
                 scope_kind: scope.kind(),
                 display_name: scope.display_name().to_owned(),
+                priority: u64::try_from(priority).map_err(|_| {
+                    ApplicationError::NumericOutOfRange {
+                        field: "allocation priority",
+                        value: i128::try_from(priority).unwrap_or(i128::MAX),
+                    }
+                })?,
                 unit: allocation.limit().unit().to_string(),
                 limit: allocation.limit().value(),
                 attributed_usage: balance.attributed_usage().value(),
                 active_reservations: balance.active_reservations().value(),
                 remaining: to_view_integer(balance.remaining(), "allocation remaining")?,
                 spendable: balance.spendable().value(),
+                protected_now: 0,
                 decision: policy.evaluate(&balance),
                 policy: policy_summary,
             });
@@ -1184,6 +1221,32 @@ impl QuotaService {
         let provider_remaining =
             i128::from(window.capacity().value()) - i128::from(provider_committed);
         let provider_spendable = u64::try_from(provider_remaining).unwrap_or(0);
+        let mut protection_remaining = provider_spendable;
+        for snapshot in snapshots.iter_mut().filter(|snapshot| {
+            snapshot.parent_id.is_none() && bound_scope_ids.contains(&snapshot.scope_id)
+        }) {
+            snapshot.protected_now = snapshot.spendable.min(protection_remaining);
+            protection_remaining = protection_remaining.saturating_sub(snapshot.protected_now);
+        }
+        let protected_by_scope = snapshots
+            .iter()
+            .filter(|snapshot| {
+                snapshot.parent_id.is_none() && bound_scope_ids.contains(&snapshot.scope_id)
+            })
+            .map(|snapshot| (snapshot.scope_id.clone(), snapshot.protected_now))
+            .collect::<HashMap<_, _>>();
+        for snapshot in snapshots
+            .iter_mut()
+            .filter(|snapshot| snapshot.parent_id.is_some())
+        {
+            snapshot.protected_now = snapshot
+                .parent_id
+                .as_ref()
+                .and_then(|parent_id| protected_by_scope.get(parent_id))
+                .copied()
+                .unwrap_or(0)
+                .min(snapshot.spendable);
+        }
         let provider_quota_remaining = window
             .capacity()
             .value()
@@ -1429,8 +1492,8 @@ mod tests {
             EvaluateWorkspaceAdmission, FinishManagedSession, GetLocalState, GetQuotaDashboard,
             GetWorkspaceContext, GetWorkspacePolicy, ManagedSessionOutcome,
             MarkManagedSessionRunning, PrepareManagedSession, ProviderQuotaSnapshotInput,
-            RecordUsage, ReserveQuota, ResetWorkspacePolicy, SetAllocation, SetWorkspacePolicy,
-            SyncProviderQuota,
+            RecordUsage, ReserveQuota, ResetWorkspacePolicy, SetAllocation,
+            SetAllocationPriorityOrder, SetWorkspacePolicy, SyncProviderQuota,
         },
         domain::{Confidence, EnforcementDecision, ScopeKind, UsageSource},
         storage::Database,
@@ -1504,6 +1567,88 @@ mod tests {
             .unwrap();
 
         service
+    }
+
+    #[test]
+    fn priority_funds_bound_workspaces_from_current_provider_remaining() {
+        let mut service = QuotaService::new(Database::open_in_memory().unwrap());
+        service
+            .create_quota_source(CreateQuotaSource {
+                provider_id: "codex".to_owned(),
+                provider_display_name: "Codex".to_owned(),
+                account_id: "subscription".to_owned(),
+                account_display_name: "Subscription".to_owned(),
+                pool_id: "codex-weekly".to_owned(),
+                pool_display_name: "Weekly".to_owned(),
+                window_id: "week-1".to_owned(),
+                starts_at: 1_000,
+                ends_at: 10_000,
+                capacity: 100,
+                unit: "percent".to_owned(),
+                provider_snapshot: Some(ProviderQuotaSnapshotInput {
+                    adapter: "codex_app_server".to_owned(),
+                    remote_limit_id: "codex".to_owned(),
+                    remote_window_kind: "secondary".to_owned(),
+                    used: 88,
+                    observed_at: 2_000,
+                    resets_at: 10_000,
+                }),
+            })
+            .unwrap();
+        for (id, path) in [("workspace-a", "/code/a"), ("workspace-b", "/code/b")] {
+            service
+                .create_allocated_workspace(CreateAllocatedWorkspace {
+                    id: id.to_owned(),
+                    display_name: id.to_owned(),
+                    canonical_path: path.to_owned(),
+                    window_id: "week-1".to_owned(),
+                    amount: 20,
+                    unit: "percent".to_owned(),
+                    bound_at: 2_000,
+                })
+                .unwrap();
+        }
+        service
+            .set_allocation_priority_order(SetAllocationPriorityOrder {
+                window_id: "week-1".to_owned(),
+                ordered_scope_ids: vec!["workspace-b".to_owned(), "workspace-a".to_owned()],
+            })
+            .unwrap();
+
+        let dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+
+        assert_eq!(dashboard.allocations[0].scope_id, "workspace-b");
+        assert_eq!(dashboard.allocations[0].protected_now, 12);
+        assert_eq!(dashboard.allocations[0].limit, 20);
+        assert_eq!(dashboard.allocations[1].scope_id, "workspace-a");
+        assert_eq!(dashboard.allocations[1].protected_now, 0);
+        assert_eq!(
+            service
+                .evaluate_workspace_admission(EvaluateWorkspaceAdmission {
+                    canonical_path: "/code/a".to_owned(),
+                    provider_id: "codex".to_owned(),
+                    at: 3_000,
+                })
+                .unwrap()
+                .allocation_decision,
+            EnforcementDecision::Stop
+        );
+        assert_eq!(
+            service
+                .evaluate_workspace_admission(EvaluateWorkspaceAdmission {
+                    canonical_path: "/code/b".to_owned(),
+                    provider_id: "codex".to_owned(),
+                    at: 3_000,
+                })
+                .unwrap()
+                .protected_now,
+            12
+        );
     }
 
     fn detected_codex_source(suffix: &str) -> CreateQuotaSource {

@@ -207,14 +207,18 @@ fn run(args: Vec<String>) -> Result<u8, String> {
             agent_args,
         } => run_managed_codex(options, assume_yes, agent_args),
         CliCommand::HookCodex(options) => {
-            // A tracking hook must never break the Codex turn it observes.
-            // Diagnostics are opt-in so normal Codex sessions remain quiet.
-            if let Err(error) = run_codex_hook(&options) {
-                if env::var_os("AQM_HOOK_DEBUG").is_some() {
-                    eprintln!("aqm hook: {error}");
+            // Infrastructure failures remain fail-open. Explicit policy
+            // outcomes may block UserPromptSubmit through the hook contract.
+            let output = match run_codex_hook(&options) {
+                Ok(output) => output,
+                Err(error) => {
+                    if env::var_os("AQM_HOOK_DEBUG").is_some() {
+                        eprintln!("aqm hook: {error}");
+                    }
+                    serde_json::json!({})
                 }
-            }
-            println!("{{}}");
+            };
+            println!("{output}");
             Ok(EXIT_ALLOW)
         }
         CliCommand::Hooks { action } => {
@@ -226,12 +230,12 @@ fn run(args: Vec<String>) -> Result<u8, String> {
                     let changed = codex_hooks::install_user_hooks(&config_path, &executable)?;
                     if changed {
                         println!(
-                            "Installed Codex tracking hooks in {}",
+                            "Installed Codex workspace protection hooks in {}",
                             config_path.display()
                         );
                     } else {
                         println!(
-                            "Codex tracking hooks are already installed in {}",
+                            "Codex workspace protection hooks are already installed in {}",
                             config_path.display()
                         );
                     }
@@ -240,12 +244,12 @@ fn run(args: Vec<String>) -> Result<u8, String> {
                 HooksAction::Status => {
                     if codex_hooks::user_hooks_installed(&config_path)? {
                         println!(
-                            "Codex tracking hooks are configured in {}",
+                            "Codex workspace protection hooks are configured in {}",
                             config_path.display()
                         );
                     } else {
                         println!(
-                            "Codex tracking hooks are not configured in {}",
+                            "Codex workspace protection hooks are not configured in {}",
                             config_path.display()
                         );
                     }
@@ -253,12 +257,12 @@ fn run(args: Vec<String>) -> Result<u8, String> {
                 HooksAction::Uninstall => {
                     if codex_hooks::uninstall_user_hooks(&config_path)? {
                         println!(
-                            "Removed Codex tracking hooks from {}",
+                            "Removed Codex workspace protection hooks from {}",
                             config_path.display()
                         );
                     } else {
                         println!(
-                            "No Codex tracking hooks were found in {}",
+                            "No Codex workspace protection hooks were found in {}",
                             config_path.display()
                         );
                     }
@@ -583,10 +587,18 @@ struct ManagedProcessResult {
 }
 
 fn wait_for_managed_child(child: &mut Child) -> Result<ManagedProcessResult, String> {
+    wait_for_managed_child_after_signal_setup(child, || {})
+}
+
+fn wait_for_managed_child_after_signal_setup(
+    child: &mut Child,
+    after_signal_setup: impl FnOnce(),
+) -> Result<ManagedProcessResult, String> {
     let _signal_guard = SIGNAL_HANDLER_LOCK
         .lock()
         .map_err(|_| "managed process signal handler lock is poisoned".to_owned())?;
     install_signal_forwarding();
+    after_signal_setup();
     loop {
         let status = match child.try_wait() {
             Ok(status) => status,
@@ -710,20 +722,20 @@ fn managed_session_identity(now: i64) -> (String, String) {
     (session_id, reservation_id)
 }
 
-fn run_codex_hook(options: &CommonOptions) -> Result<(), String> {
+fn run_codex_hook(options: &CommonOptions) -> Result<serde_json::Value, String> {
     if env::var_os(MANAGED_SESSION_ENV).is_some() {
-        return Ok(());
+        return Ok(serde_json::json!({}));
     }
     let event = CodexHookEvent::from_reader(io::stdin().lock())?;
     let mut service = open_service(options)?;
-    codex_hooks::handle_event(&mut service, &event, now_millis()?, || {
+    let outcome = codex_hooks::handle_event(&mut service, &event, now_millis()?, || {
         matches!(
             event.kind(),
             CodexHookEventKind::UserPromptSubmit | CodexHookEventKind::Stop
         )
         .then(codex::detect)
     })?;
-    Ok(())
+    Ok(codex_hooks::hook_output(&outcome))
 }
 
 fn provider_allocation<'a>(
@@ -1403,13 +1415,10 @@ mod tests {
             .args(["-c", "sleep 5"])
             .spawn()
             .unwrap();
-        let signal = thread::spawn(|| {
-            thread::sleep(Duration::from_millis(100));
+        let result = wait_for_managed_child_after_signal_setup(&mut child, || {
             FORWARDED_SIGNAL.store(libc::SIGTERM, Ordering::SeqCst);
-        });
-
-        let result = wait_for_managed_child(&mut child).unwrap();
-        signal.join().unwrap();
+        })
+        .unwrap();
 
         assert_eq!(result.outcome, ManagedSessionOutcome::Interrupted);
         assert_eq!(result.provider_exit_code, None);

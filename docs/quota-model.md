@@ -70,6 +70,26 @@ provider pool. The experimental Codex hook path uses the same binding but
 records only an inferred aggregate delta for one uncontended observed turn; it
 does not turn that task into a managed session.
 
+An allocation amount is a target share of the **full provider window**, not a
+percentage of whatever happens to remain when the allocation is created. If a
+workspace targets 20% while only 12% of the provider window remains, its target
+stays 20% but at most 12% can be protected in the current window. The full 20%
+target is carried into the next reset.
+
+Folder priority is persisted per quota pool. The dashboard funds each bound
+workspace's remaining target in priority order from the provider capacity that
+still exists:
+
+```text
+protected_now[workspace] =
+    min(workspace_spendable, provider_capacity_left_after_higher_priorities)
+```
+
+For example, with 12% provider quota left, a priority-one workspace targeting
+20% receives 12% protected now; lower-priority workspaces receive 0%. Reordering
+does not rewrite target allocations or historical usage. This allocation
+funding priority is narrower than future workload priority/deadline routing.
+
 The persisted scope codec still reads legacy project/task rows so an older
 local database can be opened without deleting history. Those legacy kinds are
 not exposed as new allocation choices.
@@ -88,6 +108,9 @@ silently clamped in storage, though the UI may present zero as spendable.
 
 The domain exposes both values: signed `remaining` preserves overage, while
 non-negative `spendable` is suitable for admission decisions and display.
+The application additionally exposes `protected_now`, which caps spendable
+workspace capacity by provider availability and higher-priority workspace
+targets.
 
 ## Reservations
 

@@ -24,6 +24,7 @@ The repository currently has:
   policy domain;
 - transactional SQLite storage and versioned migrations;
 - a Tauri/React desktop workflow for source setup and manual allocations;
+- drag-and-drop folder priority with target-versus-current protection funding;
 - a Codex adapter using the official local App Server protocol;
 - automatic Codex checkpoint refresh on startup and explicit refresh;
 - absolute snapshots that do not double-count repeated reads;
@@ -34,7 +35,8 @@ The repository currently has:
   direct process supervision, pre/post checkpoint reconciliation, terminal
   cleanup, and Unix orphan recovery;
 - passive Codex Desktop attribution from local thread metadata at refresh, plus
-  experimental lifecycle hooks for higher-frequency observation;
+  optional trusted lifecycle hooks for pre-prompt admission and
+  higher-frequency observation;
 - persisted workspace policy overrides shared by dashboard, CLI admission, and
   managed launch, with audited confirmation acceptance; and
 - an evidence-gated managed burn rate and depletion signal for the active
@@ -102,7 +104,7 @@ timestamp, the Codex checkpoint application accepts fabricated detection data
 in tests, and the CLI reserves exit codes `0`, `10`, `20`, and `30` for policy
 outcomes. `--yes` accepts confirmation but never overrides stop.
 
-### M2.5 — Observed Codex desktop attribution — implemented, conservative
+### M2.5 — Codex Desktop attribution and prompt gate — implemented, conservative
 
 - Read minimal local Codex Desktop thread metadata without parsing rollout
   files, prompts, previews, or responses.
@@ -114,6 +116,9 @@ outcomes. `--yes` accepts confirmation but never overrides stop.
 - Optionally install user-level `UserPromptSubmit`, `Stop`, and `SessionEnd`
   hooks for higher-frequency turn boundaries without
   overwriting unrelated hook configuration.
+- When at least one Codex allocation exists, reject a new prompt whose working
+  folder has no allocation.
+- Apply the mapped workspace's allocation boundary before an allowed turn.
 - Map the lifecycle event's working folder to its nearest workspace allocation.
 - Refresh before and after a turn and append the aggregate percentage delta at
   inferred confidence.
@@ -129,10 +134,12 @@ tests that ignore prompt/transcript fields, installer round-trip tests,
 rollover tests, and an end-to-end fake-checkpoint test proving that a 4%
 provider delta reduces the mapped folder allocation by 4%.
 
-This milestone makes ordinary Codex app usage observable but does not make it
-AQM-managed. Passive scans require no hook trust; optional hooks remain
-user-controlled and fail-open. Aggregate integer percentage checkpoints cannot
-expose exact workspace token consumption.
+This milestone makes ordinary Codex app usage observable and optionally gates
+new prompts, but does not make the process AQM-managed. Passive scans require
+no hook trust. Optional hooks remain user-controlled; explicit policy decisions
+block, while integration failures fail open. The gate cannot terminate a turn
+already in progress. Aggregate integer percentage checkpoints cannot expose
+exact workspace token consumption.
 
 ### M3 — One managed Codex session — complete
 

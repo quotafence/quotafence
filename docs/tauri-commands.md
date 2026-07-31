@@ -29,6 +29,7 @@ The approved product commands are:
 - `archive_quota_source`
 - `create_allocated_workspace`
 - `set_allocation`
+- `set_allocation_priority_order`
 - `set_workspace_policy`
 - `reset_workspace_policy`
 - `reserve_quota`
@@ -37,6 +38,9 @@ The approved product commands are:
 - `get_local_state`
 - `detect_codex_quota`
 - `sync_codex_quota`
+- `get_codex_protection_status`
+- `install_codex_protection`
+- `uninstall_codex_protection`
 
 Mutation and ledger query commands accept one camelCase `request` object. For
 example:
@@ -60,6 +64,11 @@ one selected folder. Policy mutations accept integer basis points, run domain
 range and ordering validation, and can target only an explicitly bound
 workspace scope.
 
+`set_allocation_priority_order` accepts one selected window and an ordered list
+containing every root allocation exactly once. The order is persisted for the
+quota pool, so it applies after provider-window rollover. It changes funding
+priority only; it does not mutate allocation targets or historical usage.
+
 ## Errors
 
 Rejected commands return a serializable object:
@@ -75,6 +84,7 @@ Stable codes currently include:
 
 - `validation_error`
 - `invalid_workspace`
+- `integration_error`
 - `not_found`
 - `conflict`
 - `duplicate_source`
@@ -117,6 +127,13 @@ its windows, allocations, snapshots, and append-only usage history.
 is derived locally from reconciled managed sessions, carries its evidence and
 confidence, and omits a precise rate or timestamp when the minimum evidence
 gate is not met.
+
+The Codex protection commands manage only AQM's entries in the user-level
+Codex hooks file. Installation is an explicit user action and points the hook
+at the current desktop executable's non-GUI `hook codex` entrypoint. Codex
+remains the source of truth for review and trust, so `installed` means the
+configuration is present, not that Codex has trusted its current hash. The
+frontend must tell the user to review `/hooks` and restart Codex.
 
 ID creation remains a caller concern for now, allowing the frontend to keep a
 stable identity when retrying a request.

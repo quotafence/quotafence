@@ -23,6 +23,10 @@ impl IpcError {
         Self::new("invalid_workspace", message)
     }
 
+    pub fn integration_error(message: impl Into<String>) -> Self {
+        Self::new("integration_error", message)
+    }
+
     fn new(code: &'static str, message: impl Into<String>) -> Self {
         Self {
             code,

@@ -11,14 +11,18 @@ import {
   createAllocatedWorkspace,
   createQuotaSource,
   getErrorMessage,
+  getCodexProtectionStatus,
   getLocalState,
+  installCodexProtection,
   resetWorkspacePolicy,
   setAllocation,
+  setAllocationPriorityOrder,
   setWorkspacePolicy,
   syncCodexQuota,
 } from "./lib/api";
 import type {
   LocalState,
+  CodexProtectionStatus,
   QuotaSourceInput,
   QuotaSourceSummary,
   ScopeSummary,
@@ -146,6 +150,10 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>(null);
+  const [codexProtection, setCodexProtection] =
+    useState<CodexProtectionStatus | null>(null);
+  const [protectionBusy, setProtectionBusy] = useState(false);
+  const [priorityBusy, setPriorityBusy] = useState(false);
   const initialSyncStarted = useRef(false);
 
   const loadState = useCallback(async (windowId: string | null = null) => {
@@ -157,6 +165,15 @@ function App() {
   useEffect(() => {
     async function initialize() {
       try {
+        getCodexProtectionStatus()
+          .then(setCodexProtection)
+          .catch(() =>
+            setCodexProtection({
+              installed: false,
+              requiresReview: false,
+              configPath: "",
+            }),
+          );
         const nextState = await loadState();
         if (initialSyncStarted.current) {
           return;
@@ -304,6 +321,45 @@ function App() {
     }
   }
 
+  async function handleProtection() {
+    if (codexProtection?.installed) {
+      setNotice(
+        "In Codex, run /hooks, review and trust the AQM hooks, then restart Codex. AQM cannot verify Codex trust state automatically.",
+      );
+      return;
+    }
+    setProtectionBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const status = await installCodexProtection();
+      setCodexProtection(status);
+      setNotice(
+        "Protection hook installed. In Codex, run /hooks, review and trust the AQM hooks, then restart Codex.",
+      );
+    } catch (reason) {
+      setError(getErrorMessage(reason));
+    } finally {
+      setProtectionBusy(false);
+    }
+  }
+
+  async function handlePriorityOrder(
+    windowId: string,
+    orderedScopeIds: string[],
+  ) {
+    setPriorityBusy(true);
+    setError(null);
+    try {
+      await setAllocationPriorityOrder(windowId, orderedScopeIds);
+      await loadState(windowId);
+    } catch (reason) {
+      setError(getErrorMessage(reason));
+    } finally {
+      setPriorityBusy(false);
+    }
+  }
+
   if (initializing) {
     return <LoadingScreen />;
   }
@@ -370,6 +426,22 @@ function App() {
         onRefresh={handleRefresh}
         onRemoveSource={(source) => setModal({ type: "remove-source", source })}
         removingSource={submitting}
+        codexProtection={
+          selectedSource?.providerId === "codex"
+            ? codexProtection
+            : null
+        }
+        protectionBusy={protectionBusy}
+        onProtection={() => void handleProtection()}
+        priorityBusy={priorityBusy}
+        onPriorityOrder={(orderedScopeIds) => {
+          if (localState.selectedWindowId) {
+            void handlePriorityOrder(
+              localState.selectedWindowId,
+              orderedScopeIds,
+            );
+          }
+        }}
       />
 
       {error && (

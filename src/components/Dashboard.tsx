@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type {
   AllocationSnapshot,
+  CodexProtectionStatus,
   DepletionForecast,
   LocalState,
   QuotaSourceSummary,
@@ -18,6 +19,11 @@ type DashboardProps = {
   onRefresh: () => void;
   onRemoveSource: (source: QuotaSourceSummary) => void;
   removingSource: boolean;
+  codexProtection: CodexProtectionStatus | null;
+  protectionBusy: boolean;
+  onProtection: () => void;
+  priorityBusy: boolean;
+  onPriorityOrder: (orderedScopeIds: string[]) => void;
 };
 
 function labelUnit(unit: string): string {
@@ -129,7 +135,13 @@ function formatForecast(
   return { label: "Likely to last until reset", detail };
 }
 
-function orderedScopes(scopes: ScopeSummary[]): ScopeSummary[] {
+function orderedScopes(
+  scopes: ScopeSummary[],
+  allocations: AllocationSnapshot[],
+): ScopeSummary[] {
+  const priority = new Map(
+    allocations.map((allocation) => [allocation.scopeId, allocation.priority]),
+  );
   return scopes
     .filter(
       (scope) =>
@@ -137,7 +149,20 @@ function orderedScopes(scopes: ScopeSummary[]): ScopeSummary[] {
         scope.parentId === null &&
         scope.workspacePath !== null,
     )
-    .sort((left, right) => left.displayName.localeCompare(right.displayName));
+    .sort((left, right) => {
+      const leftPriority = priority.get(left.id);
+      const rightPriority = priority.get(right.id);
+      if (leftPriority !== undefined && rightPriority !== undefined) {
+        return leftPriority - rightPriority;
+      }
+      if (leftPriority !== undefined) {
+        return -1;
+      }
+      if (rightPriority !== undefined) {
+        return 1;
+      }
+      return left.displayName.localeCompare(right.displayName);
+    });
 }
 
 function workspaceLabel(scope: ScopeSummary): string {
@@ -152,18 +177,28 @@ function AllocationRow({
   scope,
   allocation,
   unit,
-  providerSpendable,
+  priorityBusy,
+  dragging,
+  dragOver,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
   onEdit,
 }: {
   scope: ScopeSummary;
   allocation?: AllocationSnapshot;
   unit: string;
-  providerSpendable: number;
+  priorityBusy: boolean;
+  dragging: boolean;
+  dragOver: boolean;
+  onDragStart: () => void;
+  onDragOver: () => void;
+  onDrop: () => void;
+  onDragEnd: () => void;
   onEdit: () => void;
 }) {
-  const usableNow = allocation
-    ? Math.min(allocation.spendable, providerSpendable)
-    : 0;
+  const usableNow = allocation?.protectedNow ?? 0;
   const remainingPercent = allocation?.limit
     ? Math.min(
         100,
@@ -173,8 +208,36 @@ function AllocationRow({
   const decision = allocation?.decision ?? "allow";
 
   return (
-    <article className="allocation-row">
+    <article
+      className={`allocation-row ${dragging ? "dragging" : ""} ${
+        dragOver ? "drag-over" : ""
+      }`}
+      draggable={Boolean(allocation) && !priorityBusy}
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", scope.id);
+        onDragStart();
+      }}
+      onDragOver={(event) => {
+        if (!allocation) {
+          return;
+        }
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        onDragOver();
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        onDrop();
+      }}
+      onDragEnd={onDragEnd}
+    >
       <div className="scope-identity">
+        {allocation && (
+          <span className="drag-handle" title="Drag to change priority">
+            <Icon name="grip" size={18} />
+          </span>
+        )}
         <span className="scope-icon workspace">
           <Icon name="folder" size={18} />
         </span>
@@ -190,16 +253,21 @@ function AllocationRow({
         {allocation ? (
           <>
             <div className="progress-meta">
-              <strong>{remainingPercent}% of workspace available</strong>
+              <strong>
+                Priority #{allocation.priority + 1} · {remainingPercent}% funded
+              </strong>
               <span>
-                {formatAmount(usableNow, unit)} total quota ·{" "}
-                {formatAmount(allocation.limit, unit)} allocated
+                {formatAmount(usableNow, unit)} protected now ·{" "}
+                {formatAmount(allocation.limit, unit)}{" "}
+                {allocation.protectedNow < allocation.spendable
+                  ? "target after reset"
+                  : "target per window"}
               </span>
             </div>
             <div
               className="progress-track"
               role="progressbar"
-              aria-label={`${scope.displayName} has ${remainingPercent}% of its allocation available, equal to ${formatAmount(usableNow, unit)} of total quota`}
+              aria-label={`${scope.displayName} has ${formatAmount(usableNow, unit)} protected now toward a ${formatAmount(allocation.limit, unit)} target`}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={remainingPercent}
@@ -234,12 +302,19 @@ export function Dashboard({
   onRefresh,
   onRemoveSource,
   removingSource,
+  codexProtection,
+  protectionBusy,
+  onProtection,
+  priorityBusy,
+  onPriorityOrder,
 }: DashboardProps) {
   const [sourceMenu, setSourceMenu] = useState<{
     source: QuotaSourceSummary;
     x: number;
     y: number;
   } | null>(null);
+  const [draggedScopeId, setDraggedScopeId] = useState<string | null>(null);
+  const [dragOverScopeId, setDragOverScopeId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!sourceMenu) {
@@ -277,8 +352,38 @@ export function Dashboard({
   const allocationByScope = new Map(
     dashboard.allocations.map((allocation) => [allocation.scopeId, allocation]),
   );
-  const scopes = orderedScopes(state.scopes);
+  const protectedTotal = dashboard.allocations
+    .filter((allocation) => allocation.parentId === null)
+    .reduce((total, allocation) => total + allocation.protectedNow, 0);
+  const unallocatedNow = Math.max(
+    0,
+    quotaWindow.providerSpendable - protectedTotal,
+  );
+  const scopes = orderedScopes(state.scopes, dashboard.allocations);
   const forecast = formatForecast(dashboard.forecast, quotaWindow.unit);
+  const finishPriorityDrag = (targetScopeId: string) => {
+    if (
+      draggedScopeId === null ||
+      draggedScopeId === targetScopeId ||
+      priorityBusy
+    ) {
+      setDraggedScopeId(null);
+      setDragOverScopeId(null);
+      return;
+    }
+    const orderedScopeIds = scopes
+      .filter((scope) => allocationByScope.has(scope.id))
+      .map((scope) => scope.id);
+    const from = orderedScopeIds.indexOf(draggedScopeId);
+    const to = orderedScopeIds.indexOf(targetScopeId);
+    if (from >= 0 && to >= 0) {
+      const [moved] = orderedScopeIds.splice(from, 1);
+      orderedScopeIds.splice(to, 0, moved);
+      onPriorityOrder(orderedScopeIds);
+    }
+    setDraggedScopeId(null);
+    setDragOverScopeId(null);
+  };
 
   return (
     <div className="app-layout">
@@ -361,6 +466,42 @@ export function Dashboard({
           </div>
         </header>
 
+        {codexProtection && (
+          <section
+            className={`protection-banner ${
+              codexProtection.installed ? "installed" : ""
+            }`}
+          >
+            <span>
+              <Icon name="shield" size={19} />
+            </span>
+            <div>
+              <strong>
+                {codexProtection.installed
+                  ? "Workspace gate installed"
+                  : "Tracking only — quota is not protected"}
+              </strong>
+              <small>
+                {codexProtection.installed
+                  ? "Review and trust the AQM hooks in Codex, then restart Codex to activate blocking."
+                  : "Codex Desktop can still consume quota from folders without an allocation."}
+              </small>
+            </div>
+            <button
+              className="button subtle small"
+              type="button"
+              disabled={protectionBusy}
+              onClick={onProtection}
+            >
+              {codexProtection.installed
+                ? "Activation steps"
+                : protectionBusy
+                  ? "Installing…"
+                  : "Enable protection"}
+            </button>
+          </section>
+        )}
+
         <section className="quota-summary">
           <div className="quota-summary-main">
             <div className="status-line">
@@ -409,15 +550,23 @@ export function Dashboard({
             <div>
               <dt>
                 <Icon name="activity" size={18} />
-                Unattributed
+                Unallocated
               </dt>
               <dd>
                 {formatAmount(
-                  quotaWindow.unattributedUsage,
+                  quotaWindow.unallocated,
                   quotaWindow.unit,
                 )}
               </dd>
-              <small>Not assigned to a workspace</small>
+              <small>
+                {formatAmount(unallocatedNow, quotaWindow.unit)} free now
+                {quotaWindow.unattributedUsage > 0
+                  ? ` · ${formatAmount(
+                      quotaWindow.unattributedUsage,
+                      quotaWindow.unit,
+                    )} usage unattributed`
+                  : ""}
+              </small>
             </div>
           </dl>
         </section>
@@ -426,7 +575,9 @@ export function Dashboard({
           <header className="section-header">
             <div>
               <h2>Workspace allocations</h2>
-              <span>Quota limits for local folders.</span>
+              <span>
+                Drag workspaces to fund the most important folders first.
+              </span>
             </div>
             <div className="section-actions">
               <button className="button outline" type="button" onClick={onAddScope}>
@@ -438,7 +589,7 @@ export function Dashboard({
 
           <div className="allocation-table-header" aria-hidden="true">
             <span>Workspace</span>
-            <span>Remaining</span>
+            <span>Protected now</span>
             <span />
           </div>
 
@@ -450,7 +601,19 @@ export function Dashboard({
                   scope={scope}
                   allocation={allocationByScope.get(scope.id)}
                   unit={quotaWindow.unit}
-                  providerSpendable={quotaWindow.providerSpendable}
+                  priorityBusy={priorityBusy}
+                  dragging={draggedScopeId === scope.id}
+                  dragOver={
+                    dragOverScopeId === scope.id &&
+                    draggedScopeId !== scope.id
+                  }
+                  onDragStart={() => setDraggedScopeId(scope.id)}
+                  onDragOver={() => setDragOverScopeId(scope.id)}
+                  onDrop={() => finishPriorityDrag(scope.id)}
+                  onDragEnd={() => {
+                    setDraggedScopeId(null);
+                    setDragOverScopeId(null);
+                  }}
                   onEdit={() => onEditAllocation(scope)}
                 />
               ))

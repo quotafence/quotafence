@@ -5,6 +5,8 @@ positioning. The desktop application currently configures local budgets and
 observes Codex quota. The CLI can own one Codex child process and reserve its
 workspace capacity. Desktop refresh can passively infer folder usage from
 Codex's local thread metadata plus the provider's aggregate quota checkpoint.
+An optional trusted Codex hook can refuse new prompts from unallocated folders
+and apply the mapped workspace boundary before a turn starts.
 
 ## First-run workflow
 
@@ -34,6 +36,10 @@ For the selected quota window, the UI can:
 - distinguish folder allocations from unallocated capacity;
 - choose any local folder and create one workspace allocation for it;
 - update existing allocation limits;
+- reorder workspaces by drag and drop so scarce current capacity funds the
+  highest-priority folders first;
+- distinguish the full-window target from the amount protected in the current
+  window;
 - show canonical folder paths on explicitly bound workspace allocations;
 - refresh the selected Codex source on startup or on demand;
 - establish a Codex Desktop activity baseline at startup and reconcile later
@@ -44,6 +50,8 @@ For the selected quota window, the UI can:
 - show folder-level reservations and policy decisions;
 - configure per-folder warn, confirmation, and stop thresholds;
 - show an evidence-gated managed burn rate and depletion signal; and
+- install and report the configuration status of Codex Desktop workspace
+  protection; and
 - switch between locally configured quota sources.
 
 Creating a workspace, its first allocation, and its folder binding is atomic.
@@ -74,7 +82,7 @@ This milestone does not:
   account-wide integer percentage;
 - split activity across multiple or unmapped folders;
 - accept manual usage estimates as a substitute for automatic attribution;
-- enforce live in-flight quota movement;
+- terminate a Codex Desktop turn already in flight;
 - archive scopes; or
 - run as a background daemon.
 

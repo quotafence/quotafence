@@ -17,6 +17,7 @@ The `src-tauri/src/storage` module provides:
 - canonical folder to workspace-scope bindings;
 - atomic workspace, initial allocation, and binding creation;
 - transactional folder-allocation writes;
+- per-pool folder allocation priority;
 - capacity-checked reservations;
 - minimal active provider-turn observations for checkpoint reconciliation;
 - passive Codex Desktop thread cursors and pending activity metadata;
@@ -60,6 +61,7 @@ providers
             └── usage_events ─ scopes (optional)
 
 workspace_bindings ── workspace scopes
+allocation_priorities ── quota pools, workspace scopes
 workspace_policies ── workspace scopes
 managed_session_policy_overrides ── managed_sessions, workspace scopes
 ```
@@ -134,6 +136,11 @@ counter, pending counter delta, and observation time. No title, preview, prompt,
 response, transcript, credential, or source-code field exists in this table.
 Cursor updates, provider snapshot replacement, and any inferred workspace usage
 event commit in one immediate transaction.
+
+Migration 12 adds `allocation_priorities`, keyed by quota pool and workspace
+scope. Ranks are unique within a pool and therefore survive creation of a new
+provider window. Reordering replaces one pool's ranks transactionally only
+after validating that every current root allocation appears exactly once.
 
 ## Transactions
 

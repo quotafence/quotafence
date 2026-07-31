@@ -9,6 +9,7 @@ type IconName =
   | "database"
   | "folder"
   | "gauge"
+  | "grip"
   | "plus"
   | "refresh"
   | "shield"
@@ -54,6 +55,16 @@ const paths: Record<IconName, ReactNode> = {
       <path d="M4.9 19a9 9 0 1 1 14.2 0" />
       <path d="m12 13 4-4" />
       <path d="M9 19h6" />
+    </>
+  ),
+  grip: (
+    <>
+      <circle cx="8" cy="7" r="1" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="7" r="1" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="17" r="1" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="17" r="1" fill="currentColor" stroke="none" />
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,

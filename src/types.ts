@@ -70,6 +70,12 @@ export type CodexSyncResult = {
   } | null;
 };
 
+export type CodexProtectionStatus = {
+  installed: boolean;
+  requiresReview: boolean;
+  configPath: string;
+};
+
 export type QuotaSourceSummary = {
   providerId: string;
   providerDisplayName: string;
@@ -114,12 +120,14 @@ export type AllocationSnapshot = {
   parentId: string | null;
   scopeKind: ScopeKind;
   displayName: string;
+  priority: number;
   unit: string;
   limit: number;
   attributedUsage: number;
   activeReservations: number;
   remaining: number;
   spendable: number;
+  protectedNow: number;
   decision: EnforcementDecision;
   policy: PolicySummary;
 };

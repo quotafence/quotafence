@@ -14,6 +14,12 @@ Local-first budget guard and routing layer for AI coding agents.
 > parsing prompts and transcripts. Aggregate percentage checkpoints still
 > cannot provide exact per-workspace token counts or prove causality when
 > activity spans multiple or unmapped folders.
+> An optional trusted `UserPromptSubmit` hook can block new Codex Desktop
+> prompts from folders without an allocation and enforce the allocated
+> workspace boundary. It does not terminate an already-running turn.
+> Workspace targets are shares of the full quota window. Drag-and-drop priority
+> decides which targets are protected first when the current window no longer
+> has enough capacity to fund all of them.
 
 Solo power users often run several coding agents across multiple workspaces
 against the same constrained subscription. Low-priority work can exhaust that
@@ -54,6 +60,11 @@ trustworthy samples, one hour of observation, and 50% attribution coverage.
 Sparse or mostly unattributed history stays explicitly “insufficient” instead
 of producing a precise-looking ETA.
 
+Allocation targets remain stable even when created mid-window. For example, a
+20% target created with only 12% provider quota left shows 12% protected now
+and becomes fully funded after reset. Reordering folders changes which target
+is funded first without rewriting usage or allocation amounts.
+
 The desktop UI remains useful for setup and policy visibility, but dashboard
 analytics alone are not the product. Longer term, the same control layer may
 route work using provider quota, credit, cost, concurrency, priority, and
@@ -67,8 +78,8 @@ deadline. Those dimensions are not assumed to be interchangeable.
   entry.
 - **Policy in the path:** enforcement belongs in the launch workflow, not only
   on a dashboard.
-- **Capability honesty:** never claim a hard stop outside sessions AQM controls
-  or without a usable signal.
+- **Capability honesty:** distinguish managed process control, trusted
+  pre-prompt admission, and observation-only tracking.
 - **Local first:** policy, attribution, workspace metadata, and session records
   stay on the device.
 - **Codex first:** complete one end-to-end adapter before adding more providers.
@@ -81,7 +92,7 @@ deadline. Those dimensions are not assumed to be interchangeable.
 | Context | Map any local folder to a workspace allocation |
 | Workflow | `aqm run codex` or an equivalent lightweight managed launch |
 | Sessions | Reserve, start, observe, finish, and recover one managed session |
-| Enforcement | Warn, confirm, or refuse launch according to effective capability |
+| Enforcement | Refuse managed launches or trusted Desktop prompts at allocation boundaries |
 | Accounting | Automatic session attribution plus provider reconciliation |
 | Forecasting | Evidence-based depletion signal after reliable attribution |
 | Storage | Local database; no hosted account required |
@@ -203,7 +214,8 @@ workspace's current spendable capacity, refuses a stop boundary, forwards
 termination signals, preserves the Codex exit code, and releases its
 reservation on completion, failure, or interruption.
 
-Install the experimental Codex desktop tracking hooks:
+Enable Codex Desktop workspace protection from the dashboard, or install it
+with the development CLI:
 
 ```bash
 npm run aqm -- hooks install codex
@@ -211,7 +223,8 @@ npm run aqm -- hooks install codex
 
 Codex requires non-managed hooks to be reviewed and trusted. See the
 [CLI guide](docs/cli.md) for the trust step, current precision limits, status,
-and uninstall command.
+and uninstall command. Once active, an unallocated folder receives a blocked
+prompt instead of consuming quota reserved for allocated workspaces.
 
 These development commands use the same local database as the desktop.
 Admission refreshes the matching Codex checkpoint and evaluates both workspace
