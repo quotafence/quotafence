@@ -31,8 +31,8 @@
   --avatar-background: #e5e5e3;
   --avatar-ink: #111;
   --progress-fill: #ededeb;
-  --quota-used: #68686d;
   --success: #62c98f;
+  --success-muted: #347b57;
   --focus-ring: #fff;
   --danger: #f06f78;
   --warning: #f06f78;
@@ -64,8 +64,8 @@
   --avatar-background: #171716;
   --avatar-ink: #ffffff;
   --progress-fill: #20201e;
-  --quota-used: #9b9b95;
   --success: #188754;
+  --success-muted: #72ad8a;
   --focus-ring: #171716;
   --danger: #c83f4b;
   --warning: #c83f4b;
@@ -2836,7 +2836,7 @@ h3,
   height: 100%;
   display: block;
   border-radius: inherit;
-  background: var(--progress-fill);
+  background: var(--success);
   transition: width 220ms ease;
 }
 
@@ -3274,11 +3274,11 @@ h3,
 }
 
 .allocation-legend dt i.used {
-  background: var(--quota-used);
+  background: var(--danger);
 }
 
 .allocation-legend dt i.funded {
-  background: var(--warning);
+  background: var(--success-muted);
 }
 
 .allocation-legend dt i.funded.protected {
@@ -3384,12 +3384,9 @@ h3,
   display: block;
 }
 
-.allocation-used-segment {
-  background: var(--quiet);
-}
-
-.overview-allocation-row.over-allocation .allocation-used-segment {
-  background: var(--danger);
+.overview-allocation-row.over-allocation .allocation-quota-track {
+  background: color-mix(in srgb, var(--danger) 18%, var(--ring-track));
+  box-shadow: inset 0 0 0 1px var(--danger);
 }
 
 .allocation-protected-segment {
@@ -3397,7 +3394,7 @@ h3,
 }
 
 .allocation-planned-segment {
-  background: var(--warning);
+  background: var(--success-muted);
 }
 
 .allocation-limit {

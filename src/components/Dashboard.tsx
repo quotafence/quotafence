@@ -220,25 +220,17 @@ function AllocationRow({
   onDragEnd: () => void;
   onEdit: () => void;
 }) {
-  const usedWithinAllocation = Math.min(
-    allocation.attributedUsage,
-    allocation.limit,
-  );
   const overage = Math.max(
     0,
     allocation.attributedUsage - allocation.limit,
   );
-  const usedPercent = allocation.limit
-    ? Math.round((usedWithinAllocation / allocation.limit) * 100)
-    : 0;
-  const usedWidth = Math.min(100, usedPercent);
-  const protectedPercent = allocation.limit
+  const remainingPercent = allocation.limit
     ? Math.min(
-        100 - usedWidth,
+        100,
         Math.round((allocation.protectedNow / allocation.limit) * 100),
       )
     : 0;
-  const fundedLabel = protectionActive ? "protected now" : "planned now";
+  const remainingLabel = protectionActive ? "protected" : "planned";
 
   return (
     <article
@@ -269,22 +261,18 @@ function AllocationRow({
       <div className="allocation-quota">
         <div className="allocation-quota-meta">
           <span>
-            <strong>{formatAmount(allocation.protectedNow, unit)}</strong>{" "}
-            {fundedLabel}
+            <strong>
+              {formatAmount(allocation.protectedNow, unit)} left
+            </strong>
+            {allocation.protectedNow > 0 ? ` · ${remainingLabel}` : null}
           </span>
           <span>
             {overage > 0 ? (
-              <>
-                {formatAmount(usedWithinAllocation, unit)} allocation used ·{" "}
-                <strong className="allocation-overage">
-                  {formatAmount(overage, unit)} over allocation
-                </strong>
-              </>
+              <strong className="allocation-overage">
+                {formatAmount(overage, unit)} over allocation
+              </strong>
             ) : (
-              <>
-                {formatAmount(allocation.attributedUsage, unit)} used ·{" "}
-                {usedPercent}% of allocation
-              </>
+              <>{remainingPercent}% of allocation left</>
             )}
           </span>
         </div>
@@ -294,44 +282,31 @@ function AllocationRow({
           aria-label={
             overage > 0
               ? `${scope.displayName}: ${formatAmount(
-                  allocation.attributedUsage,
+                  allocation.protectedNow,
                   unit,
-                )} total usage, including ${formatAmount(
-                  usedWithinAllocation,
-                  unit,
-                )} from its allocation and ${formatAmount(
+                )} left and ${formatAmount(
                   overage,
                   unit,
-                )} over its allocation; ${formatAmount(
-                  allocation.protectedNow,
-                  unit,
-                )} ${fundedLabel}`
+                )} over its allocation`
               : `${scope.displayName}: ${formatAmount(
-                  allocation.attributedUsage,
-                  unit,
-                )} used and ${formatAmount(
                   allocation.protectedNow,
                   unit,
-                )} ${fundedLabel} from a ${formatAmount(
+                )} left, ${remainingLabel}, from a ${formatAmount(
                   allocation.limit,
                   unit,
                 )} allocation`
           }
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuenow={Math.min(100, usedWidth + protectedPercent)}
+          aria-valuenow={remainingPercent}
         >
-          <span
-            className="allocation-used-segment"
-            style={{ width: `${usedWidth}%` }}
-          />
           <span
             className={
               protectionActive
                 ? "allocation-protected-segment"
                 : "allocation-planned-segment"
             }
-            style={{ width: `${protectedPercent}%` }}
+            style={{ width: `${remainingPercent}%` }}
           />
         </div>
       </div>
@@ -440,7 +415,6 @@ export function Dashboard({
         ),
       )
     : 0;
-  const usedPercent = Math.max(0, 100 - availablePercent);
   const allocationByScope = new Map(
     dashboard.allocations.map((allocation) => [allocation.scopeId, allocation]),
   );
@@ -702,16 +676,16 @@ export function Dashboard({
                     <div
                       className={`used-progress ${statusTone}`}
                       role="progressbar"
-                      aria-label={`${usedPercent}% used`}
+                      aria-label={`${availablePercent}% left`}
                       aria-valuemin={0}
                       aria-valuemax={100}
-                      aria-valuenow={usedPercent}
+                      aria-valuenow={availablePercent}
                     >
-                      <span style={{ width: `${usedPercent}%` }} />
+                      <span style={{ width: `${availablePercent}%` }} />
                     </div>
                     <div className="used-progress-meta">
                       <span>{formatDate(quotaWindow.startsAt)}</span>
-                      <strong>{usedPercent}% used</strong>
+                      <strong>{availablePercent}% left</strong>
                       <span>{formatDate(quotaWindow.endsAt)}</span>
                     </div>
                   </div>
@@ -729,7 +703,7 @@ export function Dashboard({
                     <div
                       className="allocation-donut"
                       style={{
-                        background: `conic-gradient(${statusTone === "danger" ? "var(--danger)" : "var(--quota-used)"} 0 ${usedSlicePercent}%, ${protectionActive ? "var(--success)" : "var(--warning)"} ${usedSlicePercent}% ${plannedSliceEnd}%, var(--success) ${plannedSliceEnd}% 100%)`,
+                        background: `conic-gradient(var(--danger) 0 ${usedSlicePercent}%, ${protectionActive ? "var(--success)" : "var(--success-muted)"} ${usedSlicePercent}% ${plannedSliceEnd}%, var(--success) ${plannedSliceEnd}% 100%)`,
                       }}
                       role="img"
                       aria-label={`${formatAmount(
