@@ -10,12 +10,13 @@ use std::{
 use tauri::{Manager, Runtime, State};
 
 use crate::providers::codex::{self, CodexDetection, CodexSyncResult};
+use crate::providers::codex_hooks::{self, CodexProtectionStatus};
 use crate::{
     application::{
         ArchiveQuotaSource, CreateAccount, CreateAllocatedWorkspace, CreateProvider,
         CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow, GetLocalState, GetQuotaDashboard,
         LocalState, PolicySummary, QuotaDashboard, ReleaseReservation, ReserveQuota,
-        ResetWorkspacePolicy, SetAllocation, SetWorkspacePolicy,
+        ResetWorkspacePolicy, SetAllocation, SetAllocationPriorityOrder, SetWorkspacePolicy,
     },
     paths::DATABASE_FILENAME,
     workspace::canonicalize_workspace_path,
@@ -94,6 +95,14 @@ pub(crate) fn create_allocated_workspace(
 #[tauri::command]
 pub(crate) fn set_allocation(state: State<'_, AppState>, request: SetAllocation) -> IpcResult<()> {
     state.execute(|service| service.set_allocation(request))
+}
+
+#[tauri::command]
+pub(crate) fn set_allocation_priority_order(
+    state: State<'_, AppState>,
+    request: SetAllocationPriorityOrder,
+) -> IpcResult<()> {
+    state.execute(|service| service.set_allocation_priority_order(request))
 }
 
 #[tauri::command]
@@ -176,6 +185,26 @@ pub(crate) async fn sync_codex_quota(
             desktop_scan,
         ))
     })
+}
+
+#[tauri::command]
+pub(crate) fn get_codex_protection_status() -> IpcResult<CodexProtectionStatus> {
+    codex_hooks::protection_status().map_err(IpcError::integration_error)
+}
+
+#[tauri::command]
+pub(crate) fn install_codex_protection() -> IpcResult<CodexProtectionStatus> {
+    let executable = std::env::current_exe().map_err(|error| {
+        IpcError::integration_error(format!(
+            "Could not resolve the Agent Quota Manager executable: {error}"
+        ))
+    })?;
+    codex_hooks::install_protection(&executable).map_err(IpcError::integration_error)
+}
+
+#[tauri::command]
+pub(crate) fn uninstall_codex_protection() -> IpcResult<CodexProtectionStatus> {
+    codex_hooks::uninstall_protection().map_err(IpcError::integration_error)
 }
 
 fn current_time_millis() -> i64 {

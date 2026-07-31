@@ -91,7 +91,11 @@ entities.
 Each workspace allocation snapshot includes:
 
 - workspace identity, canonical folder, and display name;
-- limit, attributed usage, active reservations, remaining, and spendable quota;
+- persisted priority;
+- target limit, attributed usage, active reservations, remaining, and spendable
+  quota;
+- the amount protected now after higher-priority targets are funded from
+  current provider capacity;
 - provider-native unit; and
 - the effective allow/warn/confirm/stop decision.
 
@@ -115,6 +119,12 @@ reservations remain additional committed capacity because they have not yet
 appeared in provider usage. Legacy nested rows remain readable for migration
 compatibility but cannot be created through the desktop IPC boundary.
 
+`SetAllocationPriorityOrder` validates that the submitted order contains every
+root allocation in the selected window exactly once, then persists ranks for
+the quota pool. Priority therefore survives window rollover. Dashboard funding
+walks bound root allocations in that order; a target is never reinterpreted as
+a percentage of current remaining quota.
+
 ## Policy
 
 `QuotaService::new` uses the standard 80/90/100 percent policy.
@@ -125,8 +135,12 @@ launches all resolve that same effective policy.
 
 `allow`, `warn`, `require_confirmation`, and `stop` remain assessment results
 at this layer. A confirmation is enforced and audited only for an actual
-AQM-managed launch; a stop refuses that launch. A dry run has no audit side
-effect, and unmanaged or already-running Codex work is not hard-enforced.
+AQM-managed launch; a stop refuses that launch. The trusted Desktop prompt gate
+uses priority-funded `protected_now` plus the allocation-specific result and
+rejects non-interactive confirmation or stop before the prompt starts. Usage
+outside a trusted AQM gate can still reduce real provider capacity and therefore
+current protection; AQM cannot recreate capacity already consumed. A dry run
+has no audit side effect, and an already-running Codex turn is not terminated.
 
 ## Tauri boundary
 

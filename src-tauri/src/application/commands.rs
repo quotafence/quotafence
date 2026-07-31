@@ -229,6 +229,13 @@ pub struct SetAllocation {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SetAllocationPriorityOrder {
+    pub window_id: String,
+    pub ordered_scope_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReserveQuota {
     pub id: String,
     pub scope_id: String,

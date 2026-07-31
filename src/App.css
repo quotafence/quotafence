@@ -1179,6 +1179,57 @@ h3,
   gap: 8px;
 }
 
+.protection-banner {
+  margin-bottom: 18px;
+  padding: 13px 15px;
+  border: 1px solid rgba(239, 119, 125, 0.28);
+  border-radius: 11px;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  background: rgba(239, 119, 125, 0.05);
+}
+
+.protection-banner > span {
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(239, 119, 125, 0.24);
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--danger);
+}
+
+.protection-banner > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.protection-banner strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.protection-banner small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.protection-banner.installed {
+  border-color: var(--line);
+  background: var(--panel-soft);
+}
+
+.protection-banner.installed > span {
+  border-color: var(--line-strong);
+  color: #d4d4d5;
+}
+
 .quota-summary {
   min-height: 210px;
   margin-bottom: 18px;
@@ -1394,10 +1445,23 @@ h3,
   grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.35fr) 120px;
   align-items: center;
   gap: 24px;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    opacity 120ms ease;
 }
 
 .allocation-list .allocation-row:first-child {
   border-top: 0;
+}
+
+.allocation-row.dragging {
+  opacity: 0.45;
+}
+
+.allocation-row.drag-over {
+  box-shadow: inset 0 2px 0 #f4f4f5;
+  background: #171718;
 }
 
 .scope-identity {
@@ -1405,6 +1469,20 @@ h3,
   display: flex;
   align-items: center;
   gap: 11px;
+}
+
+.drag-handle {
+  width: 22px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #77777c;
+  cursor: grab;
+}
+
+.allocation-row:active .drag-handle {
+  cursor: grabbing;
 }
 
 .scope-icon {
@@ -1865,6 +1943,14 @@ h3,
     border-bottom: 1px solid var(--line);
     flex-direction: row;
     align-items: center;
+  }
+
+  .protection-banner {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .protection-banner .button {
+    grid-column: 1 / -1;
   }
 
   .sidebar > .brand {

@@ -5,8 +5,9 @@ contains the provider-neutral domain, local SQLite storage, application
 services, Tauri command boundary, and a Codex discovery/synchronization adapter.
 Folder-based workspace mapping and a lightweight context CLI are implemented;
 provider-refreshing admission dry runs, passive Codex Desktop attribution, and
-experimental lifecycle-hook attribution are also implemented. `aqm run codex`
-owns one admitted child process and reservation and reconciles terminal usage.
+an optional trusted lifecycle-hook admission gate are also implemented.
+`aqm run codex` owns one admitted child process and reservation and reconciles
+terminal usage.
 
 ## Goals
 
@@ -26,7 +27,7 @@ owns one admitted child process and reservation and reconciles terminal usage.
   or time-window allowance.
 - Acting as a cloud proxy for prompts or source code.
 - Cloud sync, team workspaces, RBAC, billing, or organization governance in v0.1.
-- Claiming hard enforcement for sessions that AQM did not launch and control.
+- Claiming that AQM can terminate a Codex Desktop turn it did not launch.
 
 ## Initial shape: a modular monolith
 
@@ -44,7 +45,7 @@ src-tauri/src/
   providers/
     codex.rs                 Quota discovery and synchronization
     codex_desktop.rs         Read-only local activity metadata scan
-    codex_hooks.rs           Desktop lifecycle observation and hook config
+    codex_hooks.rs           Desktop prompt admission, observation, hook config
   bin/aqm.rs                 Context, admission, and Codex hook entrypoint
 ```
 
@@ -73,6 +74,7 @@ see [Tauri commands](tauri-commands.md).
 Owns provider-neutral rules:
 
 - allocation and rollover;
+- priority-ordered funding of folder targets from current provider capacity;
 - folder-level debiting;
 - reservations for in-flight work;
 - warning and stop policies; and
@@ -115,10 +117,10 @@ checkpoint application is shared by desktop refresh and CLI admission, and can
 be tested with a fabricated detection result without spawning Codex. It does
 not launch user work through the App Server; the CLI wrapper starts the resolved
 Codex executable directly. A passive desktop scanner correlates minimal local
-thread activity metadata with provider checkpoint movement. An experimental
-lifecycle-hook adapter brackets
-Codex desktop turns with provider checkpoints and records an inferred scoped
-delta only when that turn is the sole active observation for the window.
+thread activity metadata with provider checkpoint movement. An optional
+lifecycle-hook adapter checks a Desktop prompt before it starts, then brackets
+allowed turns with provider checkpoints and records an inferred scoped delta
+only when that turn is the sole active observation for the window.
 
 ## Passive Codex Desktop attribution
 
@@ -147,30 +149,38 @@ application and storage layers. `aqm admit codex` refreshes the relevant
 checkpoint and evaluates the effective admission boundary without launching a
 process. `aqm run codex` reuses that application boundary, persists and reserves
 before spawn, supervises the child, and commits its terminal outcome with
-reservation release. `aqm hook codex` is a fail-open lifecycle entrypoint used
-by installed Codex hooks; it is not a managed launch. See [CLI](cli.md).
+reservation release. `aqm hook codex` is a lifecycle entrypoint used by
+installed Codex hooks; explicit allocation decisions may block a new prompt,
+while integration failures remain fail-open. It is not a managed launch. See
+[CLI](cli.md).
 
 ## Observed Codex desktop turn
 
 1. `UserPromptSubmit` supplies session ID, turn ID, and working folder.
-2. AQM resolves the nearest folder binding and refreshes the selected Codex
-   checkpoint.
-3. A minimal active-turn row stores the baseline, window, optional scope, and
+2. AQM resolves the nearest folder binding. Once protection is enabled by at
+   least one Codex allocation, an unmapped folder is rejected before the turn
+   starts.
+3. For a mapped folder AQM refreshes the selected Codex checkpoint and applies
+   the workspace allocation policy. Exhausted or confirmation-boundary work is
+   rejected.
+4. An allowed prompt stores a minimal active-turn row containing the baseline,
+   window, scope, and
    whether another turn overlaps it.
-4. `Stop` refreshes the checkpoint again.
-5. The end checkpoint minus the baseline becomes an immutable scoped usage
+5. `Stop` refreshes the checkpoint again.
+6. The end checkpoint minus the baseline becomes an immutable scoped usage
    event only when the window is unchanged, the folder is mapped, and no turn
    overlapped.
-6. Zero deltas create no event. Rollover, concurrency, missing checkpoints, and
+7. Zero deltas create no event. Rollover, concurrency, missing checkpoints, and
    unmapped folders remain represented by the aggregate provider total rather
    than fabricated attribution.
-7. `SessionEnd` cleans unfinished rows; stale rows are also pruned at the next
+8. `SessionEnd` cleans unfinished rows; stale rows are also pruned at the next
    turn start.
 
-The hooks are observation, not enforcement. Codex supplies a complete
-lifecycle event on stdin, but AQM deserializes and persists only session/turn
-identity, event type, and folder metadata. It does not deserialize the prompt,
-assistant response, or transcript path.
+The trusted prompt hook is a pre-turn admission gate, not process ownership: it
+can reject a new prompt but cannot terminate an already-running turn. Codex
+supplies a complete lifecycle event on stdin, but AQM deserializes and persists
+only session/turn identity, event type, and folder metadata. It does not
+deserialize the prompt, assistant response, or transcript path.
 
 ## Managed-session flow
 
@@ -210,6 +220,8 @@ integer percentage, current forecast confidence is capped at medium.
 ## Enforcement modes
 
 - **Managed hard stop:** the adapter controls the session and can stop new work.
+- **Trusted prompt gate:** a reviewed provider hook can refuse a new prompt but
+  cannot terminate an already-running turn.
 - **Managed warning:** the app can observe or estimate usage but cannot safely
   interrupt the provider.
 - **Observed only:** the app reports budget state but cannot attribute or enforce
@@ -218,16 +230,18 @@ integer percentage, current forecast confidence is capped at medium.
 The effective mode is derived from adapter capabilities and current health, not
 only from user preference.
 
-For the initial Codex slice, a stop can safely mean refusing to launch an
-AQM-managed process. Live termination is a separate capability requiring both
-process ownership and a timely provider signal. It must not be inferred merely
-because AQM can kill a child process.
+For the initial Codex slice, a stop means refusing an AQM-managed process or a
+new trusted-hook prompt. Live termination is a separate capability requiring
+both process ownership and a timely provider signal. It must not be inferred
+merely because AQM can kill a child process.
 
 The effective policy resolves from a persisted workspace-scope override and
 then the application default. This keeps thresholds stable across provider
 window rollover and gives the desktop, dry-run admission, and managed launch
-one precedence rule. Explicit confirmation acceptance is audited only when the
-managed session and reservation are committed.
+one precedence rule. The Desktop hook cannot open an interactive confirmation
+dialog, so a confirmation decision rejects that prompt and asks the user to
+adjust policy or capacity. Explicit confirmation acceptance is audited only
+when the managed session and reservation are committed.
 
 ## Trust boundaries
 

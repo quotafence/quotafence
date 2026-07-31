@@ -1,19 +1,23 @@
 use std::{
-    fs,
+    env, fs,
     io::Read,
     path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use crate::{
     application::{
         AbandonProviderSessionObservations, AbandonProviderTurnObservation,
-        BeginProviderTurnObservation, GetLocalState, GetProviderTurnObservation,
-        GetWorkspaceContext, QuotaService, ReconcileProviderTurnObservation,
-        TurnReconciliationResult, WorkspaceContext,
+        BeginProviderTurnObservation, EvaluateWorkspaceAdmission, GetLocalState,
+        GetProviderTurnObservation, GetWorkspaceContext, QuotaService,
+        ReconcileProviderTurnObservation, TurnReconciliationResult, WorkspaceContext,
     },
+    domain::EnforcementDecision,
+    paths,
+    storage::Database,
     workspace::canonicalize_workspace_path,
 };
 
@@ -22,7 +26,7 @@ use super::codex::{self, CodexDetection, CodexSyncStatus};
 const CODEX_ADAPTER: &str = "codex_app_server";
 const AQM_STATUS_PREFIX: &str = "AQM: ";
 const TRACKED_EVENTS: [(&str, u64, &str); 3] = [
-    ("UserPromptSubmit", 90, "capturing quota baseline"),
+    ("UserPromptSubmit", 90, "checking workspace allocation"),
     ("Stop", 90, "reconciling workspace usage"),
     ("SessionEnd", 3, "cleaning session state"),
 ];
@@ -82,7 +86,77 @@ pub enum CodexHookOutcome {
     SessionCleaned {
         abandoned_turns: usize,
     },
+    Blocked {
+        reason: String,
+    },
     Skipped,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexProtectionStatus {
+    pub installed: bool,
+    pub requires_review: bool,
+    pub config_path: String,
+}
+
+pub fn hook_output(outcome: &CodexHookOutcome) -> Value {
+    match outcome {
+        CodexHookOutcome::Blocked { reason } => json!({
+            "decision": "block",
+            "reason": reason,
+        }),
+        _ => json!({}),
+    }
+}
+
+pub fn protection_status() -> Result<CodexProtectionStatus, String> {
+    let config_path = default_user_hooks_path()?;
+    let installed = user_hooks_installed(&config_path)?;
+    Ok(CodexProtectionStatus {
+        installed,
+        requires_review: installed,
+        config_path: config_path.display().to_string(),
+    })
+}
+
+pub fn install_protection(executable: &Path) -> Result<CodexProtectionStatus, String> {
+    let config_path = default_user_hooks_path()?;
+    install_user_hooks(&config_path, executable)?;
+    protection_status()
+}
+
+pub fn uninstall_protection() -> Result<CodexProtectionStatus, String> {
+    let config_path = default_user_hooks_path()?;
+    uninstall_user_hooks(&config_path)?;
+    protection_status()
+}
+
+pub fn run_installed_hook(reader: impl Read) -> Result<Value, String> {
+    if env::var_os("AQM_MANAGED_SESSION_ID").is_some() {
+        return Ok(json!({}));
+    }
+    let event = CodexHookEvent::from_reader(reader)?;
+    let database_path = paths::default_database_path()
+        .map_err(|error| format!("cannot resolve database: {error}"))?;
+    let database = Database::open(database_path).map_err(|error| error.to_string())?;
+    let mut service = QuotaService::new(database);
+    let outcome = handle_event(&mut service, &event, current_time_millis(), || {
+        matches!(
+            event.kind(),
+            CodexHookEventKind::UserPromptSubmit | CodexHookEventKind::Stop
+        )
+        .then(codex::detect)
+    })?;
+    Ok(hook_output(&outcome))
+}
+
+fn current_time_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
+        .unwrap_or(0)
 }
 
 pub fn default_user_hooks_path() -> Result<PathBuf, String> {
@@ -173,6 +247,13 @@ where
     let Some(window_id) = window_id else {
         return Ok(CodexHookOutcome::Skipped);
     };
+    if scope_id.is_none() && protection_enabled(service, &window_id, observed_at)? {
+        return Ok(CodexHookOutcome::Blocked {
+            reason: format!(
+                "AQM blocked this prompt because {canonical_path} has no Codex allocation. Add this folder in Agent Quota Manager before using Codex here."
+            ),
+        });
+    }
     let Some(detection) = detect() else {
         return Ok(CodexHookOutcome::Skipped);
     };
@@ -183,6 +264,56 @@ where
     let Some(window_id) = checkpoint.window_id else {
         return Ok(CodexHookOutcome::Skipped);
     };
+    if scope_id.is_some() {
+        let assessment = service
+            .evaluate_workspace_admission(EvaluateWorkspaceAdmission {
+                canonical_path: canonical_path.clone(),
+                provider_id: "codex".to_owned(),
+                at: observed_at,
+            })
+            .map_err(|error| error.to_string())?;
+        if assessment.provider_remaining <= 0 {
+            return Ok(CodexHookOutcome::Blocked {
+                reason: "AQM blocked this prompt because the Codex provider quota is exhausted."
+                    .to_owned(),
+            });
+        }
+        if assessment.protected_now == 0 {
+            if assessment.allocation_remaining <= 0 {
+                return Ok(CodexHookOutcome::Blocked {
+                    reason: format!(
+                        "AQM blocked this prompt because the Codex allocation for {} is exhausted.",
+                        assessment.scope_display_name
+                    ),
+                });
+            }
+            return Ok(CodexHookOutcome::Blocked {
+                reason: format!(
+                    "AQM blocked this prompt because {} has no protected quota at its current priority. Reorder workspace priorities or wait for the next reset.",
+                    assessment.scope_display_name
+                ),
+            });
+        }
+        match assessment.allocation_decision {
+            EnforcementDecision::Stop => {
+                return Ok(CodexHookOutcome::Blocked {
+                    reason: format!(
+                        "AQM blocked this prompt because the Codex allocation for {} is exhausted.",
+                        assessment.scope_display_name
+                    ),
+                });
+            }
+            EnforcementDecision::RequireConfirmation => {
+                return Ok(CodexHookOutcome::Blocked {
+                    reason: format!(
+                        "AQM blocked this prompt because {} reached its confirmation boundary. Adjust its policy or use an AQM-managed launch with explicit confirmation.",
+                        assessment.scope_display_name
+                    ),
+                });
+            }
+            EnforcementDecision::Allow | EnforcementDecision::Warn => {}
+        }
+    }
 
     let result = service
         .begin_provider_turn_observation(BeginProviderTurnObservation {
@@ -201,6 +332,22 @@ where
         scope_id,
         contended: result.contended,
     })
+}
+
+fn protection_enabled(
+    service: &mut QuotaService,
+    window_id: &str,
+    observed_at: i64,
+) -> Result<bool, String> {
+    let state = service
+        .local_state(GetLocalState {
+            selected_window_id: Some(window_id.to_owned()),
+            at: observed_at,
+        })
+        .map_err(|error| error.to_string())?;
+    Ok(state
+        .dashboard
+        .is_some_and(|dashboard| !dashboard.allocations.is_empty()))
 }
 
 fn finish_turn<F>(
@@ -459,8 +606,9 @@ mod tests {
     use crate::{
         application::{
             CreateAllocatedWorkspace, CreateQuotaSource, GetQuotaDashboard,
-            ProviderQuotaSnapshotInput,
+            ProviderQuotaSnapshotInput, RecordUsage,
         },
+        domain::{Confidence, UsageSource},
         providers::codex::{DetectedQuotaWindow, DetectionStatus},
         storage::Database,
     };
@@ -678,6 +826,110 @@ mod tests {
     }
 
     #[test]
+    fn unmapped_prompt_is_blocked_when_a_codex_workspace_is_allocated() {
+        let allocated_folder = temporary_folder("allocated");
+        let other_folder = temporary_folder("unmapped");
+        let mut service = protected_service(&allocated_folder);
+        let event = CodexHookEvent {
+            session_id: "session-unmapped".to_owned(),
+            turn_id: Some("turn-unmapped".to_owned()),
+            cwd: canonicalize_workspace_path(&other_folder).unwrap(),
+            hook_event_name: "UserPromptSubmit".to_owned(),
+        };
+
+        let outcome = handle_event(&mut service, &event, 3_000, || {
+            panic!("unmapped protection should block before provider detection")
+        })
+        .unwrap();
+
+        assert!(matches!(
+            outcome,
+            CodexHookOutcome::Blocked { ref reason }
+                if reason.contains("has no Codex allocation")
+        ));
+        assert_eq!(
+            hook_output(&outcome),
+            json!({
+                "decision": "block",
+                "reason": format!(
+                    "AQM blocked this prompt because {} has no Codex allocation. Add this folder in Agent Quota Manager before using Codex here.",
+                    canonicalize_workspace_path(&other_folder).unwrap()
+                )
+            })
+        );
+
+        std::fs::remove_dir(allocated_folder).unwrap();
+        std::fs::remove_dir(other_folder).unwrap();
+    }
+
+    #[test]
+    fn exhausted_workspace_prompt_is_blocked_without_starting_an_observation() {
+        let folder = temporary_folder("exhausted");
+        let canonical_path = canonicalize_workspace_path(&folder).unwrap();
+        let mut service = protected_service(&folder);
+        service
+            .record_usage(RecordUsage {
+                id: "workspace-exhausted".to_owned(),
+                window_id: "codex-window".to_owned(),
+                scope_id: Some("workspace-a".to_owned()),
+                amount: 20,
+                unit: "percent".to_owned(),
+                observed_at: 2_500,
+                source: UsageSource::LocalMeasured,
+                confidence: Confidence::Observed,
+                reservation_id: None,
+            })
+            .unwrap();
+        let event = CodexHookEvent {
+            session_id: "session-exhausted".to_owned(),
+            turn_id: Some("turn-exhausted".to_owned()),
+            cwd: canonical_path,
+            hook_event_name: "UserPromptSubmit".to_owned(),
+        };
+
+        let outcome = handle_event(&mut service, &event, 3_000, || Some(detection(10))).unwrap();
+
+        assert!(matches!(
+            outcome,
+            CodexHookOutcome::Blocked { ref reason } if reason.contains("is exhausted")
+        ));
+        assert!(service
+            .provider_turn_observation(GetProviderTurnObservation {
+                session_id: "session-exhausted".to_owned(),
+                turn_id: "turn-exhausted".to_owned(),
+            })
+            .unwrap()
+            .is_none());
+
+        std::fs::remove_dir(folder).unwrap();
+    }
+
+    #[test]
+    fn allocated_workspace_can_use_its_reserve_after_global_usage_crosses_confirmation() {
+        let folder = temporary_folder("reserved");
+        let canonical_path = canonicalize_workspace_path(&folder).unwrap();
+        let mut service = protected_service(&folder);
+        let event = CodexHookEvent {
+            session_id: "session-reserved".to_owned(),
+            turn_id: Some("turn-reserved".to_owned()),
+            cwd: canonical_path,
+            hook_event_name: "UserPromptSubmit".to_owned(),
+        };
+
+        let outcome = handle_event(&mut service, &event, 3_000, || Some(detection(92))).unwrap();
+
+        assert!(matches!(
+            outcome,
+            CodexHookOutcome::ObservationStarted {
+                scope_id: Some(ref scope_id),
+                ..
+            } if scope_id == "workspace-a"
+        ));
+
+        std::fs::remove_dir(folder).unwrap();
+    }
+
+    #[test]
     fn missing_stop_checkpoint_abandons_the_baseline() {
         let folder = temporary_folder("abandon");
         let canonical_path = canonicalize_workspace_path(&folder).unwrap();
@@ -794,6 +1046,46 @@ mod tests {
 
     fn detection(used: u64) -> CodexDetection {
         detection_window(used, 1_000, 10_000)
+    }
+
+    fn protected_service(folder: &Path) -> QuotaService {
+        let canonical_path = canonicalize_workspace_path(folder).unwrap();
+        let mut service = QuotaService::new(Database::open_in_memory().unwrap());
+        service
+            .create_quota_source(CreateQuotaSource {
+                provider_id: "codex".to_owned(),
+                provider_display_name: "Codex".to_owned(),
+                account_id: "codex-account".to_owned(),
+                account_display_name: "Subscription".to_owned(),
+                pool_id: "codex-weekly".to_owned(),
+                pool_display_name: "Weekly allowance".to_owned(),
+                window_id: "codex-window".to_owned(),
+                starts_at: 1_000,
+                ends_at: 10_000,
+                capacity: 100,
+                unit: "percent".to_owned(),
+                provider_snapshot: Some(ProviderQuotaSnapshotInput {
+                    adapter: CODEX_ADAPTER.to_owned(),
+                    remote_limit_id: "codex".to_owned(),
+                    remote_window_kind: "secondary".to_owned(),
+                    used: 10,
+                    observed_at: 2_000,
+                    resets_at: 10_000,
+                }),
+            })
+            .unwrap();
+        service
+            .create_allocated_workspace(CreateAllocatedWorkspace {
+                id: "workspace-a".to_owned(),
+                display_name: "Workspace A".to_owned(),
+                canonical_path,
+                window_id: "codex-window".to_owned(),
+                amount: 20,
+                unit: "percent".to_owned(),
+                bound_at: 2_000,
+            })
+            .unwrap();
+        service
     }
 
     fn detection_window(used: u64, starts_at: i64, ends_at: i64) -> CodexDetection {

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   CodexDetection,
+  CodexProtectionStatus,
   CodexSyncResult,
   IpcError,
   LocalState,
@@ -35,6 +36,18 @@ export async function syncCodexQuota(
   windowId: string,
 ): Promise<CodexSyncResult> {
   return invoke<CodexSyncResult>("sync_codex_quota", { windowId });
+}
+
+export async function getCodexProtectionStatus(): Promise<CodexProtectionStatus> {
+  return invoke<CodexProtectionStatus>("get_codex_protection_status");
+}
+
+export async function installCodexProtection(): Promise<CodexProtectionStatus> {
+  return invoke<CodexProtectionStatus>("install_codex_protection");
+}
+
+export async function uninstallCodexProtection(): Promise<CodexProtectionStatus> {
+  return invoke<CodexProtectionStatus>("uninstall_codex_protection");
 }
 
 export async function createQuotaSource(
@@ -81,6 +94,18 @@ export async function setAllocation(
       windowId,
       amount,
       unit,
+    },
+  });
+}
+
+export async function setAllocationPriorityOrder(
+  windowId: string,
+  orderedScopeIds: string[],
+): Promise<void> {
+  await invoke("set_allocation_priority_order", {
+    request: {
+      windowId,
+      orderedScopeIds,
     },
   });
 }

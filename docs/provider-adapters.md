@@ -58,6 +58,7 @@ Current capability status:
 | Managed user session | Implemented through the CLI wrapper |
 | Automatic attribution | Passive on desktop refresh when activity resolves to one workspace |
 | Admission assessment | Implemented as dry run and managed launch gate |
+| Desktop prompt gate | Implemented through an optional trusted lifecycle hook |
 | Live hard stop | Not supported |
 
 The current Codex adapter implements quota discovery and synchronization:
@@ -108,14 +109,16 @@ local-first principle but uses a narrower input for this feature: it queries
 minimal thread counters from Codex's state database instead of parsing rollout
 content, then debits only the separately refreshed provider quota delta.
 
-The optional higher-frequency desktop integration uses official Codex
-lifecycle hooks:
+The optional Desktop protection integration uses official Codex lifecycle
+hooks:
 
-- `UserPromptSubmit` records a provider checkpoint baseline for the event's
-  working folder;
+- `UserPromptSubmit` blocks unallocated folders once any Codex workspace has an
+  allocation, evaluates the mapped workspace boundary, and records a provider
+  checkpoint baseline for allowed work;
 - `Stop` refreshes and reconciles the provider delta;
 - `SessionEnd` removes unfinished observations; and
-- hook failures are fail-open and never stop a Codex turn.
+- explicit policy decisions may block a new prompt, while parse, database, or
+  provider failures remain fail-open.
 
 Codex sends the complete lifecycle JSON to the command hook. AQM's typed input
 intentionally ignores prompt, assistant-message, and transcript fields and
@@ -131,9 +134,10 @@ marker to prevent double observation. Visible concurrent work remains
 unattributed; invisible external usage is why this signal is not
 provider-confirmed.
 
-Workspace policy overrides are now persisted and applied to dry-run admission
-and managed launch. Stop means refusal to start an AQM-managed process;
-aggregate Codex checkpoints are not timely enough to justify live termination.
+Workspace policy overrides are now persisted and applied to dry-run admission,
+managed launch, and the trusted Desktop prompt gate. For the hook, stop and
+non-interactive confirmation mean refusing the next prompt. Aggregate Codex
+checkpoints are not timely enough to justify live termination.
 
 Only after that slice is stable should the adapter contract be generalized from
 real implementation evidence for a second provider.

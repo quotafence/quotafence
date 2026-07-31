@@ -13,7 +13,7 @@ pub use commands::{
     GetWorkspaceContext, GetWorkspacePolicy, ManagedSessionOutcome, MarkManagedSessionRunning,
     PrepareManagedSession, ProviderQuotaSnapshotInput, ReconcileProviderTurnObservation,
     RecordUsage, ReleaseReservation, ReserveQuota, ResetWorkspacePolicy, SetAllocation,
-    SetWorkspacePolicy, SyncProviderQuota,
+    SetAllocationPriorityOrder, SetWorkspacePolicy, SyncProviderQuota,
 };
 pub use error::{ApplicationError, ApplicationResult};
 pub use service::QuotaService;

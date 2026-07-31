@@ -286,6 +286,16 @@ CREATE INDEX idx_codex_desktop_pending_activity
     ON codex_desktop_thread_cursors(pool_id, pending_tokens);
 "#;
 
+const ALLOCATION_PRIORITIES: &str = r#"
+CREATE TABLE allocation_priorities (
+    pool_id TEXT NOT NULL REFERENCES quota_pools(id) ON DELETE CASCADE,
+    scope_id TEXT NOT NULL REFERENCES scopes(id) ON DELETE CASCADE,
+    rank INTEGER NOT NULL CHECK (rank >= 0),
+    PRIMARY KEY (pool_id, scope_id),
+    UNIQUE (pool_id, rank)
+);
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -341,6 +351,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 11,
         name: "codex_desktop_activity",
         sql: CODEX_DESKTOP_ACTIVITY,
+    },
+    Migration {
+        version: 12,
+        name: "allocation_priorities",
+        sql: ALLOCATION_PRIORITIES,
     },
 ];
 

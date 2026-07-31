@@ -21,6 +21,7 @@ pub fn run() {
             commands::archive_quota_source,
             commands::create_allocated_workspace,
             commands::set_allocation,
+            commands::set_allocation_priority_order,
             commands::set_workspace_policy,
             commands::reset_workspace_policy,
             commands::reserve_quota,
@@ -29,6 +30,9 @@ pub fn run() {
             commands::get_local_state,
             commands::detect_codex_quota,
             commands::sync_codex_quota,
+            commands::get_codex_protection_status,
+            commands::install_codex_protection,
+            commands::uninstall_codex_protection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

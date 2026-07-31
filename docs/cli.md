@@ -185,7 +185,7 @@ usage that AQM cannot observe remains a known source of uncertainty.
 Hooks launched by this managed Codex child inherit an AQM session marker and
 return without recording a second turn observation.
 
-## Experimental Codex desktop tracking
+## Codex Desktop protection and attribution
 
 Install user-level lifecycle hooks with the development CLI:
 
@@ -205,10 +205,13 @@ so the session loads the updated configuration.
 The installed lifecycle is:
 
 1. `UserPromptSubmit` invokes `aqm hook codex` in the task's working folder.
-2. AQM resolves the folder binding and captures an absolute provider baseline.
-3. `Stop` captures another checkpoint and records the delta against the folder
+2. When at least one Codex allocation exists, AQM blocks a prompt from an
+   unallocated folder. For an allocated folder it refreshes quota and applies
+   that workspace's warn, confirmation, and stop policy.
+3. Allowed prompts capture an absolute provider baseline.
+4. `Stop` captures another checkpoint and records the delta against the folder
    only when the turn was mapped, uncontended, and remained in the same window.
-4. `SessionEnd` removes unfinished observations.
+5. `SessionEnd` removes unfinished observations.
 
 These event names and stdin fields follow the official
 [Codex hooks contract](https://learn.chatgpt.com/docs/hooks).
@@ -223,9 +226,10 @@ npm run aqm -- hooks uninstall codex
 `status` verifies the AQM definitions in the JSON file; Codex remains the source
 of truth for whether their current hash has been trusted.
 
-The hook entrypoint is fail-open: a parse, database, or provider failure never
-blocks the Codex task. Set `AQM_HOOK_DEBUG=1` only while diagnosing integration
-errors.
+Explicit allocation and policy decisions may return the official
+`{"decision":"block"}` response. Infrastructure failures remain fail-open so a
+broken local integration cannot permanently lock Codex. Set
+`AQM_HOOK_DEBUG=1` only while diagnosing integration errors.
 
 Current precision limits:
 
@@ -236,18 +240,19 @@ Current precision limits:
   remains unattributed.
 - Usage outside AQM hooks between the two checkpoints is indistinguishable from
   the observed turn and is why the scoped event carries `inferred` confidence.
-- These hooks observe Codex app usage but do not make the session AQM-managed
-  and cannot hard-stop it.
+- The hook can refuse a new prompt but cannot terminate a turn that already
+  started, cover another machine, or protect usage before the hook is installed
+  and trusted.
 
 Codex includes prompt and transcript fields in some lifecycle event payloads.
 AQM's typed hook parser ignores those fields and stores only session ID, turn
 ID, event type, canonical folder, optional scope, window baseline, timestamps,
 and contention state.
 
-During development, the hook command points to the current compiled
-`target/debug/aqm` binary. Removing the build directory breaks that hook until
-you run the install command again. Release packaging for a stable installed CLI
-path remains future work.
+Installation from the desktop points the hook at the installed Agent Quota
+Manager executable, which has a non-GUI `hook codex` entrypoint. Development
+CLI installation points at the current compiled `aqm` binary; removing that
+build directory requires reinstalling the hook.
 
 ## Current boundary
 

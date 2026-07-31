@@ -63,8 +63,13 @@ impl<'connection> AllocationRepository<'connection> {
              FROM allocations a
              JOIN quota_windows w ON w.id = a.window_id
              JOIN quota_pools p ON p.id = w.pool_id
+             LEFT JOIN allocation_priorities ap
+               ON ap.pool_id = w.pool_id AND ap.scope_id = a.scope_id
              WHERE a.window_id = ?1
-             ORDER BY a.scope_id",
+             ORDER BY
+               CASE WHEN ap.rank IS NULL THEN 1 ELSE 0 END,
+               ap.rank,
+               a.scope_id",
         )?;
         let rows = statement.query_map([window_id.as_str()], |row| {
             Ok((
@@ -86,6 +91,69 @@ impl<'connection> AllocationRepository<'connection> {
             ))
         })
         .collect()
+    }
+
+    pub fn set_priority_order(
+        &mut self,
+        window_id: &WindowId,
+        ordered_scope_ids: &[ScopeId],
+    ) -> StorageResult<()> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let pool_id = transaction
+            .query_row(
+                "SELECT pool_id FROM quota_windows WHERE id = ?1",
+                [window_id.as_str()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .ok_or_else(|| StorageError::NotFound {
+                entity: "quota window",
+                id: window_id.to_string(),
+            })?;
+
+        let mut statement = transaction.prepare(
+            "SELECT a.scope_id
+             FROM allocations a
+             JOIN scopes s ON s.id = a.scope_id
+             WHERE a.window_id = ?1 AND s.parent_id IS NULL
+             ORDER BY a.scope_id",
+        )?;
+        let rows = statement.query_map([window_id.as_str()], |row| row.get::<_, String>(0))?;
+        let mut expected = rows.collect::<Result<Vec<_>, _>>()?;
+        drop(statement);
+        let mut received = ordered_scope_ids
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        expected.sort();
+        received.sort();
+        received.dedup();
+        if received != expected || ordered_scope_ids.len() != expected.len() {
+            return Err(StorageError::InvalidState {
+                message: "priority order must contain every root allocation exactly once"
+                    .to_owned(),
+            });
+        }
+
+        transaction.execute(
+            "DELETE FROM allocation_priorities WHERE pool_id = ?1",
+            [&pool_id],
+        )?;
+        for (rank, scope_id) in ordered_scope_ids.iter().enumerate() {
+            let rank = i64::try_from(rank).map_err(|_| StorageError::NumericOutOfRange {
+                field: "allocation priority",
+                value: u64::try_from(rank).unwrap_or(u64::MAX),
+            })?;
+            transaction.execute(
+                "INSERT INTO allocation_priorities (pool_id, scope_id, rank)
+                 VALUES (?1, ?2, ?3)",
+                params![pool_id, scope_id.as_str(), rank],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
     }
 }
 
@@ -252,6 +320,47 @@ mod tests {
             )
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn priority_order_is_persisted_per_pool_and_controls_listing() {
+        let mut database = seeded_database();
+        let mut repository = database.allocations();
+        repository.set(&allocation("project-a", 40)).unwrap();
+        repository.set(&allocation("project-b", 40)).unwrap();
+
+        repository
+            .set_priority_order(
+                &WindowId::new("week-1").unwrap(),
+                &[
+                    ScopeId::new("project-b").unwrap(),
+                    ScopeId::new("project-a").unwrap(),
+                ],
+            )
+            .unwrap();
+
+        let allocations = repository
+            .list_for_window(&WindowId::new("week-1").unwrap())
+            .unwrap();
+        assert_eq!(allocations[0].scope_id().as_str(), "project-b");
+        assert_eq!(allocations[1].scope_id().as_str(), "project-a");
+    }
+
+    #[test]
+    fn priority_order_rejects_missing_or_duplicate_root_allocations() {
+        let mut database = seeded_database();
+        let mut repository = database.allocations();
+        repository.set(&allocation("project-a", 40)).unwrap();
+        repository.set(&allocation("project-b", 40)).unwrap();
+
+        let error = repository
+            .set_priority_order(
+                &WindowId::new("week-1").unwrap(),
+                &[ScopeId::new("project-a").unwrap()],
+            )
+            .unwrap_err();
+
+        assert!(matches!(error, StorageError::InvalidState { .. }));
     }
 
     #[test]
