@@ -15,6 +15,9 @@ type IconName =
   | "settings"
   | "shield"
   | "spark"
+  | "sun"
+  | "moon"
+  | "monitor"
   | "trash"
   | "x";
 
@@ -90,6 +93,19 @@ const paths: Record<IconName, ReactNode> = {
   ),
   spark: (
     <path d="m12 3 1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5z" />
+  ),
+  sun: (
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+    </>
+  ),
+  moon: <path d="M20 15.2A8 8 0 0 1 8.8 4 8 8 0 1 0 20 15.2Z" />,
+  monitor: (
+    <>
+      <rect x="3" y="4" width="18" height="13" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </>
   ),
   trash: (
     <>

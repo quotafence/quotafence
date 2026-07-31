@@ -5,6 +5,7 @@ import { Dashboard, type DashboardView } from "./components/Dashboard";
 import { Icon } from "./components/Icon";
 import { Modal } from "./components/Modal";
 import { ScopeForm } from "./components/ScopeForm";
+import type { ThemePreference } from "./components/SettingsPanel";
 import { SourceSetupForm } from "./components/SourceSetupForm";
 import {
   archiveQuotaSource,
@@ -39,6 +40,15 @@ type ModalState =
   | { type: "allocation"; scope: ScopeSummary }
   | { type: "remove-source"; source: QuotaSourceSummary }
   | null;
+
+const THEME_STORAGE_KEY = "aqm-theme";
+
+function storedTheme(): ThemePreference {
+  const value = localStorage.getItem(THEME_STORAGE_KEY);
+  return value === "light" || value === "dark" || value === "system"
+    ? value
+    : "system";
+}
 
 function LoadingScreen() {
   return (
@@ -161,6 +171,7 @@ function App() {
   const [protectionBusy, setProtectionBusy] = useState(false);
   const [priorityBusy, setPriorityBusy] = useState(false);
   const [view, setView] = useState<DashboardView>("overview");
+  const [theme, setTheme] = useState<ThemePreference>(storedTheme);
   const initialSyncStarted = useRef(false);
 
   const loadState = useCallback(async (windowId: string | null = null) => {
@@ -168,6 +179,23 @@ function App() {
     setLocalState(nextState);
     return nextState;
   }, []);
+
+  useEffect(() => {
+    const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      const resolved =
+        theme === "system" ? (systemTheme.matches ? "dark" : "light") : theme;
+      document.documentElement.dataset.theme = resolved;
+      document.documentElement.style.colorScheme = resolved;
+    };
+
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+    applyTheme();
+    if (theme === "system") {
+      systemTheme.addEventListener("change", applyTheme);
+      return () => systemTheme.removeEventListener("change", applyTheme);
+    }
+  }, [theme]);
 
   useEffect(() => {
     async function initialize() {
@@ -457,6 +485,8 @@ function App() {
         codexProtectionEvents={codexProtectionEvents}
         protectionBusy={protectionBusy}
         onProtection={(enabled) => void handleProtection(enabled)}
+        theme={theme}
+        onThemeChange={setTheme}
         priorityBusy={priorityBusy}
         onPriorityOrder={(orderedScopeIds) => {
           if (localState.selectedWindowId) {

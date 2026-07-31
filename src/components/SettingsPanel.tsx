@@ -4,10 +4,14 @@ import type {
 } from "../types";
 import { Icon } from "./Icon";
 
+export type ThemePreference = "system" | "light" | "dark";
+
 type SettingsPanelProps = {
   protection: CodexProtectionStatus | null;
   events: CodexProtectionEvent[];
   busy: boolean;
+  theme: ThemePreference;
+  onThemeChange: (theme: ThemePreference) => void;
   onProtection: (enabled: boolean) => void;
 };
 
@@ -47,6 +51,8 @@ export function SettingsPanel({
   protection,
   events,
   busy,
+  theme,
+  onThemeChange,
   onProtection,
 }: SettingsPanelProps) {
   return (
@@ -59,6 +65,45 @@ export function SettingsPanel({
           </p>
         </div>
       </header>
+
+      <section className="settings-card">
+        <header className="settings-card-header">
+          <span className="settings-card-icon">
+            <Icon name="sun" size={20} />
+          </span>
+          <div>
+            <h2>Appearance</h2>
+            <p>Choose a theme or follow your system automatically.</p>
+          </div>
+        </header>
+
+        <div
+          className="theme-options"
+          role="radiogroup"
+          aria-label="Application theme"
+        >
+          {(
+            [
+              ["system", "monitor", "System"],
+              ["light", "sun", "Light"],
+              ["dark", "moon", "Dark"],
+            ] as const
+          ).map(([value, icon, label]) => (
+            <button
+              key={value}
+              className={theme === value ? "active" : ""}
+              type="button"
+              role="radio"
+              aria-checked={theme === value}
+              onClick={() => onThemeChange(value)}
+            >
+              <Icon name={icon} size={18} />
+              <span>{label}</span>
+              {theme === value && <Icon name="check" size={15} />}
+            </button>
+          ))}
+        </div>
+      </section>
 
       <section className="settings-card">
         <header className="settings-card-header">

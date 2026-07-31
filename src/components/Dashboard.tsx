@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   AllocationSnapshot,
   CodexProtectionEvent,
@@ -9,7 +9,10 @@ import type {
   ScopeSummary,
 } from "../types";
 import { Icon } from "./Icon";
-import { SettingsPanel } from "./SettingsPanel";
+import {
+  SettingsPanel,
+  type ThemePreference,
+} from "./SettingsPanel";
 
 export type DashboardView = "overview" | "settings";
 
@@ -29,6 +32,8 @@ type DashboardProps = {
   codexProtectionEvents: CodexProtectionEvent[];
   protectionBusy: boolean;
   onProtection: (enabled: boolean) => void;
+  theme: ThemePreference;
+  onThemeChange: (theme: ThemePreference) => void;
   priorityBusy: boolean;
   onPriorityOrder: (orderedScopeIds: string[]) => void;
 };
@@ -315,6 +320,8 @@ export function Dashboard({
   codexProtectionEvents,
   protectionBusy,
   onProtection,
+  theme,
+  onThemeChange,
   priorityBusy,
   onPriorityOrder,
 }: DashboardProps) {
@@ -325,6 +332,11 @@ export function Dashboard({
   } | null>(null);
   const [draggedScopeId, setDraggedScopeId] = useState<string | null>(null);
   const [dragOverScopeId, setDragOverScopeId] = useState<string | null>(null);
+  const mainContentRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    mainContentRef.current?.scrollTo({ top: 0 });
+  }, [view, state.selectedWindowId]);
 
   useEffect(() => {
     if (!sourceMenu) {
@@ -480,12 +492,14 @@ export function Dashboard({
         </div>
       </aside>
 
-      <main className="main-content">
+      <main ref={mainContentRef} className="main-content">
         {view === "settings" ? (
           <SettingsPanel
             protection={codexProtection}
             events={codexProtectionEvents}
             busy={protectionBusy}
+            theme={theme}
+            onThemeChange={onThemeChange}
             onProtection={onProtection}
           />
         ) : (
@@ -497,7 +511,7 @@ export function Dashboard({
               </div>
               <div className="topbar-actions">
                 <button
-                  className="icon-button bordered"
+                  className="icon-button primary-icon"
                   type="button"
                   onClick={onRefresh}
                   disabled={refreshing}
@@ -538,7 +552,7 @@ export function Dashboard({
                   </span>
                 </div>
                 <button
-                  className="button subtle small"
+                  className="button primary small"
                   type="button"
                   onClick={() => onViewChange("settings")}
                 >
@@ -628,7 +642,7 @@ export function Dashboard({
                 </div>
                 <div className="section-actions">
                   <button
-                    className="button outline"
+                    className="button primary"
                     type="button"
                     onClick={onAddScope}
                   >

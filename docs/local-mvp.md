@@ -52,8 +52,9 @@ For the selected quota window, the UI can:
 - show an evidence-gated managed burn rate and depletion signal; and
 - install and report the configuration status of Codex Desktop workspace
   protection from Settings, turn it on or off without changing unrelated hooks,
-  and show recent allow/block decisions; and
-- switch between locally configured quota sources.
+  and show recent allow/block decisions;
+- switch between locally configured quota sources; and
+- follow the system appearance or persist an explicit light/dark theme.
 
 Creating a workspace, its first allocation, and its folder binding is atomic.
 An invalid or over-capacity allocation leaves none of those records behind.
