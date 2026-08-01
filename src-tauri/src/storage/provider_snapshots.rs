@@ -18,6 +18,12 @@ pub struct ProviderQuotaSnapshot {
     resets_at: UnixMillis,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderQuotaHistoryPoint {
+    pub used: u64,
+    pub observed_at: UnixMillis,
+}
+
 impl ProviderQuotaSnapshot {
     pub fn new(
         window_id: WindowId,
@@ -73,6 +79,17 @@ pub(crate) fn upsert(
     snapshot: &ProviderQuotaSnapshot,
 ) -> StorageResult<()> {
     transaction.execute(
+        "INSERT INTO provider_quota_history (window_id, used, observed_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(window_id, observed_at) DO UPDATE SET
+             used = excluded.used",
+        params![
+            snapshot.window_id().as_str(),
+            to_sql_integer(snapshot.used(), "provider history usage")?,
+            snapshot.observed_at().value(),
+        ],
+    )?;
+    transaction.execute(
         "INSERT INTO provider_quota_snapshots (
              window_id, adapter, remote_limit_id, remote_window_kind,
              used, observed_at, resets_at
@@ -96,6 +113,30 @@ pub(crate) fn upsert(
         ],
     )?;
     Ok(())
+}
+
+pub(crate) fn list_history(
+    connection: &Connection,
+    window_id: &WindowId,
+) -> StorageResult<Vec<ProviderQuotaHistoryPoint>> {
+    let mut statement = connection.prepare(
+        "SELECT used, observed_at
+         FROM provider_quota_history
+         WHERE window_id = ?1
+         ORDER BY observed_at",
+    )?;
+    let rows = statement.query_map([window_id.as_str()], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+    })?;
+
+    rows.map(|row| {
+        let (used, observed_at) = row?;
+        Ok(ProviderQuotaHistoryPoint {
+            used: from_sql_integer(used, "provider history usage")?,
+            observed_at: UnixMillis::new(observed_at),
+        })
+    })
+    .collect()
 }
 
 pub(crate) fn get(

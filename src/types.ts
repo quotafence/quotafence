@@ -173,7 +173,13 @@ export type WorkspaceBudgetInput = {
 export type QuotaDashboard = {
   window: WindowSummary;
   allocations: AllocationSnapshot[];
+  quotaHistory: QuotaHistoryPoint[];
   forecast: DepletionForecast;
+};
+
+export type QuotaHistoryPoint = {
+  observedAt: number;
+  remaining: number;
 };
 
 export type LocalState = {

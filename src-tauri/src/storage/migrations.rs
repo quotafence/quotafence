@@ -312,6 +312,22 @@ CREATE INDEX idx_codex_protection_events_occurred_at
     ON codex_protection_events(occurred_at DESC);
 "#;
 
+const PROVIDER_QUOTA_HISTORY: &str = r#"
+CREATE TABLE provider_quota_history (
+    window_id TEXT NOT NULL REFERENCES quota_windows(id) ON DELETE CASCADE,
+    used INTEGER NOT NULL CHECK (used >= 0),
+    observed_at INTEGER NOT NULL,
+    PRIMARY KEY (window_id, observed_at)
+);
+
+CREATE INDEX idx_provider_quota_history_window_observed
+    ON provider_quota_history(window_id, observed_at);
+
+INSERT OR IGNORE INTO provider_quota_history (window_id, used, observed_at)
+SELECT window_id, used, observed_at
+FROM provider_quota_snapshots;
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -377,6 +393,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 13,
         name: "codex_protection_events",
         sql: CODEX_PROTECTION_EVENTS,
+    },
+    Migration {
+        version: 14,
+        name: "provider_quota_history",
+        sql: PROVIDER_QUOTA_HISTORY,
     },
 ];
 

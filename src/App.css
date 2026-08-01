@@ -1189,6 +1189,18 @@ h3,
   background: rgba(239, 119, 125, 0.08);
 }
 
+.allocation-context-menu {
+  width: 184px;
+}
+
+.allocation-context-menu button:first-child {
+  color: var(--ink);
+}
+
+.allocation-context-menu button:first-child:hover {
+  background: var(--control-hover);
+}
+
 .delete-source-confirmation {
   display: grid;
   gap: 18px;
@@ -3165,6 +3177,69 @@ h3,
   margin-top: 13px;
   font-size: clamp(15px, 1.6vw, 17px);
   line-height: 1.45;
+}
+
+.quota-trend {
+  margin-top: auto;
+  padding-top: 24px;
+}
+
+.quota-trend-heading,
+.quota-trend-axis {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.quota-trend-heading span {
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.quota-trend-heading small,
+.quota-trend-axis {
+  color: var(--quiet);
+  font-size: 12px;
+}
+
+.quota-trend svg {
+  width: 100%;
+  height: 112px;
+  margin-top: 8px;
+  display: block;
+  overflow: visible;
+}
+
+.quota-trend-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.quota-trend-area {
+  fill: url("#quota-trend-fill");
+}
+
+.quota-trend-line {
+  fill: none;
+  stroke: var(--success);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.quota-trend-dot {
+  fill: var(--success);
+  stroke: var(--panel);
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.quota-trend-axis {
+  margin-top: -3px;
 }
 
 .quota-dashboard-block .used-progress-section {
