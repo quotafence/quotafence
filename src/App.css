@@ -3218,12 +3218,12 @@ h3,
 }
 
 .quota-trend-area {
-  fill: url("#quota-trend-fill");
+  fill: url("#usage-trend-fill");
 }
 
 .quota-trend-line {
   fill: none;
-  stroke: var(--success);
+  stroke: var(--muted);
   stroke-width: 3;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -3231,7 +3231,7 @@ h3,
 }
 
 .quota-trend-dot {
-  fill: var(--success);
+  fill: var(--muted);
   stroke: var(--panel);
   stroke-width: 3;
   vector-effect: non-scaling-stroke;

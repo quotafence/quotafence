@@ -95,7 +95,7 @@ function formatLastSync(timestamp: number | null): string {
   return `Synced ${Math.floor(hours / 24)}d ago`;
 }
 
-function QuotaTrendChart({
+function UsageTrendChart({
   history,
   startsAt,
   endsAt,
@@ -120,8 +120,9 @@ function QuotaTrendChart({
   const lastObservedAt =
     visibleHistory[visibleHistory.length - 1]?.observedAt ?? endsAt;
   const observedDuration = Math.max(1, lastObservedAt - firstObservedAt);
-  const points = visibleHistory
-    .map((point) => ({
+  const points = visibleHistory.map((point) => {
+    const used = Math.max(0, capacity - point.remaining);
+    return {
       x: Math.max(
         0,
         Math.min(
@@ -133,10 +134,12 @@ function QuotaTrendChart({
       ),
       y:
         chartBottom -
-        Math.max(0, Math.min(1, point.remaining / Math.max(1, capacity))) *
+        Math.max(0, Math.min(1, used / Math.max(1, capacity))) *
           (chartBottom - 8),
+      used,
       ...point,
-    }));
+    };
+  });
   const linePath = points
     .map((point, index) => `${index === 0 ? "M" : "L"}${point.x},${point.y}`)
     .join(" ");
@@ -146,12 +149,12 @@ function QuotaTrendChart({
           points[0].x
         },${chartBottom} Z`
       : "";
-  const latest = visibleHistory[visibleHistory.length - 1];
+  const latest = points[points.length - 1];
 
   return (
     <div className="quota-trend">
       <div className="quota-trend-heading">
-        <span>Quota remaining</span>
+        <span>Usage over time</span>
         <small>
           {visibleHistory.length > 1
             ? `${visibleHistory.length} sync checkpoints`
@@ -163,15 +166,15 @@ function QuotaTrendChart({
         role="img"
         aria-label={
           latest
-            ? `Quota trend ending at ${formatAmount(latest.remaining, unit)} remaining`
-            : "Quota trend has no sync checkpoints yet"
+            ? `Usage trend ending at ${formatAmount(latest.used, unit)} used`
+            : "Usage trend has no sync checkpoints yet"
         }
         preserveAspectRatio="none"
       >
         <defs>
-          <linearGradient id="quota-trend-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--success)" stopOpacity="0.32" />
-            <stop offset="100%" stopColor="var(--success)" stopOpacity="0" />
+          <linearGradient id="usage-trend-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--muted)" stopOpacity="0.32" />
+            <stop offset="100%" stopColor="var(--muted)" stopOpacity="0" />
           </linearGradient>
         </defs>
         <line className="quota-trend-grid" x1="0" y1="8" x2={width} y2="8" />
@@ -924,7 +927,7 @@ export function Dashboard({
                       <span>{formatDate(quotaWindow.endsAt)}</span>
                     </div>
                   </div>
-                  <QuotaTrendChart
+                  <UsageTrendChart
                     history={dashboard.quotaHistory}
                     startsAt={quotaWindow.startsAt}
                     endsAt={quotaWindow.endsAt}
