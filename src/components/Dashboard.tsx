@@ -907,6 +907,23 @@ export function Dashboard({
                     </h2>
                     <p>{statusMessage}</p>
                   </div>
+                  <div className="used-progress-section">
+                    <div
+                      className={`used-progress ${statusTone}`}
+                      role="progressbar"
+                      aria-label={`${availablePercent}% left`}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={availablePercent}
+                    >
+                      <span style={{ width: `${availablePercent}%` }} />
+                    </div>
+                    <div className="used-progress-meta">
+                      <span>{formatDate(quotaWindow.startsAt)}</span>
+                      <strong>{availablePercent}% left</strong>
+                      <span>{formatDate(quotaWindow.endsAt)}</span>
+                    </div>
+                  </div>
                   <QuotaTrendChart
                     history={dashboard.quotaHistory}
                     startsAt={quotaWindow.startsAt}

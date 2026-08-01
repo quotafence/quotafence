@@ -3180,8 +3180,7 @@ h3,
 }
 
 .quota-trend {
-  margin-top: auto;
-  padding-top: 24px;
+  margin-top: 24px;
 }
 
 .quota-trend-heading,
@@ -3245,8 +3244,7 @@ h3,
 .quota-dashboard-block .used-progress-section {
   width: 100%;
   max-width: none;
-  margin-top: auto;
-  padding-top: 34px;
+  margin-top: 28px;
 }
 
 .quota-dashboard-block .used-progress-meta {
