@@ -113,7 +113,7 @@ outcomes. `--yes` accepts confirmation but never overrides stop.
 - Attribute only when all pending activity resolves to one workspace.
 - Keep multiple, unmapped, reset, or interrupted observation gaps
   unattributed.
-- Optionally install user-level `UserPromptSubmit`, `Stop`, and `SessionEnd`
+- Optionally install user-level `UserPromptSubmit` and `Stop`
   hooks for higher-frequency turn boundaries without
   overwriting unrelated hook configuration.
 - When at least one Codex allocation exists, reject a new prompt whose working

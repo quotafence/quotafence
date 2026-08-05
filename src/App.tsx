@@ -478,7 +478,7 @@ function App() {
       setCodexProtection(status);
       setNotice(
         enabled
-          ? "Action required: protection is not active yet. In Codex Settings → Hooks → User config, trust and enable all three AQM hooks, then restart Codex."
+          ? "Action required: protection is not active yet. In Codex Settings → Hooks → User config, trust and enable the UserPromptSubmit and Stop hooks, then restart Codex."
           : "Codex Desktop protection is off. Other Codex hooks were left unchanged.",
       );
     } catch (reason) {

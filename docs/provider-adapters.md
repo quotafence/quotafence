@@ -116,9 +116,15 @@ hooks:
   allocation, evaluates the mapped workspace boundary, and records a provider
   checkpoint baseline for allowed work;
 - `Stop` refreshes and reconciles the provider delta;
-- `SessionEnd` removes unfinished observations; and
+- the next prompt removes stale unfinished observations; and
 - explicit policy decisions may block a new prompt, while parse, database, or
   provider failures remain fail-open.
+
+Codex also supports `SessionEnd`, but AQM does not install it: some Codex
+Desktop builds do not expose that entry in the hook-review modal, and stale
+turn cleanup already runs safely at the next prompt. This keeps the user-visible
+activation flow limited to the two hooks required for enforcement and usage
+reconciliation.
 
 Codex sends the complete lifecycle JSON to the command hook. AQM's typed input
 intentionally ignores prompt, assistant-message, and transcript fields and

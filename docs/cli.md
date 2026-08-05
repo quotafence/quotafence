@@ -203,13 +203,13 @@ reviewed, trusted, and enabled.
 In Codex Desktop:
 
 1. Open **Settings → Hooks → User config**.
-2. Review, trust, and switch on the AQM entries under `UserPromptSubmit`,
-   `Stop`, and `SessionEnd`.
+2. Review, trust, and switch on the AQM entries under `UserPromptSubmit` and
+   `Stop`.
 3. Restart Codex, then start a new task so the session loads the updated
    configuration.
 
-In Codex CLI, run `/hooks` and review the same three entries before restarting
-the session. Until all three hooks are trusted and switched on, Codex prompts
+In Codex CLI, run `/hooks` and review the same two entries before restarting
+the session. Until both hooks are trusted and switched on, Codex prompts
 can still run without AQM protection.
 
 The installed lifecycle is:
@@ -221,7 +221,8 @@ The installed lifecycle is:
 3. Allowed prompts capture an absolute provider baseline.
 4. `Stop` captures another checkpoint and records the delta against the folder
    only when the turn was mapped, uncontended, and remained in the same window.
-5. `SessionEnd` removes unfinished observations.
+5. A later prompt prunes stale unfinished observations left by interrupted or
+   abandoned tasks.
 
 These event names and stdin fields follow the official
 [Codex hooks contract](https://learn.chatgpt.com/docs/hooks).

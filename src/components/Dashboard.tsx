@@ -285,7 +285,7 @@ function SetupDisclosure({
             <div>
               <strong>Lifecycle hooks installed</strong>
               <span>
-                UserPromptSubmit, Stop, and SessionEnd
+                UserPromptSubmit and Stop
               </span>
             </div>
           </li>

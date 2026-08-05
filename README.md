@@ -234,14 +234,14 @@ quota reserved for allocated workspaces.
 After installing from AQM, finish activation in Codex Desktop:
 
 1. Open **Settings → Hooks → User config**.
-2. Review, trust, and switch on the AQM entries under `UserPromptSubmit`,
-   `Stop`, and `SessionEnd`.
+2. Review, trust, and switch on the AQM entries under `UserPromptSubmit` and
+   `Stop`.
 3. Restart Codex, then start a new task.
 
 AQM's “Installed” control confirms only that the local hook definitions point
 to the current application. Codex remains the source of truth for whether each
-definition is trusted and enabled. Until all three hooks are trusted and
-switched on, Codex prompts can still run without AQM protection. Overview keeps
+definition is trusted and enabled. Until both hooks are trusted and switched
+on, Codex prompts can still run without AQM protection. Overview keeps
 an actionable warning visible and treats allocation funding as a priority plan.
 Unmanaged usage consumes currently unassigned capacity first, then erodes
 funding from the lowest-priority workspace upward. After setup, submit one test

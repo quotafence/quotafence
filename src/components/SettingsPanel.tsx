@@ -211,8 +211,7 @@ export function SettingsPanel({
                     </li>
                     <li>
                       Review, trust, and switch on the AQM entries under{" "}
-                      <code>UserPromptSubmit</code>, <code>Stop</code>, and{" "}
-                      <code>SessionEnd</code>.
+                      <code>UserPromptSubmit</code> and <code>Stop</code>.
                     </li>
                     <li>Restart Codex, then start a new task.</li>
                     <li>

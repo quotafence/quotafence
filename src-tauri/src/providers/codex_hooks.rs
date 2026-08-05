@@ -26,11 +26,11 @@ use super::codex::{self, CodexDetection, CodexSyncStatus};
 
 const CODEX_ADAPTER: &str = "codex_app_server";
 const AQM_STATUS_PREFIX: &str = "AQM: ";
-const TRACKED_EVENTS: [(&str, u64, &str); 3] = [
+const INSTALLED_EVENTS: [(&str, u64, &str); 2] = [
     ("UserPromptSubmit", 90, "checking workspace allocation"),
     ("Stop", 90, "reconciling workspace usage"),
-    ("SessionEnd", 3, "cleaning session state"),
 ];
+const OWNED_EVENT_NAMES: [&str; 3] = ["UserPromptSubmit", "Stop", "SessionEnd"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodexHookEventKind {
@@ -176,9 +176,9 @@ fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtecti
             issue: None,
         };
     };
-    let aqm_handlers = TRACKED_EVENTS
+    let aqm_handlers = OWNED_EVENT_NAMES
         .iter()
-        .flat_map(|(event, _, _)| {
+        .flat_map(|event| {
             hooks
                 .get(*event)
                 .and_then(Value::as_array)
@@ -201,7 +201,7 @@ fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtecti
         };
     }
 
-    let every_event_is_current = TRACKED_EVENTS.iter().all(|(event, _, _)| {
+    let every_event_is_current = INSTALLED_EVENTS.iter().all(|(event, _, _)| {
         hooks
             .get(*event)
             .and_then(Value::as_array)
@@ -217,7 +217,11 @@ fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtecti
                     })
             })
     });
-    if every_event_is_current && executable.is_file() {
+    let has_legacy_session_end = hooks
+        .get("SessionEnd")
+        .and_then(Value::as_array)
+        .is_some_and(|groups| groups.iter().any(group_contains_aqm_hook));
+    if every_event_is_current && executable.is_file() && !has_legacy_session_end {
         CodexProtectionStatus {
             installed: true,
             has_aqm_hooks: true,
@@ -235,10 +239,13 @@ fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtecti
             verification_required_after,
             config_path: config_path_text,
             state: CodexProtectionState::Misconfigured,
-            issue: Some(
+            issue: Some(if has_legacy_session_end {
+                "AQM found a legacy SessionEnd entry that Codex Desktop may not expose for review. Repair protection to keep only the required prompt and reconciliation hooks."
+                    .to_owned()
+            } else {
                 "AQM hook entries are incomplete or point to a different app executable. Enable protection again to repair them."
-                    .to_owned(),
-            ),
+                    .to_owned()
+            }),
         }
     }
 }
@@ -347,7 +354,7 @@ pub fn user_hooks_installed(config_path: &Path) -> Result<bool, String> {
     let Some(hooks) = config.get("hooks").and_then(Value::as_object) else {
         return Ok(false);
     };
-    Ok(TRACKED_EVENTS.iter().all(|(event, _, _)| {
+    Ok(INSTALLED_EVENTS.iter().all(|(event, _, _)| {
         hooks
             .get(*event)
             .and_then(Value::as_array)
@@ -672,7 +679,7 @@ fn add_aqm_hooks(config: &mut Value, executable: &Path) -> Result<(), String> {
         .ok_or_else(|| "hooks must be a JSON object".to_owned())?;
     let command = hook_command(executable);
 
-    for (event, timeout, message) in TRACKED_EVENTS {
+    for (event, timeout, message) in INSTALLED_EVENTS {
         let groups = hooks
             .entry(event)
             .or_insert_with(|| Value::Array(Vec::new()))
@@ -701,7 +708,7 @@ fn remove_aqm_hooks(config: &mut Value) -> Result<(), String> {
         .as_object_mut()
         .ok_or_else(|| "hooks must be a JSON object".to_owned())?;
 
-    for (event, _, _) in TRACKED_EVENTS {
+    for event in OWNED_EVENT_NAMES {
         let Some(groups_value) = hooks.get_mut(event) else {
             continue;
         };
@@ -913,6 +920,34 @@ mod tests {
         assert!(configured.installed);
         assert!(configured.requires_review);
         assert!(configured.verification_required_after.is_some());
+
+        let mut legacy_config = read_hook_config(&config_path).unwrap();
+        legacy_config["hooks"]["SessionEnd"] = json!([{
+            "hooks": [{
+                "type": "command",
+                "command": hook_command(&executable),
+                "timeout": 3,
+                "statusMessage": "AQM: cleaning session state"
+            }]
+        }]);
+        std::fs::write(
+            &config_path,
+            serde_json::to_string_pretty(&legacy_config).unwrap(),
+        )
+        .unwrap();
+        let legacy = protection_status_for(&config_path, &executable);
+        assert_eq!(legacy.state, CodexProtectionState::Misconfigured);
+        assert!(legacy.issue.unwrap().contains("legacy SessionEnd"));
+
+        assert!(install_user_hooks(&config_path, &executable).unwrap());
+        let repaired = read_hook_config(&config_path).unwrap();
+        assert!(repaired["hooks"]["SessionEnd"]
+            .as_array()
+            .is_none_or(|groups| !groups.iter().any(group_contains_aqm_hook)));
+        assert_eq!(
+            protection_status_for(&config_path, &executable).state,
+            CodexProtectionState::Configured
+        );
 
         let replacement = directory.join("replacement");
         std::fs::write(&replacement, "replacement executable").unwrap();

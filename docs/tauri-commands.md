@@ -136,7 +136,7 @@ remains the source of truth for review and trust. Status distinguishes
 `disabled`, `configured`, and `misconfigured`; `configured` means every AQM
 handler points at the current executable, not that Codex has trusted its current
 hash or enabled the hook. The frontend must direct Desktop users to
-**Settings → Hooks → User config** to trust and enable all three AQM entries,
+**Settings → Hooks → User config** to trust and enable both AQM entries,
 then tell them to restart Codex. `verificationRequiredAfter` is the latest
 modification time of the hook file or current executable; only a protection
 event at or after that timestamp may mark the current setup active. CLI users

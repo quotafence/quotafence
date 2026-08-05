@@ -173,8 +173,7 @@ while integration failures remain fail-open. It is not a managed launch. See
 7. Zero deltas create no event. Rollover, concurrency, missing checkpoints, and
    unmapped folders remain represented by the aggregate provider total rather
    than fabricated attribution.
-8. `SessionEnd` cleans unfinished rows; stale rows are also pruned at the next
-   turn start.
+8. Stale unfinished rows are pruned at the next turn start.
 
 The trusted prompt hook is a pre-turn admission gate, not process ownership: it
 can reject a new prompt but cannot terminate an already-running turn. Codex
