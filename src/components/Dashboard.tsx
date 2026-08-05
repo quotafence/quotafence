@@ -14,6 +14,7 @@ import type {
   ScopeSummary,
 } from "../types";
 import { Icon } from "./Icon";
+import { ProviderLogo } from "./ProviderLogo";
 import {
   SettingsPanel,
   type ThemePreference,
@@ -800,9 +801,10 @@ export function Dashboard({
                   });
                 }}
               >
-                <span className="source-avatar">
-                  {item.providerDisplayName.slice(0, 2).toUpperCase()}
-                </span>
+                <ProviderLogo
+                  className="source-avatar"
+                  providerName={item.providerDisplayName}
+                />
                 <span>
                   <strong>{item.providerDisplayName}</strong>
                   <small>{item.poolDisplayName}</small>

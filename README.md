@@ -264,3 +264,11 @@ request. Please report vulnerabilities according to [SECURITY.md](SECURITY.md).
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE).
+
+## Trademarks
+
+Codex, OpenAI, and their associated marks are trademarks of OpenAI. Agent
+Quota Manager is an independent open-source project and is not affiliated with
+or endorsed by OpenAI. Provider marks are displayed only to identify the
+corresponding integration and remain subject to the
+[OpenAI brand guidelines](https://openai.com/brand/).

@@ -13,6 +13,7 @@ import type {
   QuotaSourceInput,
 } from "../types";
 import { Icon } from "./Icon";
+import { ProviderLogo } from "./ProviderLogo";
 
 type SourceSetupFormProps = {
   onSubmit: (input: QuotaSourceInput) => Promise<void>;
@@ -178,13 +179,11 @@ export function SourceSetupForm({
                   key={option}
                   onClick={() => setProvider(option)}
                 >
-                  <span className="provider-option-mark">
-                    {option === "Codex"
-                      ? "CX"
-                      : option === "Claude Code"
-                        ? "CL"
-                        : "+"}
-                  </span>
+                  <ProviderLogo
+                    className="provider-option-mark"
+                    providerName={option}
+                    fallback={option === "Other" ? "+" : undefined}
+                  />
                   {option}
                   {provider === option && <Icon name="check" size={16} />}
                 </button>
@@ -353,7 +352,10 @@ function CodexDetectionPanel({
   return (
     <div className="detected-provider">
       <header>
-        <span className="detected-provider-mark">CX</span>
+        <ProviderLogo
+          className="detected-provider-mark"
+          providerName="Codex"
+        />
         <div>
           <strong>Codex detected</strong>
           <p>{formatPlan(detection.planType)}</p>
