@@ -950,7 +950,7 @@ export function Dashboard({
                     <div
                       className="allocation-donut"
                       style={{
-                        background: `conic-gradient(var(--quiet) 0 ${usedSlicePercent}%, ${protectionActive ? "var(--success)" : "var(--success-muted)"} ${usedSlicePercent}% ${plannedSliceEnd}%, var(--success) ${plannedSliceEnd}% 100%)`,
+                        background: `conic-gradient(var(--quiet) 0 ${usedSlicePercent}%, ${protectionActive ? "var(--success)" : "var(--success-muted)"} ${usedSlicePercent}% ${plannedSliceEnd}%, var(--success-soft) ${plannedSliceEnd}% 100%)`,
                       }}
                       role="img"
                       aria-label={`${formatAmount(
