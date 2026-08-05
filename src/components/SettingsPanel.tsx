@@ -213,7 +213,11 @@ export function SettingsPanel({
                       Review, trust, and switch on the AQM entries under{" "}
                       <code>UserPromptSubmit</code> and <code>Stop</code>.
                     </li>
-                    <li>Restart Codex, then start a new task.</li>
+                    <li>
+                      Restart Codex, then create a <b>brand-new task</b> in an
+                      allocated folder. Do not resume an existing task, because
+                      it may retain the hook configuration from when it started.
+                    </li>
                     <li>
                       Submit a test prompt in an allocated workspace. AQM marks
                       protection active after it receives that hook decision.

@@ -236,7 +236,9 @@ After installing from AQM, finish activation in Codex Desktop:
 1. Open **Settings → Hooks → User config**.
 2. Review, trust, and switch on the AQM entries under `UserPromptSubmit` and
    `Stop`.
-3. Restart Codex, then start a new task.
+3. Restart Codex, then create a brand-new task in an allocated folder. Do not
+   resume an existing task, because it may retain the hook configuration from
+   when it started.
 
 AQM's “Installed” control confirms only that the local hook definitions point
 to the current application. Codex remains the source of truth for whether each

@@ -296,7 +296,7 @@ function SetupDisclosure({
               <span>
                 {trustReady
                   ? `Observed ${formatLastSync(verifiedAt)}`
-                  : "Enable them, restart Codex, then submit a test prompt"}
+                  : "Create a brand-new task in an allocated folder, then submit one prompt"}
               </span>
             </div>
           </li>
@@ -854,9 +854,14 @@ export function Dashboard({
                   <Icon name="shield" size={20} />
                   <div>
                     <strong>
-                      Allocations are a priority plan—not enforced yet
+                      {codexProtection?.installed
+                        ? "Protection is waiting for a new Codex task"
+                        : "Allocations are a priority plan—not enforced yet"}
                     </strong>
                     <span>
+                      {codexProtection?.installed
+                        ? "Restart Codex, create a brand-new task in an allocated folder (do not resume an existing task), and submit one prompt to verify the hooks. "
+                        : ""}
                       {unassignedBufferNow > 0
                         ? `Unmanaged Codex usage consumes the ${formatAmount(
                             unassignedBufferNow,

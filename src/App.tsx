@@ -478,7 +478,7 @@ function App() {
       setCodexProtection(status);
       setNotice(
         enabled
-          ? "Action required: protection is not active yet. In Codex Settings → Hooks → User config, trust and enable the UserPromptSubmit and Stop hooks, then restart Codex."
+          ? "Action required: trust and enable UserPromptSubmit and Stop, restart Codex, then create a brand-new task in an allocated folder and submit one prompt. Resuming an existing task does not verify the new hook setup."
           : "Codex Desktop protection is off. Other Codex hooks were left unchanged.",
       );
     } catch (reason) {
