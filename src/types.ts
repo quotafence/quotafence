@@ -74,6 +74,10 @@ export type CodexProtectionStatus = {
   installed: boolean;
   hasAqmHooks: boolean;
   requiresReview: boolean;
+  verificationRequiredAfter: number | null;
+  lastHookObservedAt: number | null;
+  lastHookStatus: "received" | "decision" | "skipped" | "failed" | null;
+  lastHookIssue: string | null;
   configPath: string;
   state: "disabled" | "configured" | "misconfigured";
   issue: string | null;
@@ -173,7 +177,13 @@ export type WorkspaceBudgetInput = {
 export type QuotaDashboard = {
   window: WindowSummary;
   allocations: AllocationSnapshot[];
+  quotaHistory: QuotaHistoryPoint[];
   forecast: DepletionForecast;
+};
+
+export type QuotaHistoryPoint = {
+  observedAt: number;
+  remaining: number;
 };
 
 export type LocalState = {

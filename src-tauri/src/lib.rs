@@ -21,6 +21,7 @@ pub fn run() {
             commands::archive_quota_source,
             commands::create_allocated_workspace,
             commands::set_allocation,
+            commands::remove_workspace_allocation,
             commands::set_allocation_priority_order,
             commands::set_workspace_policy,
             commands::reset_workspace_policy,

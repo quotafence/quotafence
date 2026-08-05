@@ -32,12 +32,13 @@ use super::{
     GetQuotaDashboard, GetWorkspaceContext, GetWorkspacePolicy, LocalState, ManagedSessionLaunch,
     ManagedSessionOutcome, ManagedSessionReconciliation, ManagedSessionReconciliationStatus,
     MarkManagedSessionRunning, PolicySummary, PrepareManagedSession,
-    ProviderTurnObservationSummary, QuotaDashboard, QuotaSourceSummary,
+    ProviderTurnObservationSummary, QuotaDashboard, QuotaHistoryPoint, QuotaSourceSummary,
     ReconcileProviderTurnObservation, RecordCodexProtectionEvent, RecordUsage, ReleaseReservation,
-    ReserveQuota, ResetWorkspacePolicy, ScopeSummary, SetAllocation, SetAllocationPriorityOrder,
-    SetWorkspacePolicy, SyncProviderQuota, SyncProviderQuotaResult, TurnObservationStartResult,
-    TurnObservationStartStatus, TurnReconciliationResult, TurnReconciliationStatus, WindowSummary,
-    WorkspaceAllocationContext, WorkspaceBindingSummary, WorkspaceContext, WorkspacePolicySummary,
+    RemoveWorkspaceAllocation, ReserveQuota, ResetWorkspacePolicy, ScopeSummary, SetAllocation,
+    SetAllocationPriorityOrder, SetWorkspacePolicy, SyncProviderQuota, SyncProviderQuotaResult,
+    TurnObservationStartResult, TurnObservationStartStatus, TurnReconciliationResult,
+    TurnReconciliationStatus, WindowSummary, WorkspaceAllocationContext, WorkspaceBindingSummary,
+    WorkspaceContext, WorkspacePolicySummary,
 };
 
 const TURN_OBSERVATION_STALE_AFTER_MILLIS: i64 = 12 * 60 * 60 * 1_000;
@@ -1106,6 +1107,20 @@ impl QuotaService {
         Ok(())
     }
 
+    pub fn remove_workspace_allocation(
+        &mut self,
+        command: RemoveWorkspaceAllocation,
+    ) -> ApplicationResult<()> {
+        self.database
+            .remove_workspace_allocation(
+                &ScopeId::new(command.scope_id)?,
+                &WindowId::new(command.window_id)?,
+                UnixMillis::new(command.removed_at),
+            )
+            .map_err(map_input_storage_error)?;
+        Ok(())
+    }
+
     pub fn set_allocation_priority_order(
         &mut self,
         command: SetAllocationPriorityOrder,
@@ -1332,6 +1347,16 @@ impl QuotaService {
             samples: forecast_samples,
         });
 
+        let quota_history = self
+            .database
+            .provider_quota_history(&window_id)?
+            .into_iter()
+            .map(|point| QuotaHistoryPoint {
+                observed_at: point.observed_at.value(),
+                remaining: window.capacity().value().saturating_sub(point.used),
+            })
+            .collect();
+
         Ok(QuotaDashboard {
             window: WindowSummary {
                 id: window.id().to_string(),
@@ -1350,6 +1375,7 @@ impl QuotaService {
                 provider_spendable,
             },
             allocations: snapshots,
+            quota_history,
             forecast,
         })
     }
@@ -2838,6 +2864,103 @@ mod tests {
             .scopes
             .iter()
             .any(|scope| scope.id == "workspace-rolled-back"));
+    }
+
+    #[test]
+    fn removing_workspace_allocation_releases_binding_and_preserves_scope_history() {
+        let mut service = managed_workspace_service();
+
+        service
+            .remove_workspace_allocation(RemoveWorkspaceAllocation {
+                scope_id: "workspace-a".to_owned(),
+                window_id: "week-1".to_owned(),
+                removed_at: 3_000,
+            })
+            .unwrap();
+
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: Some("week-1".to_owned()),
+                at: 3_000,
+            })
+            .unwrap();
+        assert!(!state
+            .dashboard
+            .unwrap()
+            .allocations
+            .iter()
+            .any(|allocation| allocation.scope_id == "workspace-a"));
+        assert!(state.scopes.iter().any(|scope| scope.id == "workspace-a"));
+
+        let context = service
+            .workspace_context(GetWorkspaceContext {
+                canonical_path: "/code/workspace-a".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+        assert!(context.binding.is_none());
+
+        service
+            .create_allocated_workspace(CreateAllocatedWorkspace {
+                id: "workspace-a-readded".to_owned(),
+                display_name: "Workspace A".to_owned(),
+                canonical_path: "/code/workspace-a".to_owned(),
+                window_id: "week-1".to_owned(),
+                amount: 20,
+                unit: "quota_points".to_owned(),
+                bound_at: 3_100,
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn removing_workspace_allocation_rejects_an_active_reservation() {
+        let mut service = managed_workspace_service();
+        service
+            .reserve_quota(ReserveQuota {
+                id: "active-reservation".to_owned(),
+                scope_id: "workspace-a".to_owned(),
+                window_id: "week-1".to_owned(),
+                amount: 1,
+                unit: "quota_points".to_owned(),
+                admitted_at: 2_000,
+                expires_at: 4_000,
+            })
+            .unwrap();
+
+        let result = service.remove_workspace_allocation(RemoveWorkspaceAllocation {
+            scope_id: "workspace-a".to_owned(),
+            window_id: "week-1".to_owned(),
+            removed_at: 3_000,
+        });
+
+        assert!(matches!(
+            result,
+            Err(ApplicationError::Storage(StorageError::InvalidState { .. }))
+        ));
+    }
+
+    #[test]
+    fn dashboard_exposes_provider_quota_history_in_observation_order() {
+        let mut service = managed_workspace_service();
+        sync_managed_snapshot(&mut service, 14, 2_500);
+        sync_managed_snapshot(&mut service, 18, 3_000);
+
+        let dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 3_000,
+            })
+            .unwrap();
+
+        assert_eq!(
+            dashboard
+                .quota_history
+                .iter()
+                .map(|point| (point.observed_at, point.remaining))
+                .collect::<Vec<_>>(),
+            vec![(1_900, 90), (2_500, 86), (3_000, 82)]
+        );
     }
 
     #[test]

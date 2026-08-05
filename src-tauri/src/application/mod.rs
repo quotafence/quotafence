@@ -13,8 +13,8 @@ pub use commands::{
     GetQuotaDashboard, GetWorkspaceContext, GetWorkspacePolicy, ManagedSessionOutcome,
     MarkManagedSessionRunning, PrepareManagedSession, ProviderQuotaSnapshotInput,
     ReconcileProviderTurnObservation, RecordCodexProtectionEvent, RecordUsage, ReleaseReservation,
-    ReserveQuota, ResetWorkspacePolicy, SetAllocation, SetAllocationPriorityOrder,
-    SetWorkspacePolicy, SyncProviderQuota,
+    RemoveWorkspaceAllocation, ReserveQuota, ResetWorkspacePolicy, SetAllocation,
+    SetAllocationPriorityOrder, SetWorkspacePolicy, SyncProviderQuota,
 };
 pub use error::{ApplicationError, ApplicationResult};
 pub use service::QuotaService;
@@ -23,8 +23,8 @@ pub use view::{
     DepletionForecast, DepletionForecastStatus, DesktopUsageReconciliation,
     DesktopUsageReconciliationStatus, ForecastConfidence, LocalState, ManagedSessionLaunch,
     ManagedSessionReconciliation, ManagedSessionReconciliationStatus, PolicySummary,
-    ProviderTurnObservationSummary, QuotaDashboard, QuotaSourceSummary, ScopeSummary,
-    SyncProviderQuotaResult, TurnObservationStartResult, TurnObservationStartStatus,
+    ProviderTurnObservationSummary, QuotaDashboard, QuotaHistoryPoint, QuotaSourceSummary,
+    ScopeSummary, SyncProviderQuotaResult, TurnObservationStartResult, TurnObservationStartStatus,
     TurnReconciliationResult, TurnReconciliationStatus, WindowSummary, WorkspaceAllocationContext,
     WorkspaceBindingSummary, WorkspaceContext, WorkspacePolicySummary,
 };

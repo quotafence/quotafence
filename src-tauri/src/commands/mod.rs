@@ -16,8 +16,8 @@ use crate::{
         ArchiveQuotaSource, CodexProtectionEventSummary, CreateAccount, CreateAllocatedWorkspace,
         CreateProvider, CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow,
         GetCodexProtectionEvents, GetLocalState, GetQuotaDashboard, LocalState, PolicySummary,
-        QuotaDashboard, ReleaseReservation, ReserveQuota, ResetWorkspacePolicy, SetAllocation,
-        SetAllocationPriorityOrder, SetWorkspacePolicy,
+        QuotaDashboard, ReleaseReservation, RemoveWorkspaceAllocation, ReserveQuota,
+        ResetWorkspacePolicy, SetAllocation, SetAllocationPriorityOrder, SetWorkspacePolicy,
     },
     paths::DATABASE_FILENAME,
     workspace::canonicalize_workspace_path,
@@ -96,6 +96,14 @@ pub(crate) fn create_allocated_workspace(
 #[tauri::command]
 pub(crate) fn set_allocation(state: State<'_, AppState>, request: SetAllocation) -> IpcResult<()> {
     state.execute(|service| service.set_allocation(request))
+}
+
+#[tauri::command]
+pub(crate) fn remove_workspace_allocation(
+    state: State<'_, AppState>,
+    request: RemoveWorkspaceAllocation,
+) -> IpcResult<()> {
+    state.execute(|service| service.remove_workspace_allocation(request))
 }
 
 #[tauri::command]

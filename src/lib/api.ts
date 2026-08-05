@@ -107,6 +107,19 @@ export async function setAllocation(
   });
 }
 
+export async function removeWorkspaceAllocation(
+  scopeId: string,
+  windowId: string,
+): Promise<void> {
+  await invoke("remove_workspace_allocation", {
+    request: {
+      scopeId,
+      windowId,
+      removedAt: Date.now(),
+    },
+  });
+}
+
 export async function setAllocationPriorityOrder(
   windowId: string,
   orderedScopeIds: string[],

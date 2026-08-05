@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
 import type {
@@ -9,9 +10,15 @@ import type {
   CodexProtectionStatus,
   LocalState,
   QuotaSourceSummary,
+  QuotaHistoryPoint,
   ScopeSummary,
 } from "../types";
 import { Icon } from "./Icon";
+import { ProviderLogo } from "./ProviderLogo";
+import {
+  observedCodexHookAt,
+  verifiedCodexProtectionAt,
+} from "../lib/protection";
 import {
   SettingsPanel,
   type ThemePreference,
@@ -28,6 +35,7 @@ type DashboardProps = {
   onAddSource: () => void;
   onAddScope: () => void;
   onEditAllocation: (scope: ScopeSummary) => void;
+  onRemoveAllocation: (scope: ScopeSummary) => void;
   onRefresh: () => void;
   onRemoveSource: (source: QuotaSourceSummary) => void;
   removingSource: boolean;
@@ -63,6 +71,15 @@ function formatDate(timestamp: number): string {
   }).format(timestamp);
 }
 
+function formatTrendTimestamp(timestamp: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(timestamp);
+}
+
 function formatLastSync(timestamp: number | null): string {
   if (timestamp === null) {
     return "Local estimate";
@@ -83,18 +100,121 @@ function formatLastSync(timestamp: number | null): string {
   return `Synced ${Math.floor(hours / 24)}d ago`;
 }
 
-function verifiedProtectionAt(
-  protection: CodexProtectionStatus | null,
-  events: CodexProtectionEvent[],
-): number | null {
-  if (
-    protection?.installed !== true ||
-    protection.state !== "configured" ||
-    events.length === 0
-  ) {
-    return null;
-  }
-  return events[0]?.occurredAt ?? null;
+function UsageTrendChart({
+  history,
+  startsAt,
+  endsAt,
+  capacity,
+  unit,
+}: {
+  history: QuotaHistoryPoint[];
+  startsAt: number;
+  endsAt: number;
+  capacity: number;
+  unit: string;
+}) {
+  const width = 640;
+  const height = 122;
+  const chartBottom = 108;
+  const visibleHistory = history
+    .filter(
+      (point) => point.observedAt >= startsAt && point.observedAt <= endsAt,
+    )
+    .sort((a, b) => a.observedAt - b.observedAt);
+  const firstObservedAt = visibleHistory[0]?.observedAt ?? startsAt;
+  const lastObservedAt =
+    visibleHistory[visibleHistory.length - 1]?.observedAt ?? endsAt;
+  const observedDuration = Math.max(1, lastObservedAt - firstObservedAt);
+  const points = visibleHistory.map((point) => {
+    const used = Math.max(0, capacity - point.remaining);
+    return {
+      x: Math.max(
+        0,
+        Math.min(
+          width,
+          visibleHistory.length === 1
+            ? 0
+            : ((point.observedAt - firstObservedAt) / observedDuration) * width,
+        ),
+      ),
+      y:
+        chartBottom -
+        Math.max(0, Math.min(1, used / Math.max(1, capacity))) *
+          (chartBottom - 8),
+      used,
+      ...point,
+    };
+  });
+  const linePath = points
+    .map((point, index) => `${index === 0 ? "M" : "L"}${point.x},${point.y}`)
+    .join(" ");
+  const areaPath =
+    points.length > 1
+      ? `${linePath} L${points[points.length - 1]?.x ?? width},${chartBottom} L${
+          points[0].x
+        },${chartBottom} Z`
+      : "";
+  const latest = points[points.length - 1];
+
+  return (
+    <div className="quota-trend">
+      <div className="quota-trend-heading">
+        <span>Usage over time</span>
+        <small>
+          {visibleHistory.length > 1
+            ? `${visibleHistory.length} sync checkpoints`
+            : "Trend starts with the next sync"}
+        </small>
+      </div>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={
+          latest
+            ? `Usage trend ending at ${formatAmount(latest.used, unit)} used`
+            : "Usage trend has no sync checkpoints yet"
+        }
+        preserveAspectRatio="none"
+      >
+        <defs>
+          <linearGradient id="usage-trend-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--muted)" stopOpacity="0.32" />
+            <stop offset="100%" stopColor="var(--muted)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <line className="quota-trend-grid" x1="0" y1="8" x2={width} y2="8" />
+        <line
+          className="quota-trend-grid"
+          x1="0"
+          y1={chartBottom}
+          x2={width}
+          y2={chartBottom}
+        />
+        {areaPath && <path className="quota-trend-area" d={areaPath} />}
+        {linePath && <path className="quota-trend-line" d={linePath} />}
+        {points.length === 1 && (
+          <circle
+            className="quota-trend-dot"
+            cx={points[0].x}
+            cy={points[0].y}
+            r="4"
+          />
+        )}
+      </svg>
+      <div className="quota-trend-axis">
+        <span>
+          {visibleHistory.length > 1
+            ? formatTrendTimestamp(firstObservedAt)
+            : formatDate(startsAt)}
+        </span>
+        <span>
+          {visibleHistory.length > 1
+            ? formatTrendTimestamp(lastObservedAt)
+            : formatDate(endsAt)}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function orderedScopes(
@@ -122,12 +242,12 @@ function orderedScopes(
 function SetupDisclosure({
   source,
   protection,
-  verifiedAt,
+  observedAt,
   onOpenSettings,
 }: {
   source: QuotaSourceSummary;
   protection: CodexProtectionStatus | null;
-  verifiedAt: number | null;
+  observedAt: number | null;
   onOpenSettings: () => void;
 }) {
   if (source.providerDisplayName.toLowerCase() !== "codex") {
@@ -136,7 +256,7 @@ function SetupDisclosure({
 
   const sourceReady = source.lastSyncedAt !== null;
   const hooksReady = protection?.installed === true;
-  const trustReady = hooksReady && verifiedAt !== null;
+  const trustReady = hooksReady && observedAt !== null;
   const completed = [sourceReady, hooksReady, trustReady].filter(Boolean).length;
 
   if (completed === 3) {
@@ -168,7 +288,7 @@ function SetupDisclosure({
             <div>
               <strong>Lifecycle hooks installed</strong>
               <span>
-                UserPromptSubmit, Stop, and SessionEnd
+                UserPromptSubmit and Stop
               </span>
             </div>
           </li>
@@ -178,8 +298,8 @@ function SetupDisclosure({
               <strong>Hooks trusted and enabled in Codex</strong>
               <span>
                 {trustReady
-                  ? `Observed ${formatLastSync(verifiedAt)}`
-                  : "Enable them, restart Codex, then submit a test prompt"}
+                  ? `Delivered ${formatLastSync(observedAt)}`
+                  : "Trust both hooks in Codex, then submit one prompt"}
               </span>
             </div>
           </li>
@@ -210,7 +330,7 @@ function AllocationRow({
   onPointerDragEnd,
   onPointerDragCancel,
   onMoveBy,
-  onEdit,
+  onMenu,
 }: {
   scope: ScopeSummary;
   allocation: AllocationSnapshot;
@@ -224,7 +344,7 @@ function AllocationRow({
   onPointerDragEnd: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onPointerDragCancel: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onMoveBy: (direction: -1 | 1) => void;
-  onEdit: () => void;
+  onMenu: (event: ReactMouseEvent<HTMLButtonElement>) => void;
 }) {
   const overage = Math.max(
     0,
@@ -308,9 +428,9 @@ function AllocationRow({
       <button
         className="row-menu-button"
         type="button"
-        onClick={onEdit}
-        aria-label={`Adjust ${scope.displayName}`}
-        title={`Adjust ${scope.displayName}`}
+        onClick={onMenu}
+        aria-label={`Allocation actions for ${scope.displayName}`}
+        title={`Allocation actions for ${scope.displayName}`}
       >
         …
       </button>
@@ -350,6 +470,7 @@ export function Dashboard({
   onAddSource,
   onAddScope,
   onEditAllocation,
+  onRemoveAllocation,
   onRefresh,
   onRemoveSource,
   removingSource,
@@ -364,6 +485,11 @@ export function Dashboard({
 }: DashboardProps) {
   const [sourceMenu, setSourceMenu] = useState<{
     source: QuotaSourceSummary;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [allocationMenu, setAllocationMenu] = useState<{
+    scope: ScopeSummary;
     x: number;
     y: number;
   } | null>(null);
@@ -391,10 +517,13 @@ export function Dashboard({
   }, [onRefresh, refreshing]);
 
   useEffect(() => {
-    if (!sourceMenu) {
+    if (!sourceMenu && !allocationMenu) {
       return;
     }
-    const close = () => setSourceMenu(null);
+    const close = () => {
+      setSourceMenu(null);
+      setAllocationMenu(null);
+    };
     window.addEventListener("pointerdown", close);
     window.addEventListener("blur", close);
     window.addEventListener("resize", close);
@@ -403,7 +532,7 @@ export function Dashboard({
       window.removeEventListener("blur", close);
       window.removeEventListener("resize", close);
     };
-  }, [sourceMenu]);
+  }, [allocationMenu, sourceMenu]);
 
   const dashboard = state.dashboard;
   const source = state.sources.find(
@@ -435,7 +564,10 @@ export function Dashboard({
   const codexSource =
     source.providerDisplayName.toLowerCase() === "codex";
   const protectionVerifiedAt = codexSource
-    ? verifiedProtectionAt(codexProtection, codexProtectionEvents)
+    ? verifiedCodexProtectionAt(codexProtection, codexProtectionEvents)
+    : null;
+  const hookObservedAt = codexSource
+    ? observedCodexHookAt(codexProtection)
     : null;
   const protectionActive = codexSource && protectionVerifiedAt !== null;
   const plannedCapacityNow = scopes.reduce(
@@ -662,9 +794,10 @@ export function Dashboard({
                   });
                 }}
               >
-                <span className="source-avatar">
-                  {item.providerDisplayName.slice(0, 2).toUpperCase()}
-                </span>
+                <ProviderLogo
+                  className="source-avatar"
+                  providerName={item.providerDisplayName}
+                />
                 <span>
                   <strong>{item.providerDisplayName}</strong>
                   <small>{item.poolDisplayName}</small>
@@ -712,7 +845,7 @@ export function Dashboard({
                 <SetupDisclosure
                   source={source}
                   protection={codexProtection}
-                  verifiedAt={protectionVerifiedAt}
+                  observedAt={hookObservedAt}
                   onOpenSettings={() => onViewChange("settings")}
                 />
               </div>
@@ -727,9 +860,18 @@ export function Dashboard({
                   <Icon name="shield" size={20} />
                   <div>
                     <strong>
-                      Allocations are a priority plan—not enforced yet
+                      {codexProtection?.installed
+                        ? hookObservedAt !== null
+                          ? "Hook connected, but enforcement is degraded"
+                          : "This Codex task has not delivered the protection hook"
+                        : "Allocations are a priority plan—not enforced yet"}
                     </strong>
                     <span>
+                      {codexProtection?.installed
+                        ? hookObservedAt !== null
+                          ? `${codexProtection.lastHookIssue ?? "The latest prompt did not produce an enforceable quota decision."} AQM will retry on the next prompt and provider sync. `
+                          : "You may continue this task, but its prompts are not protected. Trust and enable both AQM hooks in Codex, then submit a prompt; do not keep restarting the app. "
+                        : ""}
                       {unassignedBufferNow > 0
                         ? `Unmanaged Codex usage consumes the ${formatAmount(
                             unassignedBufferNow,
@@ -750,7 +892,7 @@ export function Dashboard({
                     type="button"
                     onClick={() => onViewChange("settings")}
                   >
-                    Finish protection
+                    {hookObservedAt !== null ? "View status" : "Finish protection"}
                   </button>
                 </section>
               )}
@@ -789,6 +931,13 @@ export function Dashboard({
                       <span>{formatDate(quotaWindow.endsAt)}</span>
                     </div>
                   </div>
+                  <UsageTrendChart
+                    history={dashboard.quotaHistory}
+                    startsAt={quotaWindow.startsAt}
+                    endsAt={quotaWindow.endsAt}
+                    capacity={quotaWindow.capacity}
+                    unit={quotaWindow.unit}
+                  />
                 </article>
 
                 <article className="dashboard-block allocation-summary-block">
@@ -803,7 +952,7 @@ export function Dashboard({
                     <div
                       className="allocation-donut"
                       style={{
-                        background: `conic-gradient(var(--quiet) 0 ${usedSlicePercent}%, ${protectionActive ? "var(--success)" : "var(--success-muted)"} ${usedSlicePercent}% ${plannedSliceEnd}%, var(--success) ${plannedSliceEnd}% 100%)`,
+                        background: `conic-gradient(var(--quiet) 0 ${usedSlicePercent}%, ${protectionActive ? "var(--success)" : "var(--success-muted)"} ${usedSlicePercent}% ${plannedSliceEnd}%, var(--unassigned) ${plannedSliceEnd}% 100%)`,
                       }}
                       role="img"
                       aria-label={`${formatAmount(
@@ -915,7 +1064,17 @@ export function Dashboard({
                         onMoveBy={(direction) =>
                           movePriorityBy(scope.id, direction)
                         }
-                        onEdit={() => onEditAllocation(scope)}
+                        onMenu={(event) => {
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          setAllocationMenu({
+                            scope,
+                            x: Math.min(
+                              window.innerWidth - 196,
+                              Math.max(12, rect.right - 184),
+                            ),
+                            y: Math.min(window.innerHeight - 92, rect.bottom + 8),
+                          });
+                        }}
                       />
                     );
                   })}
@@ -945,6 +1104,38 @@ export function Dashboard({
           >
             <Icon name="trash" size={16} />
             Delete source
+          </button>
+        </div>
+      )}
+      {allocationMenu && (
+        <div
+          className="source-context-menu allocation-context-menu"
+          role="menu"
+          aria-label={`${allocationMenu.scope.displayName} allocation actions`}
+          style={{ left: allocationMenu.x, top: allocationMenu.y }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onEditAllocation(allocationMenu.scope);
+              setAllocationMenu(null);
+            }}
+          >
+            <Icon name="settings" size={16} />
+            Adjust allocation
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onRemoveAllocation(allocationMenu.scope);
+              setAllocationMenu(null);
+            }}
+          >
+            <Icon name="trash" size={16} />
+            Delete allocation
           </button>
         </div>
       )}

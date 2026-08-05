@@ -2,6 +2,10 @@ import type {
   CodexProtectionEvent,
   CodexProtectionStatus,
 } from "../types";
+import {
+  observedCodexHookAt,
+  verifiedCodexProtectionAt,
+} from "../lib/protection";
 import { Icon } from "./Icon";
 
 export type ThemePreference = "system" | "light" | "dark";
@@ -38,10 +42,14 @@ function folderName(path: string): string {
 
 function statusLabel(
   protection: CodexProtectionStatus,
+  observedAt: number | null,
   verifiedAt: number | null,
 ): string {
   if (verifiedAt !== null) {
     return "Active";
+  }
+  if (observedAt !== null) {
+    return "Connected";
   }
   switch (protection.state) {
     case "configured":
@@ -61,12 +69,8 @@ export function SettingsPanel({
   onThemeChange,
   onProtection,
 }: SettingsPanelProps) {
-  const verifiedAt =
-    protection?.installed === true &&
-    protection.state === "configured" &&
-    events.length > 0
-      ? events[0]?.occurredAt ?? null
-      : null;
+  const verifiedAt = verifiedCodexProtectionAt(protection, events);
+  const observedAt = observedCodexHookAt(protection);
 
   return (
     <>
@@ -133,7 +137,7 @@ export function SettingsPanel({
                 verifiedAt !== null ? "active" : protection.state
               }`}
             >
-              {statusLabel(protection, verifiedAt)}
+              {statusLabel(protection, observedAt, verifiedAt)}
             </span>
           )}
         </header>
@@ -149,7 +153,11 @@ export function SettingsPanel({
                       ? `AQM observed a Codex prompt decision ${formatRelativeTime(
                           verifiedAt,
                         )}.`
-                      : "AQM hook files are installed, but Codex trust and enablement still require your review."
+                      : observedAt !== null
+                        ? `Codex delivered a prompt hook ${formatRelativeTime(
+                            observedAt,
+                          )}, but the latest check did not produce an enforceable quota decision.`
+                        : "AQM hook files are installed, but Codex has not delivered a current prompt hook yet."
                     : protection.state === "misconfigured"
                       ? protection.issue
                       : "Passive usage tracking stays available, but prompts are not blocked."}
@@ -200,14 +208,14 @@ export function SettingsPanel({
               </div>
             </div>
 
-            {protection.installed && verifiedAt === null && (
+            {protection.installed && observedAt === null && (
               <div className="settings-callout warning" role="alert">
                 <Icon name="activity" size={18} />
                 <div>
-                  <strong>Protection is not active until you finish this</strong>
+                  <strong>Codex has not delivered a hook to AQM yet</strong>
                   <p>
-                    Codex can still run prompts without AQM protection until
-                    all three hooks are trusted and switched on.
+                    You can continue this task, but AQM cannot block its prompts
+                    until Codex delivers a current <code>UserPromptSubmit</code> hook.
                   </p>
                   <ol>
                     <li>
@@ -215,19 +223,39 @@ export function SettingsPanel({
                     </li>
                     <li>
                       Review, trust, and switch on the AQM entries under{" "}
-                      <code>UserPromptSubmit</code>, <code>Stop</code>, and{" "}
-                      <code>SessionEnd</code>.
+                      <code>UserPromptSubmit</code> and <code>Stop</code>.
                     </li>
-                    <li>Restart Codex, then start a new task.</li>
                     <li>
-                      Submit a test prompt in an allocated workspace. AQM marks
-                      protection active after it receives that hook decision.
+                      Submit a prompt in an allocated workspace, then refresh
+                      AQM. Creating a different task is not required.
                     </li>
                   </ol>
                   <p>
-                    Until AQM observes that decision, the dashboard treats
-                    allocations as a priority plan rather than guaranteed
-                    protection.
+                    Do not keep restarting Codex if this warning remains. It
+                    means the current Codex task has not delivered the hook;
+                    allocations remain a priority plan for that task.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {observedAt !== null && verifiedAt === null && (
+              <div className="settings-callout warning" role="alert">
+                <Icon name="activity" size={18} />
+                <div>
+                  <strong>Hook connected, enforcement is degraded</strong>
+                  <p>
+                    Codex reached AQM {formatRelativeTime(observedAt)}, so setup
+                    is complete. The latest prompt was not given an enforceable
+                    quota decision
+                    {protection.lastHookIssue
+                      ? `: ${protection.lastHookIssue}`
+                      : "."}
+                  </p>
+                  <p>
+                    AQM will keep passive attribution and retry provider
+                    reconciliation. Until a decision succeeds, allocations are
+                    shown as planned rather than guaranteed protection.
                   </p>
                 </div>
               </div>
@@ -286,8 +314,8 @@ export function SettingsPanel({
           </div>
         ) : (
           <div className="settings-empty">
-            No prompt decisions recorded yet. Activity appears after protection
-            is trusted and Codex starts a new prompt.
+            No enforceable prompt decisions recorded yet. Hook delivery and
+            provider decisions are tracked separately.
           </div>
         )}
       </section>

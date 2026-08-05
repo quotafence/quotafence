@@ -312,6 +312,38 @@ CREATE INDEX idx_codex_protection_events_occurred_at
     ON codex_protection_events(occurred_at DESC);
 "#;
 
+const PROVIDER_QUOTA_HISTORY: &str = r#"
+CREATE TABLE provider_quota_history (
+    window_id TEXT NOT NULL REFERENCES quota_windows(id) ON DELETE CASCADE,
+    used INTEGER NOT NULL CHECK (used >= 0),
+    observed_at INTEGER NOT NULL,
+    PRIMARY KEY (window_id, observed_at)
+);
+
+CREATE INDEX idx_provider_quota_history_window_observed
+    ON provider_quota_history(window_id, observed_at);
+
+INSERT OR IGNORE INTO provider_quota_history (window_id, used, observed_at)
+SELECT window_id, used, observed_at
+FROM provider_quota_snapshots;
+"#;
+
+const CODEX_HOOK_RECEIPTS: &str = r#"
+CREATE TABLE codex_hook_receipts (
+    session_id TEXT NOT NULL CHECK (length(trim(session_id)) > 0),
+    turn_id TEXT NOT NULL CHECK (length(trim(turn_id)) > 0),
+    event_name TEXT NOT NULL CHECK (length(trim(event_name)) > 0),
+    canonical_path TEXT NOT NULL CHECK (length(trim(canonical_path)) > 0),
+    status TEXT NOT NULL CHECK (status IN ('received', 'decision', 'skipped', 'failed')),
+    issue TEXT,
+    occurred_at INTEGER NOT NULL,
+    PRIMARY KEY (session_id, turn_id, event_name)
+);
+
+CREATE INDEX idx_codex_hook_receipts_event_occurred
+    ON codex_hook_receipts(event_name, occurred_at DESC);
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -377,6 +409,16 @@ const MIGRATIONS: &[Migration] = &[
         version: 13,
         name: "codex_protection_events",
         sql: CODEX_PROTECTION_EVENTS,
+    },
+    Migration {
+        version: 14,
+        name: "provider_quota_history",
+        sql: PROVIDER_QUOTA_HISTORY,
+    },
+    Migration {
+        version: 15,
+        name: "codex_hook_receipts",
+        sql: CODEX_HOOK_RECEIPTS,
     },
 ];
 

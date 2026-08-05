@@ -246,6 +246,14 @@ pub struct SetAllocation {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RemoveWorkspaceAllocation {
+    pub scope_id: String,
+    pub window_id: String,
+    pub removed_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SetAllocationPriorityOrder {
     pub window_id: String,
     pub ordered_scope_ids: Vec<String>,

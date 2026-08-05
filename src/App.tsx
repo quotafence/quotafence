@@ -16,6 +16,7 @@ import {
   getCodexProtectionStatus,
   getLocalState,
   installCodexProtection,
+  removeWorkspaceAllocation,
   resetWorkspacePolicy,
   setAllocation,
   setAllocationPriorityOrder,
@@ -38,6 +39,7 @@ type ModalState =
   | { type: "source" }
   | { type: "scope" }
   | { type: "allocation"; scope: ScopeSummary }
+  | { type: "remove-allocation"; scope: ScopeSummary }
   | { type: "remove-source"; source: QuotaSourceSummary }
   | null;
 
@@ -209,6 +211,10 @@ function App() {
               installed: false,
               hasAqmHooks: false,
               requiresReview: false,
+              verificationRequiredAfter: null,
+              lastHookObservedAt: null,
+              lastHookStatus: null,
+              lastHookIssue: null,
               configPath: "",
               state: "misconfigured",
               issue: "AQM could not inspect the Codex hook configuration.",
@@ -444,6 +450,26 @@ function App() {
     }
   }
 
+  async function handleRemoveAllocation(scope: ScopeSummary) {
+    const windowId = localState?.selectedWindowId;
+    if (!windowId) {
+      setError("No quota window is selected.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await removeWorkspaceAllocation(scope.id, windowId);
+      await loadState(windowId);
+      setModal(null);
+      setNotice(`${scope.displayName} is no longer allocated quota.`);
+    } catch (reason) {
+      setError(getErrorMessage(reason));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function handleProtection(enabled: boolean) {
     setProtectionBusy(true);
     setError(null);
@@ -455,7 +481,7 @@ function App() {
       setCodexProtection(status);
       setNotice(
         enabled
-          ? "Action required: protection is not active yet. In Codex Settings → Hooks → User config, trust and enable all three AQM hooks, then restart Codex."
+          ? "Action required: trust and enable UserPromptSubmit and Stop in Codex, then submit a prompt in an allocated workspace. AQM now verifies hook delivery separately from provider sync."
           : "Codex Desktop protection is off. Other Codex hooks were left unchanged.",
       );
     } catch (reason) {
@@ -546,6 +572,9 @@ function App() {
         onAddSource={() => setModal({ type: "source" })}
         onAddScope={() => setModal({ type: "scope" })}
         onEditAllocation={(scope) => setModal({ type: "allocation", scope })}
+        onRemoveAllocation={(scope) =>
+          setModal({ type: "remove-allocation", scope })
+        }
         onRefresh={handleRefresh}
         onRemoveSource={(source) => setModal({ type: "remove-source", source })}
         removingSource={submitting}
@@ -634,6 +663,49 @@ function App() {
               >
                 <Icon name="trash" size={17} />
                 {submitting ? "Deleting…" : "Delete source"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {modal?.type === "remove-allocation" && (
+        <Modal
+          eyebrow="Workspace allocation"
+          title="Delete this allocation?"
+          onClose={() => {
+            if (!submitting) {
+              setModal(null);
+            }
+          }}
+        >
+          <div className="delete-source-confirmation">
+            <p>
+              <strong>{modal.scope.displayName}</strong>
+              <span>{modal.scope.workspacePath}</span>
+            </p>
+            <p>
+              This releases its planned quota and removes the folder binding.
+              Existing usage history stays in your local ledger. No files in
+              the folder are changed.
+            </p>
+            <div className="modal-actions">
+              <button
+                className="button outline"
+                type="button"
+                disabled={submitting}
+                onClick={() => setModal(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="button danger-action"
+                type="button"
+                disabled={submitting}
+                onClick={() => void handleRemoveAllocation(modal.scope)}
+              >
+                <Icon name="trash" size={17} />
+                {submitting ? "Deleting…" : "Delete allocation"}
               </button>
             </div>
           </div>

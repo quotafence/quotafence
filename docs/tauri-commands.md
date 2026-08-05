@@ -136,9 +136,11 @@ remains the source of truth for review and trust. Status distinguishes
 `disabled`, `configured`, and `misconfigured`; `configured` means every AQM
 handler points at the current executable, not that Codex has trusted its current
 hash or enabled the hook. The frontend must direct Desktop users to
-**Settings → Hooks → User config** to trust and enable all three AQM entries,
-then tell them to restart Codex. CLI users can review the same entries with
-`/hooks`.
+**Settings → Hooks → User config** to trust and enable both AQM entries,
+then tell them to restart Codex. `verificationRequiredAfter` is the latest
+modification time of the hook file or current executable; only a protection
+event at or after that timestamp may mark the current setup active. CLI users
+can review the same entries with `/hooks`.
 Uninstall removes only AQM-owned handlers.
 
 `get_codex_protection_events` returns at most 20 recent prompt admission

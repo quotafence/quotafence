@@ -165,7 +165,15 @@ pub struct ManagedSessionReconciliation {
 pub struct QuotaDashboard {
     pub window: WindowSummary,
     pub allocations: Vec<AllocationSnapshot>,
+    pub quota_history: Vec<QuotaHistoryPoint>,
     pub forecast: DepletionForecast,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuotaHistoryPoint {
+    pub observed_at: i64,
+    pub remaining: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

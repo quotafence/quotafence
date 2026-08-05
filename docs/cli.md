@@ -203,13 +203,14 @@ reviewed, trusted, and enabled.
 In Codex Desktop:
 
 1. Open **Settings → Hooks → User config**.
-2. Review, trust, and switch on the AQM entries under `UserPromptSubmit`,
-   `Stop`, and `SessionEnd`.
-3. Restart Codex, then start a new task so the session loads the updated
-   configuration.
+2. Review, trust, and switch on the AQM entries under `UserPromptSubmit` and
+   `Stop`.
+3. Quit Codex completely, reopen it, and resume the existing task so the new
+   app-server process loads the updated configuration. On macOS, closing the
+   window is not enough; use **Cmd+Q**.
 
-In Codex CLI, run `/hooks` and review the same three entries before restarting
-the session. Until all three hooks are trusted and switched on, Codex prompts
+In Codex CLI, run `/hooks` and review the same two entries before restarting
+the session. Until both hooks are trusted and switched on, Codex prompts
 can still run without AQM protection.
 
 The installed lifecycle is:
@@ -221,7 +222,8 @@ The installed lifecycle is:
 3. Allowed prompts capture an absolute provider baseline.
 4. `Stop` captures another checkpoint and records the delta against the folder
    only when the turn was mapped, uncontended, and remained in the same window.
-5. `SessionEnd` removes unfinished observations.
+5. A later prompt prunes stale unfinished observations left by interrupted or
+   abandoned tasks.
 
 These event names and stdin fields follow the official
 [Codex hooks contract](https://learn.chatgpt.com/docs/hooks).
@@ -235,7 +237,9 @@ npm run aqm -- hooks uninstall codex
 
 `status` verifies the AQM definitions in the JSON file; Codex remains the source
 of truth for whether their current hash has been trusted and the hook is
-enabled.
+enabled. The desktop therefore keeps protection unverified until it observes a
+new hook decision after the current hook file or application executable was
+last modified.
 
 The desktop exposes the same integration in Settings as an on/off control.
 Turning it off removes only handlers marked as AQM-owned. A partial

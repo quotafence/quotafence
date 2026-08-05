@@ -2,7 +2,9 @@ use std::{path::Path, time::Duration};
 
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
-use crate::domain::{Account, Allocation, Provider, QuotaPool, QuotaWindow, Scope, WindowId};
+use crate::domain::{
+    Account, Allocation, Provider, QuotaPool, QuotaWindow, Scope, ScopeId, UnixMillis, WindowId,
+};
 
 use super::{
     allocations::set_in_transaction, ledger::reserve_in_transaction, managed_sessions, migrations,
@@ -104,6 +106,81 @@ impl Database {
         CatalogRepository::new(&transaction).insert_scope(scope)?;
         set_in_transaction(&transaction, allocation)?;
         insert_workspace_binding_in_transaction(&transaction, binding)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn remove_workspace_allocation(
+        &mut self,
+        scope_id: &ScopeId,
+        window_id: &WindowId,
+        removed_at: UnixMillis,
+    ) -> StorageResult<()> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let pool_id = transaction
+            .query_row(
+                "SELECT w.pool_id
+                 FROM allocations a
+                 JOIN quota_windows w ON w.id = a.window_id
+                 WHERE a.scope_id = ?1 AND a.window_id = ?2",
+                params![scope_id.as_str(), window_id.as_str()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .ok_or_else(|| super::StorageError::NotFound {
+                entity: "workspace allocation",
+                id: format!("{scope_id}/{window_id}"),
+            })?;
+
+        let active_reservations: i64 = transaction.query_row(
+            "SELECT COUNT(*)
+             FROM reservations
+             WHERE scope_id = ?1
+               AND window_id = ?2
+               AND status = 'active'
+               AND expires_at > ?3",
+            params![scope_id.as_str(), window_id.as_str(), removed_at.value()],
+            |row| row.get(0),
+        )?;
+        if active_reservations > 0 {
+            return Err(super::StorageError::InvalidState {
+                message: "finish the active managed session before deleting this allocation"
+                    .to_owned(),
+            });
+        }
+
+        let child_allocations: i64 = transaction.query_row(
+            "SELECT COUNT(*)
+             FROM allocations a
+             JOIN scopes s ON s.id = a.scope_id
+             WHERE s.parent_id = ?1 AND a.window_id = ?2",
+            params![scope_id.as_str(), window_id.as_str()],
+            |row| row.get(0),
+        )?;
+        if child_allocations > 0 {
+            return Err(super::StorageError::InvalidState {
+                message: "remove child allocations before deleting this allocation".to_owned(),
+            });
+        }
+
+        transaction.execute(
+            "DELETE FROM provider_turn_observations WHERE scope_id = ?1",
+            [scope_id.as_str()],
+        )?;
+        transaction.execute(
+            "DELETE FROM workspace_bindings WHERE scope_id = ?1",
+            [scope_id.as_str()],
+        )?;
+        transaction.execute(
+            "DELETE FROM allocation_priorities WHERE pool_id = ?1 AND scope_id = ?2",
+            params![pool_id, scope_id.as_str()],
+        )?;
+        transaction.execute(
+            "DELETE FROM allocations WHERE scope_id = ?1 AND window_id = ?2",
+            params![scope_id.as_str(), window_id.as_str()],
+        )?;
         transaction.commit()?;
         Ok(())
     }
@@ -228,6 +305,13 @@ impl Database {
         window_id: &WindowId,
     ) -> StorageResult<Option<ProviderQuotaSnapshot>> {
         provider_snapshots::get(&self.connection, window_id)
+    }
+
+    pub fn provider_quota_history(
+        &self,
+        window_id: &WindowId,
+    ) -> StorageResult<Vec<super::ProviderQuotaHistoryPoint>> {
+        provider_snapshots::list_history(&self.connection, window_id)
     }
 
     pub fn sync_provider_quota(
