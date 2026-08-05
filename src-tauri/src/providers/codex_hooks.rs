@@ -11,9 +11,9 @@ use serde_json::{json, Map, Value};
 use crate::{
     application::{
         AbandonProviderSessionObservations, AbandonProviderTurnObservation,
-        BeginProviderTurnObservation, EvaluateWorkspaceAdmission, GetLocalState,
-        GetProviderTurnObservation, GetWorkspaceContext, QuotaService,
-        ReconcileProviderTurnObservation, RecordCodexProtectionEvent, TurnReconciliationResult,
+        BeginProviderTurnObservation, GetLocalState, GetProviderTurnObservation,
+        GetWorkspaceContext, QuotaService, ReconcileProviderTurnObservation,
+        RecordCodexProtectionEvent, TurnReconciliationResult, WorkspaceAllocationContext,
         WorkspaceContext,
     },
     domain::EnforcementDecision,
@@ -143,6 +143,19 @@ pub fn hook_output(outcome: &CodexHookOutcome) -> Value {
             "reason": reason,
         }),
         _ => json!({}),
+    }
+}
+
+fn hook_failure_output(event: &CodexHookEvent, error: &str) -> Value {
+    if event.kind() == CodexHookEventKind::UserPromptSubmit {
+        json!({
+            "decision": "block",
+            "reason": format!(
+                "AQM blocked this prompt because it could not verify the workspace allocation: {error}. Open Agent Quota Manager, sync Codex, and retry."
+            ),
+        })
+    } else {
+        json!({})
     }
 }
 
@@ -331,11 +344,23 @@ pub fn run_installed_hook(reader: impl Read) -> Result<Value, String> {
         return Ok(json!({}));
     }
     let event = CodexHookEvent::from_reader(reader)?;
-    let database_path = paths::default_database_path()
-        .map_err(|error| format!("cannot resolve database: {error}"))?;
-    let database = Database::open(&database_path).map_err(|error| error.to_string())?;
+    let database_path = match paths::default_database_path() {
+        Ok(path) => path,
+        Err(error) => {
+            return Ok(hook_failure_output(
+                &event,
+                &format!("cannot resolve database: {error}"),
+            ));
+        }
+    };
+    let database = match Database::open(&database_path) {
+        Ok(database) => database,
+        Err(error) => return Ok(hook_failure_output(&event, &error.to_string())),
+    };
     let observed_at = current_time_millis();
-    record_hook_received(&database, &event, observed_at)?;
+    if let Err(error) = record_hook_received(&database, &event, observed_at) {
+        return Ok(hook_failure_output(&event, &error));
+    }
     let mut service = QuotaService::new(database);
     let outcome = match handle_event(&mut service, &event, observed_at, || {
         matches!(
@@ -352,7 +377,7 @@ pub fn run_installed_hook(reader: impl Read) -> Result<Value, String> {
                 CodexHookReceiptStatus::Failed,
                 Some(error.as_str()),
             );
-            return Err(error);
+            return Ok(hook_failure_output(&event, &error));
         }
     };
     let (receipt_status, receipt_issue) = match &outcome {
@@ -561,13 +586,18 @@ where
         return Ok(CodexHookOutcome::Skipped);
     };
     if scope_id.is_some() {
-        let assessment = service
-            .evaluate_workspace_admission(EvaluateWorkspaceAdmission {
+        let refreshed_context = service
+            .workspace_context(GetWorkspaceContext {
                 canonical_path: canonical_path.clone(),
-                provider_id: "codex".to_owned(),
                 at: observed_at,
             })
             .map_err(|error| error.to_string())?;
+        let scope_display_name = refreshed_context
+            .binding
+            .as_ref()
+            .map(|binding| binding.scope_display_name.as_str())
+            .ok_or_else(|| format!("workspace {canonical_path} is no longer bound"))?;
+        let assessment = allocation_for_window(&refreshed_context, &window_id)?;
         if assessment.provider_remaining <= 0 {
             return Ok(CodexHookOutcome::Blocked {
                 reason: "AQM blocked this prompt because the Codex provider quota is exhausted."
@@ -575,18 +605,18 @@ where
             });
         }
         if assessment.protected_now == 0 {
-            if assessment.allocation_remaining <= 0 {
+            if assessment.remaining <= 0 {
                 return Ok(CodexHookOutcome::Blocked {
                     reason: format!(
                         "AQM blocked this prompt because the Codex allocation for {} is exhausted.",
-                        assessment.scope_display_name
+                        scope_display_name
                     ),
                 });
             }
             return Ok(CodexHookOutcome::Blocked {
                 reason: format!(
                     "AQM blocked this prompt because {} has no protected quota at its current priority. Reorder workspace priorities or wait for the next reset.",
-                    assessment.scope_display_name
+                    scope_display_name
                 ),
             });
         }
@@ -595,7 +625,7 @@ where
                 return Ok(CodexHookOutcome::Blocked {
                     reason: format!(
                         "AQM blocked this prompt because the Codex allocation for {} is exhausted.",
-                        assessment.scope_display_name
+                        scope_display_name
                     ),
                 });
             }
@@ -603,7 +633,7 @@ where
                 return Ok(CodexHookOutcome::Blocked {
                     reason: format!(
                         "AQM blocked this prompt because {} reached its confirmation boundary. Adjust its policy or use an AQM-managed launch with explicit confirmation.",
-                        assessment.scope_display_name
+                        scope_display_name
                     ),
                 });
             }
@@ -628,6 +658,34 @@ where
         scope_id,
         contended: result.contended,
     })
+}
+
+fn allocation_for_window<'a>(
+    context: &'a WorkspaceContext,
+    window_id: &str,
+) -> Result<&'a WorkspaceAllocationContext, String> {
+    let mut matching = context.allocations.iter().filter(|allocation| {
+        allocation.window_id == window_id
+            && allocation
+                .provider_display_name
+                .eq_ignore_ascii_case("codex")
+            && allocation.unit == "percent"
+    });
+    let allocation = matching.next().ok_or_else(|| {
+        let workspace = context
+            .binding
+            .as_ref()
+            .map(|binding| binding.scope_display_name.as_str())
+            .unwrap_or(context.canonical_path.as_str());
+        format!("workspace {workspace} has no allocation in Codex window {window_id}")
+    })?;
+    if matching.next().is_some() {
+        return Err(format!(
+            "workspace {} has multiple allocations in Codex window {window_id}",
+            context.canonical_path
+        ));
+    }
+    Ok(allocation)
 }
 
 fn protection_enabled(
@@ -908,6 +966,32 @@ mod tests {
         providers::codex::{DetectedQuotaWindow, DetectionStatus},
         storage::Database,
     };
+
+    #[test]
+    fn prompt_hook_errors_fail_closed_but_stop_errors_do_not_continue_the_turn() {
+        let prompt = CodexHookEvent {
+            session_id: "session-1".to_owned(),
+            turn_id: Some("turn-1".to_owned()),
+            cwd: "/workspace".to_owned(),
+            hook_event_name: "UserPromptSubmit".to_owned(),
+        };
+        assert_eq!(
+            hook_failure_output(&prompt, "database unavailable"),
+            json!({
+                "decision": "block",
+                "reason": "AQM blocked this prompt because it could not verify the workspace allocation: database unavailable. Open Agent Quota Manager, sync Codex, and retry."
+            })
+        );
+
+        let stop = CodexHookEvent {
+            hook_event_name: "Stop".to_owned(),
+            ..prompt
+        };
+        assert_eq!(
+            hook_failure_output(&stop, "database unavailable"),
+            json!({})
+        );
+    }
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -1417,7 +1501,10 @@ mod tests {
         let mut service = QuotaService::new(Database::open_in_memory().unwrap());
         service
             .create_quota_source(CreateQuotaSource {
-                provider_id: "codex".to_owned(),
+                // Production sources use generated catalog IDs. Hook admission must
+                // select the synced Codex window instead of assuming this ID is
+                // literally "codex".
+                provider_id: "source-generated-provider".to_owned(),
                 provider_display_name: "Codex".to_owned(),
                 account_id: "codex-account".to_owned(),
                 account_display_name: "Subscription".to_owned(),
