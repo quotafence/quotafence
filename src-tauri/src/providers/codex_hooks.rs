@@ -18,7 +18,7 @@ use crate::{
     },
     domain::EnforcementDecision,
     paths,
-    storage::Database,
+    storage::{CodexHookReceipt, CodexHookReceiptStatus, Database},
     workspace::canonicalize_workspace_path,
 };
 
@@ -100,9 +100,32 @@ pub struct CodexProtectionStatus {
     pub has_aqm_hooks: bool,
     pub requires_review: bool,
     pub verification_required_after: Option<i64>,
+    pub last_hook_observed_at: Option<i64>,
+    pub last_hook_status: Option<CodexHookReceiptStatusView>,
+    pub last_hook_issue: Option<String>,
     pub config_path: String,
     pub state: CodexProtectionState,
     pub issue: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CodexHookReceiptStatusView {
+    Received,
+    Decision,
+    Skipped,
+    Failed,
+}
+
+impl From<CodexHookReceiptStatus> for CodexHookReceiptStatusView {
+    fn from(value: CodexHookReceiptStatus) -> Self {
+        match value {
+            CodexHookReceiptStatus::Received => Self::Received,
+            CodexHookReceiptStatus::Decision => Self::Decision,
+            CodexHookReceiptStatus::Skipped => Self::Skipped,
+            CodexHookReceiptStatus::Failed => Self::Failed,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -127,13 +150,21 @@ pub fn protection_status() -> Result<CodexProtectionStatus, String> {
     let config_path = default_user_hooks_path()?;
     let executable = env::current_exe()
         .map_err(|error| format!("cannot resolve the Agent Quota Manager executable: {error}"))?;
-    Ok(protection_status_for(&config_path, &executable))
+    Ok(protection_status_for(
+        &config_path,
+        &executable,
+        latest_user_prompt_receipt(),
+    ))
 }
 
 pub fn install_protection(executable: &Path) -> Result<CodexProtectionStatus, String> {
     let config_path = default_user_hooks_path()?;
     install_user_hooks(&config_path, executable)?;
-    Ok(protection_status_for(&config_path, executable))
+    Ok(protection_status_for(
+        &config_path,
+        executable,
+        latest_user_prompt_receipt(),
+    ))
 }
 
 pub fn uninstall_protection() -> Result<CodexProtectionStatus, String> {
@@ -141,15 +172,35 @@ pub fn uninstall_protection() -> Result<CodexProtectionStatus, String> {
     uninstall_user_hooks(&config_path)?;
     let executable = env::current_exe()
         .map_err(|error| format!("cannot resolve the Agent Quota Manager executable: {error}"))?;
-    Ok(protection_status_for(&config_path, &executable))
+    Ok(protection_status_for(
+        &config_path,
+        &executable,
+        latest_user_prompt_receipt(),
+    ))
 }
 
-fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtectionStatus {
+fn latest_user_prompt_receipt() -> Option<CodexHookReceipt> {
+    let path = paths::default_database_path().ok()?;
+    let database = Database::open(path).ok()?;
+    database
+        .codex_protection_events()
+        .latest_hook_receipt("UserPromptSubmit")
+        .ok()?
+}
+
+fn protection_status_for(
+    config_path: &Path,
+    executable: &Path,
+    latest_receipt: Option<CodexHookReceipt>,
+) -> CodexProtectionStatus {
     let config_path_text = config_path.display().to_string();
     let verification_required_after = [config_path, executable]
         .into_iter()
         .filter_map(file_modified_at_millis)
         .max();
+    let last_hook_observed_at = latest_receipt.as_ref().map(|receipt| receipt.occurred_at);
+    let last_hook_status = latest_receipt.as_ref().map(|receipt| receipt.status.into());
+    let last_hook_issue = latest_receipt.and_then(|receipt| receipt.issue);
     let config = match read_hook_config(config_path) {
         Ok(config) => config,
         Err(issue) => {
@@ -158,6 +209,9 @@ fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtecti
                 has_aqm_hooks: false,
                 requires_review: false,
                 verification_required_after,
+                last_hook_observed_at,
+                last_hook_status,
+                last_hook_issue,
                 config_path: config_path_text,
                 state: CodexProtectionState::Misconfigured,
                 issue: Some(issue),
@@ -171,6 +225,9 @@ fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtecti
             has_aqm_hooks: false,
             requires_review: false,
             verification_required_after,
+            last_hook_observed_at,
+            last_hook_status,
+            last_hook_issue,
             config_path: config_path_text,
             state: CodexProtectionState::Disabled,
             issue: None,
@@ -195,6 +252,9 @@ fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtecti
             has_aqm_hooks: false,
             requires_review: false,
             verification_required_after,
+            last_hook_observed_at,
+            last_hook_status,
+            last_hook_issue,
             config_path: config_path_text,
             state: CodexProtectionState::Disabled,
             issue: None,
@@ -227,6 +287,9 @@ fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtecti
             has_aqm_hooks: true,
             requires_review: true,
             verification_required_after,
+            last_hook_observed_at,
+            last_hook_status,
+            last_hook_issue,
             config_path: config_path_text,
             state: CodexProtectionState::Configured,
             issue: None,
@@ -237,6 +300,9 @@ fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtecti
             has_aqm_hooks: true,
             requires_review: false,
             verification_required_after,
+            last_hook_observed_at,
+            last_hook_status,
+            last_hook_issue,
             config_path: config_path_text,
             state: CodexProtectionState::Misconfigured,
             issue: Some(if has_legacy_session_end {
@@ -267,18 +333,87 @@ pub fn run_installed_hook(reader: impl Read) -> Result<Value, String> {
     let event = CodexHookEvent::from_reader(reader)?;
     let database_path = paths::default_database_path()
         .map_err(|error| format!("cannot resolve database: {error}"))?;
-    let database = Database::open(database_path).map_err(|error| error.to_string())?;
-    let mut service = QuotaService::new(database);
+    let database = Database::open(&database_path).map_err(|error| error.to_string())?;
     let observed_at = current_time_millis();
-    let outcome = handle_event(&mut service, &event, observed_at, || {
+    record_hook_received(&database, &event, observed_at)?;
+    let mut service = QuotaService::new(database);
+    let outcome = match handle_event(&mut service, &event, observed_at, || {
         matches!(
             event.kind(),
             CodexHookEventKind::UserPromptSubmit | CodexHookEventKind::Stop
         )
         .then(codex::detect)
-    })?;
+    }) {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            update_hook_receipt(
+                &database_path,
+                &event,
+                CodexHookReceiptStatus::Failed,
+                Some(error.as_str()),
+            );
+            return Err(error);
+        }
+    };
+    let (receipt_status, receipt_issue) = match &outcome {
+        CodexHookOutcome::Skipped => (
+            CodexHookReceiptStatus::Skipped,
+            Some("AQM received the hook, but no enforceable provider checkpoint was available."),
+        ),
+        _ => (CodexHookReceiptStatus::Decision, None),
+    };
+    update_hook_receipt(&database_path, &event, receipt_status, receipt_issue);
     record_prompt_decision(&mut service, &event, &outcome, observed_at);
     Ok(hook_output(&outcome))
+}
+
+fn record_hook_received(
+    database: &Database,
+    event: &CodexHookEvent,
+    occurred_at: i64,
+) -> Result<(), String> {
+    let Some(turn_id) = event
+        .turn_id
+        .as_deref()
+        .filter(|turn_id| !turn_id.trim().is_empty())
+    else {
+        return Ok(());
+    };
+    let canonical_path =
+        canonicalize_workspace_path(&event.cwd).unwrap_or_else(|_| event.cwd.clone());
+    database
+        .codex_protection_events()
+        .record_hook_received(&CodexHookReceipt {
+            session_id: event.session_id.clone(),
+            turn_id: turn_id.to_owned(),
+            event_name: event.hook_event_name.clone(),
+            canonical_path,
+            status: CodexHookReceiptStatus::Received,
+            issue: None,
+            occurred_at,
+        })
+        .map_err(|error| error.to_string())
+}
+
+fn update_hook_receipt(
+    database_path: &Path,
+    event: &CodexHookEvent,
+    status: CodexHookReceiptStatus,
+    issue: Option<&str>,
+) {
+    let Some(turn_id) = event.turn_id.as_deref() else {
+        return;
+    };
+    let Ok(database) = Database::open(database_path) else {
+        return;
+    };
+    let _ = database.codex_protection_events().update_hook_receipt(
+        &event.session_id,
+        turn_id,
+        &event.hook_event_name,
+        status,
+        issue,
+    );
 }
 
 fn record_prompt_decision(
@@ -910,12 +1045,12 @@ mod tests {
         let executable = directory.join("Agent Quota Manager");
         std::fs::write(&executable, "test executable").unwrap();
 
-        let disabled = protection_status_for(&config_path, &executable);
+        let disabled = protection_status_for(&config_path, &executable, None);
         assert_eq!(disabled.state, CodexProtectionState::Disabled);
         assert!(!disabled.installed);
 
         install_user_hooks(&config_path, &executable).unwrap();
-        let configured = protection_status_for(&config_path, &executable);
+        let configured = protection_status_for(&config_path, &executable, None);
         assert_eq!(configured.state, CodexProtectionState::Configured);
         assert!(configured.installed);
         assert!(configured.requires_review);
@@ -935,7 +1070,7 @@ mod tests {
             serde_json::to_string_pretty(&legacy_config).unwrap(),
         )
         .unwrap();
-        let legacy = protection_status_for(&config_path, &executable);
+        let legacy = protection_status_for(&config_path, &executable, None);
         assert_eq!(legacy.state, CodexProtectionState::Misconfigured);
         assert!(legacy.issue.unwrap().contains("legacy SessionEnd"));
 
@@ -945,20 +1080,20 @@ mod tests {
             .as_array()
             .is_none_or(|groups| !groups.iter().any(group_contains_aqm_hook)));
         assert_eq!(
-            protection_status_for(&config_path, &executable).state,
+            protection_status_for(&config_path, &executable, None).state,
             CodexProtectionState::Configured
         );
 
         let replacement = directory.join("replacement");
         std::fs::write(&replacement, "replacement executable").unwrap();
-        let stale = protection_status_for(&config_path, &replacement);
+        let stale = protection_status_for(&config_path, &replacement, None);
         assert_eq!(stale.state, CodexProtectionState::Misconfigured);
         assert!(!stale.installed);
         assert!(stale.issue.is_some());
 
         uninstall_user_hooks(&config_path).unwrap();
         assert_eq!(
-            protection_status_for(&config_path, &executable).state,
+            protection_status_for(&config_path, &executable, None).state,
             CodexProtectionState::Disabled
         );
         std::fs::remove_dir_all(directory).unwrap();

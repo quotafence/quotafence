@@ -212,6 +212,9 @@ function App() {
               hasAqmHooks: false,
               requiresReview: false,
               verificationRequiredAfter: null,
+              lastHookObservedAt: null,
+              lastHookStatus: null,
+              lastHookIssue: null,
               configPath: "",
               state: "misconfigured",
               issue: "AQM could not inspect the Codex hook configuration.",
@@ -478,7 +481,7 @@ function App() {
       setCodexProtection(status);
       setNotice(
         enabled
-          ? "Action required: trust and enable UserPromptSubmit and Stop, quit Codex completely with Cmd+Q, reopen this same task, then submit one prompt. Closing the window alone does not reload hooks."
+          ? "Action required: trust and enable UserPromptSubmit and Stop in Codex, then submit a prompt in an allocated workspace. AQM now verifies hook delivery separately from provider sync."
           : "Codex Desktop protection is off. Other Codex hooks were left unchanged.",
       );
     } catch (reason) {

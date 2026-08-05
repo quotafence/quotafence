@@ -30,8 +30,8 @@ pub use managed_sessions::{
 };
 pub use policies::{PolicyOverrideAudit, WorkspacePolicy, WorkspacePolicyRepository};
 pub use protection_events::{
-    CodexProtectionEvent, CodexProtectionEventOutcome, CodexProtectionEventRepository,
-    NewCodexProtectionEvent,
+    CodexHookReceipt, CodexHookReceiptStatus, CodexProtectionEvent, CodexProtectionEventOutcome,
+    CodexProtectionEventRepository, NewCodexProtectionEvent,
 };
 pub use provider_snapshots::{ProviderQuotaHistoryPoint, ProviderQuotaSnapshot};
 pub use turn_observations::{

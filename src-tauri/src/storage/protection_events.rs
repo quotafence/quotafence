@@ -1,8 +1,53 @@
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use super::StorageResult;
 
 const RETAINED_EVENT_COUNT: u64 = 100;
+const RETAINED_RECEIPT_COUNT: u64 = 200;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodexHookReceiptStatus {
+    Received,
+    Decision,
+    Skipped,
+    Failed,
+}
+
+impl CodexHookReceiptStatus {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Received => "received",
+            Self::Decision => "decision",
+            Self::Skipped => "skipped",
+            Self::Failed => "failed",
+        }
+    }
+
+    fn parse(value: &str) -> StorageResult<Self> {
+        match value {
+            "received" => Ok(Self::Received),
+            "decision" => Ok(Self::Decision),
+            "skipped" => Ok(Self::Skipped),
+            "failed" => Ok(Self::Failed),
+            other => Err(super::StorageError::InvalidState {
+                message: format!(
+                    "database contains an unsupported Codex hook receipt status: {other}"
+                ),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodexHookReceipt {
+    pub session_id: String,
+    pub turn_id: String,
+    pub event_name: String,
+    pub canonical_path: String,
+    pub status: CodexHookReceiptStatus,
+    pub issue: Option<String>,
+    pub occurred_at: i64,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodexProtectionEventOutcome {
@@ -133,6 +178,94 @@ impl<'connection> CodexProtectionEventRepository<'connection> {
         })
         .collect()
     }
+
+    pub fn record_hook_received(&self, receipt: &CodexHookReceipt) -> StorageResult<()> {
+        self.connection.execute(
+            "INSERT INTO codex_hook_receipts (
+                session_id, turn_id, event_name, canonical_path, status, issue, occurred_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(session_id, turn_id, event_name) DO UPDATE SET
+                canonical_path = excluded.canonical_path,
+                status = excluded.status,
+                issue = excluded.issue,
+                occurred_at = excluded.occurred_at",
+            params![
+                receipt.session_id,
+                receipt.turn_id,
+                receipt.event_name,
+                receipt.canonical_path,
+                receipt.status.as_str(),
+                receipt.issue,
+                receipt.occurred_at,
+            ],
+        )?;
+        self.connection.execute(
+            "DELETE FROM codex_hook_receipts
+             WHERE rowid NOT IN (
+                SELECT rowid
+                FROM codex_hook_receipts
+                ORDER BY occurred_at DESC
+                LIMIT ?1
+             )",
+            [i64::try_from(RETAINED_RECEIPT_COUNT).unwrap_or(i64::MAX)],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_hook_receipt(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+        event_name: &str,
+        status: CodexHookReceiptStatus,
+        issue: Option<&str>,
+    ) -> StorageResult<()> {
+        self.connection.execute(
+            "UPDATE codex_hook_receipts
+             SET status = ?4, issue = ?5
+             WHERE session_id = ?1 AND turn_id = ?2 AND event_name = ?3",
+            params![session_id, turn_id, event_name, status.as_str(), issue],
+        )?;
+        Ok(())
+    }
+
+    pub fn latest_hook_receipt(&self, event_name: &str) -> StorageResult<Option<CodexHookReceipt>> {
+        let mut statement = self.connection.prepare(
+            "SELECT session_id, turn_id, event_name, canonical_path, status, issue, occurred_at
+             FROM codex_hook_receipts
+             WHERE event_name = ?1
+             ORDER BY occurred_at DESC
+             LIMIT 1",
+        )?;
+        let receipt = statement
+            .query_row([event_name], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, i64>(6)?,
+                ))
+            })
+            .optional()?;
+        receipt
+            .map(
+                |(session_id, turn_id, event_name, canonical_path, status, issue, occurred_at)| {
+                    Ok(CodexHookReceipt {
+                        session_id,
+                        turn_id,
+                        event_name,
+                        canonical_path,
+                        status: CodexHookReceiptStatus::parse(&status)?,
+                        issue,
+                        occurred_at,
+                    })
+                },
+            )
+            .transpose()
+    }
 }
 
 #[cfg(test)]
@@ -184,5 +317,45 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].outcome, CodexProtectionEventOutcome::Blocked);
         assert_eq!(events[1].workspace_name.as_deref(), Some("Feature A"));
+    }
+
+    #[test]
+    fn hook_receipt_tracks_delivery_separately_from_policy_decisions() {
+        let database = seeded_database();
+        let repository = database.codex_protection_events();
+        let receipt = CodexHookReceipt {
+            session_id: "session-1".to_owned(),
+            turn_id: "turn-1".to_owned(),
+            event_name: "UserPromptSubmit".to_owned(),
+            canonical_path: "/code/a".to_owned(),
+            status: CodexHookReceiptStatus::Received,
+            issue: None,
+            occurred_at: 4_000,
+        };
+
+        repository.record_hook_received(&receipt).unwrap();
+        repository
+            .update_hook_receipt(
+                "session-1",
+                "turn-1",
+                "UserPromptSubmit",
+                CodexHookReceiptStatus::Skipped,
+                Some("Provider refresh unavailable."),
+            )
+            .unwrap();
+
+        let stored = repository
+            .latest_hook_receipt("UserPromptSubmit")
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.status, CodexHookReceiptStatus::Skipped);
+        assert_eq!(
+            stored.issue.as_deref(),
+            Some("Provider refresh unavailable.")
+        );
+        assert_eq!(
+            database.codex_protection_events().list_recent(5).unwrap(),
+            vec![]
+        );
     }
 }

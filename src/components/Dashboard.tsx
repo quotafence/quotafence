@@ -15,7 +15,10 @@ import type {
 } from "../types";
 import { Icon } from "./Icon";
 import { ProviderLogo } from "./ProviderLogo";
-import { verifiedCodexProtectionAt } from "../lib/protection";
+import {
+  observedCodexHookAt,
+  verifiedCodexProtectionAt,
+} from "../lib/protection";
 import {
   SettingsPanel,
   type ThemePreference,
@@ -239,12 +242,12 @@ function orderedScopes(
 function SetupDisclosure({
   source,
   protection,
-  verifiedAt,
+  observedAt,
   onOpenSettings,
 }: {
   source: QuotaSourceSummary;
   protection: CodexProtectionStatus | null;
-  verifiedAt: number | null;
+  observedAt: number | null;
   onOpenSettings: () => void;
 }) {
   if (source.providerDisplayName.toLowerCase() !== "codex") {
@@ -253,7 +256,7 @@ function SetupDisclosure({
 
   const sourceReady = source.lastSyncedAt !== null;
   const hooksReady = protection?.installed === true;
-  const trustReady = hooksReady && verifiedAt !== null;
+  const trustReady = hooksReady && observedAt !== null;
   const completed = [sourceReady, hooksReady, trustReady].filter(Boolean).length;
 
   if (completed === 3) {
@@ -295,8 +298,8 @@ function SetupDisclosure({
               <strong>Hooks trusted and enabled in Codex</strong>
               <span>
                 {trustReady
-                  ? `Observed ${formatLastSync(verifiedAt)}`
-                  : "Quit Codex completely, reopen this task, then submit one prompt"}
+                  ? `Delivered ${formatLastSync(observedAt)}`
+                  : "Trust both hooks in Codex, then submit one prompt"}
               </span>
             </div>
           </li>
@@ -562,6 +565,9 @@ export function Dashboard({
     source.providerDisplayName.toLowerCase() === "codex";
   const protectionVerifiedAt = codexSource
     ? verifiedCodexProtectionAt(codexProtection, codexProtectionEvents)
+    : null;
+  const hookObservedAt = codexSource
+    ? observedCodexHookAt(codexProtection)
     : null;
   const protectionActive = codexSource && protectionVerifiedAt !== null;
   const plannedCapacityNow = scopes.reduce(
@@ -839,7 +845,7 @@ export function Dashboard({
                 <SetupDisclosure
                   source={source}
                   protection={codexProtection}
-                  verifiedAt={protectionVerifiedAt}
+                  observedAt={hookObservedAt}
                   onOpenSettings={() => onViewChange("settings")}
                 />
               </div>
@@ -855,12 +861,16 @@ export function Dashboard({
                   <div>
                     <strong>
                       {codexProtection?.installed
-                        ? "Protection is waiting for Codex to reload hooks"
+                        ? hookObservedAt !== null
+                          ? "Hook connected, but enforcement is degraded"
+                          : "This Codex task has not delivered the protection hook"
                         : "Allocations are a priority plan—not enforced yet"}
                     </strong>
                     <span>
                       {codexProtection?.installed
-                        ? "Quit Codex completely with Cmd+Q, reopen this same task, and submit one prompt to verify the hooks. Closing the window alone does not restart Codex. "
+                        ? hookObservedAt !== null
+                          ? `${codexProtection.lastHookIssue ?? "The latest prompt did not produce an enforceable quota decision."} AQM will retry on the next prompt and provider sync. `
+                          : "You may continue this task, but its prompts are not protected. Trust and enable both AQM hooks in Codex, then submit a prompt; do not keep restarting the app. "
                         : ""}
                       {unassignedBufferNow > 0
                         ? `Unmanaged Codex usage consumes the ${formatAmount(
@@ -882,7 +892,7 @@ export function Dashboard({
                     type="button"
                     onClick={() => onViewChange("settings")}
                   >
-                    Finish protection
+                    {hookObservedAt !== null ? "View status" : "Finish protection"}
                   </button>
                 </section>
               )}

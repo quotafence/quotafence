@@ -75,6 +75,9 @@ export type CodexProtectionStatus = {
   hasAqmHooks: boolean;
   requiresReview: boolean;
   verificationRequiredAfter: number | null;
+  lastHookObservedAt: number | null;
+  lastHookStatus: "received" | "decision" | "skipped" | "failed" | null;
+  lastHookIssue: string | null;
   configPath: string;
   state: "disabled" | "configured" | "misconfigured";
   issue: string | null;
