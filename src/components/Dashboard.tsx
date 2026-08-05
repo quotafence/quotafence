@@ -15,6 +15,7 @@ import type {
 } from "../types";
 import { Icon } from "./Icon";
 import { ProviderLogo } from "./ProviderLogo";
+import { verifiedCodexProtectionAt } from "../lib/protection";
 import {
   SettingsPanel,
   type ThemePreference,
@@ -211,20 +212,6 @@ function UsageTrendChart({
       </div>
     </div>
   );
-}
-
-function verifiedProtectionAt(
-  protection: CodexProtectionStatus | null,
-  events: CodexProtectionEvent[],
-): number | null {
-  if (
-    protection?.installed !== true ||
-    protection.state !== "configured" ||
-    events.length === 0
-  ) {
-    return null;
-  }
-  return events[0]?.occurredAt ?? null;
 }
 
 function orderedScopes(
@@ -574,7 +561,7 @@ export function Dashboard({
   const codexSource =
     source.providerDisplayName.toLowerCase() === "codex";
   const protectionVerifiedAt = codexSource
-    ? verifiedProtectionAt(codexProtection, codexProtectionEvents)
+    ? verifiedCodexProtectionAt(codexProtection, codexProtectionEvents)
     : null;
   const protectionActive = codexSource && protectionVerifiedAt !== null;
   const plannedCapacityNow = scopes.reduce(

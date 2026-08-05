@@ -235,7 +235,9 @@ npm run aqm -- hooks uninstall codex
 
 `status` verifies the AQM definitions in the JSON file; Codex remains the source
 of truth for whether their current hash has been trusted and the hook is
-enabled.
+enabled. The desktop therefore keeps protection unverified until it observes a
+new hook decision after the current hook file or application executable was
+last modified.
 
 The desktop exposes the same integration in Settings as an on/off control.
 Turning it off removes only handlers marked as AQM-owned. A partial

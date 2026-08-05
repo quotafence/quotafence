@@ -2,6 +2,7 @@ import type {
   CodexProtectionEvent,
   CodexProtectionStatus,
 } from "../types";
+import { verifiedCodexProtectionAt } from "../lib/protection";
 import { Icon } from "./Icon";
 
 export type ThemePreference = "system" | "light" | "dark";
@@ -61,12 +62,7 @@ export function SettingsPanel({
   onThemeChange,
   onProtection,
 }: SettingsPanelProps) {
-  const verifiedAt =
-    protection?.installed === true &&
-    protection.state === "configured" &&
-    events.length > 0
-      ? events[0]?.occurredAt ?? null
-      : null;
+  const verifiedAt = verifiedCodexProtectionAt(protection, events);
 
   return (
     <>
@@ -149,7 +145,7 @@ export function SettingsPanel({
                       ? `AQM observed a Codex prompt decision ${formatRelativeTime(
                           verifiedAt,
                         )}.`
-                      : "AQM hook files are installed, but Codex trust and enablement still require your review."
+                    : "AQM hook files are installed, but the current setup has not returned a verified Codex decision yet."
                     : protection.state === "misconfigured"
                       ? protection.issue
                       : "Passive usage tracking stays available, but prompts are not blocked."}
@@ -204,10 +200,10 @@ export function SettingsPanel({
               <div className="settings-callout warning" role="alert">
                 <Icon name="activity" size={18} />
                 <div>
-                  <strong>Protection is not active until you finish this</strong>
+                  <strong>Protection is not active for the current setup</strong>
                   <p>
                     Codex can still run prompts without AQM protection until
-                    all three hooks are trusted and switched on.
+                    AQM observes a new decision from the current hook setup.
                   </p>
                   <ol>
                     <li>
@@ -225,7 +221,8 @@ export function SettingsPanel({
                     </li>
                   </ol>
                   <p>
-                    Until AQM observes that decision, the dashboard treats
+                    A hook event from an older installation does not count.
+                    Until AQM observes a current decision, the dashboard treats
                     allocations as a priority plan rather than guaranteed
                     protection.
                   </p>

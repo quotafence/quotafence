@@ -246,8 +246,10 @@ an actionable warning visible and treats allocation funding as a priority plan.
 Unmanaged usage consumes currently unassigned capacity first, then erodes
 funding from the lowest-priority workspace upward. After setup, submit one test
 prompt in an allocated workspace so AQM can observe a hook decision and mark
-protection active. The detailed status, on/off control, and instructions live
-in Settings.
+protection active. A decision recorded before the current hook configuration or
+application build does not count as verification, so AQM warns again after the
+integration changes. The detailed status, on/off control, and instructions
+live in Settings.
 
 These development commands use the same local database as the desktop.
 Admission refreshes the matching Codex checkpoint and evaluates both workspace

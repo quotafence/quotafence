@@ -211,6 +211,7 @@ function App() {
               installed: false,
               hasAqmHooks: false,
               requiresReview: false,
+              verificationRequiredAfter: null,
               configPath: "",
               state: "misconfigured",
               issue: "AQM could not inspect the Codex hook configuration.",

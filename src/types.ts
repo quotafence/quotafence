@@ -74,6 +74,7 @@ export type CodexProtectionStatus = {
   installed: boolean;
   hasAqmHooks: boolean;
   requiresReview: boolean;
+  verificationRequiredAfter: number | null;
   configPath: string;
   state: "disabled" | "configured" | "misconfigured";
   issue: string | null;

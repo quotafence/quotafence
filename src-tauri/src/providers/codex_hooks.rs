@@ -99,6 +99,7 @@ pub struct CodexProtectionStatus {
     pub installed: bool,
     pub has_aqm_hooks: bool,
     pub requires_review: bool,
+    pub verification_required_after: Option<i64>,
     pub config_path: String,
     pub state: CodexProtectionState,
     pub issue: Option<String>,
@@ -145,6 +146,10 @@ pub fn uninstall_protection() -> Result<CodexProtectionStatus, String> {
 
 fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtectionStatus {
     let config_path_text = config_path.display().to_string();
+    let verification_required_after = [config_path, executable]
+        .into_iter()
+        .filter_map(file_modified_at_millis)
+        .max();
     let config = match read_hook_config(config_path) {
         Ok(config) => config,
         Err(issue) => {
@@ -152,6 +157,7 @@ fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtecti
                 installed: false,
                 has_aqm_hooks: false,
                 requires_review: false,
+                verification_required_after,
                 config_path: config_path_text,
                 state: CodexProtectionState::Misconfigured,
                 issue: Some(issue),
@@ -164,6 +170,7 @@ fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtecti
             installed: false,
             has_aqm_hooks: false,
             requires_review: false,
+            verification_required_after,
             config_path: config_path_text,
             state: CodexProtectionState::Disabled,
             issue: None,
@@ -187,6 +194,7 @@ fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtecti
             installed: false,
             has_aqm_hooks: false,
             requires_review: false,
+            verification_required_after,
             config_path: config_path_text,
             state: CodexProtectionState::Disabled,
             issue: None,
@@ -214,6 +222,7 @@ fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtecti
             installed: true,
             has_aqm_hooks: true,
             requires_review: true,
+            verification_required_after,
             config_path: config_path_text,
             state: CodexProtectionState::Configured,
             issue: None,
@@ -223,6 +232,7 @@ fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtecti
             installed: false,
             has_aqm_hooks: true,
             requires_review: false,
+            verification_required_after,
             config_path: config_path_text,
             state: CodexProtectionState::Misconfigured,
             issue: Some(
@@ -231,6 +241,16 @@ fn protection_status_for(config_path: &Path, executable: &Path) -> CodexProtecti
             ),
         }
     }
+}
+
+fn file_modified_at_millis(path: &Path) -> Option<i64> {
+    fs::metadata(path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
 }
 
 pub fn run_installed_hook(reader: impl Read) -> Result<Value, String> {
@@ -892,6 +912,7 @@ mod tests {
         assert_eq!(configured.state, CodexProtectionState::Configured);
         assert!(configured.installed);
         assert!(configured.requires_review);
+        assert!(configured.verification_required_after.is_some());
 
         let replacement = directory.join("replacement");
         std::fs::write(&replacement, "replacement executable").unwrap();
