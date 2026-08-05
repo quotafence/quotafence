@@ -478,7 +478,7 @@ function App() {
       setCodexProtection(status);
       setNotice(
         enabled
-          ? "Action required: trust and enable UserPromptSubmit and Stop, restart Codex, then create a brand-new task in an allocated folder and submit one prompt. Resuming an existing task does not verify the new hook setup."
+          ? "Action required: trust and enable UserPromptSubmit and Stop, quit Codex completely with Cmd+Q, reopen this same task, then submit one prompt. Closing the window alone does not reload hooks."
           : "Codex Desktop protection is off. Other Codex hooks were left unchanged.",
       );
     } catch (reason) {

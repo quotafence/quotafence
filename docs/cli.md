@@ -205,8 +205,9 @@ In Codex Desktop:
 1. Open **Settings → Hooks → User config**.
 2. Review, trust, and switch on the AQM entries under `UserPromptSubmit` and
    `Stop`.
-3. Restart Codex, then create a brand-new task so the session loads the updated
-   configuration. Do not resume an existing task for this verification step.
+3. Quit Codex completely, reopen it, and resume the existing task so the new
+   app-server process loads the updated configuration. On macOS, closing the
+   window is not enough; use **Cmd+Q**.
 
 In Codex CLI, run `/hooks` and review the same two entries before restarting
 the session. Until both hooks are trusted and switched on, Codex prompts

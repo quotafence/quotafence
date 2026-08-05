@@ -214,9 +214,9 @@ export function SettingsPanel({
                       <code>UserPromptSubmit</code> and <code>Stop</code>.
                     </li>
                     <li>
-                      Restart Codex, then create a <b>brand-new task</b> in an
-                      allocated folder. Do not resume an existing task, because
-                      it may retain the hook configuration from when it started.
+                      Quit Codex completely with <b>Cmd+Q</b>, reopen it, then
+                      return to this same task. Closing the window alone does
+                      not restart the Codex app-server.
                     </li>
                     <li>
                       Submit a test prompt in an allocated workspace. AQM marks

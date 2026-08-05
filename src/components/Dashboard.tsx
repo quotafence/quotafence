@@ -296,7 +296,7 @@ function SetupDisclosure({
               <span>
                 {trustReady
                   ? `Observed ${formatLastSync(verifiedAt)}`
-                  : "Create a brand-new task in an allocated folder, then submit one prompt"}
+                  : "Quit Codex completely, reopen this task, then submit one prompt"}
               </span>
             </div>
           </li>
@@ -855,12 +855,12 @@ export function Dashboard({
                   <div>
                     <strong>
                       {codexProtection?.installed
-                        ? "Protection is waiting for a new Codex task"
+                        ? "Protection is waiting for Codex to reload hooks"
                         : "Allocations are a priority plan—not enforced yet"}
                     </strong>
                     <span>
                       {codexProtection?.installed
-                        ? "Restart Codex, create a brand-new task in an allocated folder (do not resume an existing task), and submit one prompt to verify the hooks. "
+                        ? "Quit Codex completely with Cmd+Q, reopen this same task, and submit one prompt to verify the hooks. Closing the window alone does not restart Codex. "
                         : ""}
                       {unassignedBufferNow > 0
                         ? `Unmanaged Codex usage consumes the ${formatAmount(
