@@ -33,7 +33,7 @@
   --progress-fill: #ededeb;
   --success: #62c98f;
   --success-muted: #347b57;
-  --success-soft: #1f4a34;
+  --unassigned: #6ea8fe;
   --focus-ring: #fff;
   --danger: #f06f78;
   --warning: #f06f78;
@@ -67,7 +67,7 @@
   --progress-fill: #20201e;
   --success: #188754;
   --success-muted: #72ad8a;
-  --success-soft: #c5e2d1;
+  --unassigned: #3978c7;
   --focus-ring: #171716;
   --danger: #c83f4b;
   --warning: #c83f4b;
@@ -3410,7 +3410,7 @@ h3,
 }
 
 .allocation-legend dt i.unassigned {
-  background: var(--success-soft);
+  background: var(--unassigned);
 }
 
 .allocation-legend dd {
