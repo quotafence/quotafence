@@ -4,11 +4,13 @@ import type {
   ScopeSummary,
   WorkspaceBudgetInput,
 } from "../types";
+import { PercentageControl } from "./PercentageControl";
 
 type AllocationFormProps = {
   scope: ScopeSummary;
   currentAmount: number;
   currentPolicy: PolicySummary;
+  maxAmount: number;
   unit: string;
   submitting: boolean;
   onSubmit: (input: WorkspaceBudgetInput) => Promise<void>;
@@ -19,6 +21,7 @@ export function AllocationForm({
   scope,
   currentAmount,
   currentPolicy,
+  maxAmount,
   unit,
   submitting,
   onSubmit,
@@ -35,10 +38,31 @@ export function AllocationForm({
     formatBasisPoints(currentPolicy.stopAtBasisPoints),
   );
   const [validation, setValidation] = useState<string | null>(null);
+  const warnValue = optionalNumber(warnAt);
+  const confirmValue = optionalNumber(confirmAt);
+  const stopValue = optionalNumber(stopAt);
   const policyFields = [
-    { label: "Warn", value: warnAt, setValue: setWarnAt },
-    { label: "Confirm", value: confirmAt, setValue: setConfirmAt },
-    { label: "Stop", value: stopAt, setValue: setStopAt },
+    {
+      label: "Warn at",
+      value: warnAt,
+      setValue: setWarnAt,
+      min: 0.01,
+      max: confirmValue ?? stopValue ?? 100,
+    },
+    {
+      label: "Confirm at",
+      value: confirmAt,
+      setValue: setConfirmAt,
+      min: warnValue ?? 0.01,
+      max: stopValue ?? 100,
+    },
+    {
+      label: "Stop at",
+      value: stopAt,
+      setValue: setStopAt,
+      min: confirmValue ?? warnValue ?? 0.01,
+      max: 100,
+    },
   ];
 
   async function handleSubmit(event: FormEvent) {
@@ -72,21 +96,33 @@ export function AllocationForm({
         <span>{scope.kind}</span>
         <strong>{scope.displayName}</strong>
       </div>
-      <label className="field">
-        <span>Quota limit</span>
-        <div className="input-with-suffix">
-          <input
-            autoFocus
-            type="number"
-            min="0"
-            step="1"
-            value={amount}
-            onChange={(event) => setAmount(event.currentTarget.value)}
-            required
-          />
-          <span>{unit.split("_").join(" ")}</span>
-        </div>
-      </label>
+      {unit === "percent" ? (
+        <PercentageControl
+          label="Quota limit"
+          value={amount}
+          onChange={setAmount}
+          min={0}
+          max={maxAmount}
+          step={1}
+          autoFocus
+        />
+      ) : (
+        <label className="field">
+          <span>Quota limit</span>
+          <div className="input-with-suffix">
+            <input
+              autoFocus
+              type="number"
+              min="0"
+              step="1"
+              value={amount}
+              onChange={(event) => setAmount(event.currentTarget.value)}
+              required
+            />
+            <span>{unit.split("_").join(" ")}</span>
+          </div>
+        </label>
+      )}
       <p className="form-help">
         This limit is a share of the full provider window. Actual availability
         is also capped by the provider quota remaining now.
@@ -94,25 +130,21 @@ export function AllocationForm({
       <fieldset className="policy-fields">
         <legend>Managed session policy</legend>
         <p className="form-help">
-          Leave a threshold blank to disable it. Stop refuses a new AQM-managed
+          Leave a threshold blank to disable it. Stop refuses a new managed
           launch; it does not terminate unmanaged Codex work.
         </p>
         <div>
-          {policyFields.map(({ label, value, setValue }) => (
-            <label className="field" key={label}>
-              <span>{label} at</span>
-              <div className="input-with-suffix">
-                <input
-                  type="number"
-                  min="0.01"
-                  max="100"
-                  step="0.01"
-                  value={value}
-                  onChange={(event) => setValue(event.currentTarget.value)}
-                />
-                <span>percent</span>
-              </div>
-            </label>
+          {policyFields.map(({ label, value, setValue, min, max }) => (
+            <PercentageControl
+              key={label}
+              label={label}
+              value={value}
+              onChange={setValue}
+              min={min}
+              max={max}
+              step={0.01}
+              allowEmpty
+            />
           ))}
         </div>
       </fieldset>
@@ -143,4 +175,9 @@ function formatBasisPoints(value: number | null): string {
 function parsePercent(value: string): number | null {
   const trimmed = value.trim();
   return trimmed === "" ? null : Math.round(Number(trimmed) * 100);
+}
+
+function optionalNumber(value: string): number | null {
+  const parsed = Number(value);
+  return value.trim() === "" || !Number.isFinite(parsed) ? null : parsed;
 }

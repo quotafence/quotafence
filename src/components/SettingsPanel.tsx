@@ -150,14 +150,14 @@ export function SettingsPanel({
                 <p>
                   {protection.state === "configured"
                     ? verifiedAt !== null
-                      ? `AQM observed a Codex prompt decision ${formatRelativeTime(
+                      ? `Agent Quota Manager observed a Codex prompt decision ${formatRelativeTime(
                           verifiedAt,
                         )}.`
                       : observedAt !== null
                         ? `Codex delivered a prompt hook ${formatRelativeTime(
                             observedAt,
                           )}, but the latest check did not produce an enforceable quota decision.`
-                        : "AQM hook files are installed, but Codex has not delivered a current prompt hook yet."
+                        : "Agent Quota Manager is installed, but Codex has not delivered a prompt hook yet."
                     : protection.state === "misconfigured"
                       ? protection.issue
                       : "Passive usage tracking stays available, but prompts are not blocked."}
@@ -212,29 +212,17 @@ export function SettingsPanel({
               <div className="settings-callout warning" role="alert">
                 <Icon name="activity" size={18} />
                 <div>
-                  <strong>Codex has not delivered a hook to AQM yet</strong>
-                  <p>
-                    You can continue this task, but AQM cannot block its prompts
-                    until Codex delivers a current <code>UserPromptSubmit</code> hook.
-                  </p>
+                  <strong>Finish protection</strong>
+                  <p>Keep using this task.</p>
                   <ol>
                     <li>
-                      Open <b>Settings → Hooks → User config</b>.
-                    </li>
-                    <li>
-                      Review, trust, and switch on the AQM entries under{" "}
+                      In <b>Codex Settings → Hooks</b>, trust and enable{" "}
                       <code>UserPromptSubmit</code> and <code>Stop</code>.
                     </li>
                     <li>
-                      Submit a prompt in an allocated workspace, then refresh
-                      AQM. Creating a different task is not required.
+                      Send the next prompt here, then refresh Agent Quota Manager.
                     </li>
                   </ol>
-                  <p>
-                    Do not keep restarting Codex if this warning remains. It
-                    means the current Codex task has not delivered the hook;
-                    allocations remain a priority plan for that task.
-                  </p>
                 </div>
               </div>
             )}
@@ -245,17 +233,15 @@ export function SettingsPanel({
                 <div>
                   <strong>Hook connected, enforcement is degraded</strong>
                   <p>
-                    Codex reached AQM {formatRelativeTime(observedAt)}, so setup
-                    is complete. The latest prompt was not given an enforceable
-                    quota decision
+                    Codex reached Agent Quota Manager {formatRelativeTime(observedAt)}.
+                    The latest prompt was not given an enforceable quota decision
                     {protection.lastHookIssue
                       ? `: ${protection.lastHookIssue}`
                       : "."}
                   </p>
                   <p>
-                    AQM will keep passive attribution and retry provider
-                    reconciliation. Until a decision succeeds, allocations are
-                    shown as planned rather than guaranteed protection.
+                    Agent Quota Manager will retry automatically. Until a decision
+                    succeeds, allocations are planned rather than enforced.
                   </p>
                 </div>
               </div>
@@ -327,9 +313,9 @@ export function SettingsPanel({
         <div>
           <h2>Local-first storage</h2>
           <p>
-            AQM keeps quota state and up to 100 recent protection decisions on
-            this device. Prompt text, responses, transcripts, source code, and
-            provider credentials are not stored.
+            Agent Quota Manager keeps quota state and up to 100 recent protection
+            decisions on this device. Prompt text, responses, transcripts, source
+            code, and provider credentials are not stored.
           </p>
         </div>
       </section>

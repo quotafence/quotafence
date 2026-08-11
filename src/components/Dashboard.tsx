@@ -272,7 +272,7 @@ function SetupDisclosure({
         <header>
           <strong>Finish Codex setup</strong>
           <span>
-            AQM only marks checks complete when it can verify them locally.
+            Agent Quota Manager verifies each step locally.
           </span>
         </header>
         <ol>
@@ -869,8 +869,8 @@ export function Dashboard({
                     <span>
                       {codexProtection?.installed
                         ? hookObservedAt !== null
-                          ? `${codexProtection.lastHookIssue ?? "The latest prompt did not produce an enforceable quota decision."} AQM will retry on the next prompt and provider sync. `
-                          : "You may continue this task, but its prompts are not protected. Trust and enable both AQM hooks in Codex, then submit a prompt; do not keep restarting the app. "
+                          ? `${codexProtection.lastHookIssue ?? "The latest prompt did not produce an enforceable quota decision."} Agent Quota Manager will retry automatically. `
+                          : "Trust and enable UserPromptSubmit and Stop in Codex, then keep chatting in this task. "
                         : ""}
                       {unassignedBufferNow > 0
                         ? `Unmanaged Codex usage consumes the ${formatAmount(

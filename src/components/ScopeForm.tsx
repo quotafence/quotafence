@@ -2,16 +2,19 @@ import { useState, type FormEvent } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { WorkspaceInput } from "../types";
 import { Icon } from "./Icon";
+import { PercentageControl } from "./PercentageControl";
 
 type ScopeFormProps = {
   unit: string;
   submitting: boolean;
+  maxAllocation: number;
   onSubmit: (input: WorkspaceInput) => Promise<void>;
 };
 
 export function ScopeForm({
   unit,
   submitting,
+  maxAllocation,
   onSubmit,
 }: ScopeFormProps) {
   const [displayName, setDisplayName] = useState("");
@@ -74,25 +77,35 @@ export function ScopeForm({
         />
       </label>
 
-      <label className="field">
-        <span>Allocation from total quota</span>
-        <div className="input-with-suffix">
-          <input
-            type="number"
-            min="1"
-            step="1"
-            value={allocation}
-            onChange={(event) => setAllocation(event.currentTarget.value)}
-            placeholder="20"
-            required
-          />
-          <span>{unit.split("_").join(" ")}</span>
-        </div>
-        <small>
-          This is the folder's maximum share of the full provider window, not a
-          share of the quota currently remaining.
-        </small>
-      </label>
+      {unit === "percent" ? (
+        <PercentageControl
+          label="Allocation from total quota"
+          value={allocation}
+          onChange={setAllocation}
+          min={1}
+          max={maxAllocation}
+          step={1}
+        />
+      ) : (
+        <label className="field">
+          <span>Allocation from total quota</span>
+          <div className="input-with-suffix">
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={allocation}
+              onChange={(event) => setAllocation(event.currentTarget.value)}
+              required
+            />
+            <span>{unit.split("_").join(" ")}</span>
+          </div>
+        </label>
+      )}
+      <p className="form-help">
+        This is the folder's maximum share of the full provider window, not a
+        share of the quota currently remaining.
+      </p>
 
       <button
         className="button primary wide"

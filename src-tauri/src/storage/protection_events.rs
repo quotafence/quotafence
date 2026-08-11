@@ -179,6 +179,25 @@ impl<'connection> CodexProtectionEventRepository<'connection> {
         .collect()
     }
 
+    pub fn last_bound_workspace_for_session(
+        &self,
+        session_id: &str,
+    ) -> StorageResult<Option<String>> {
+        self.connection
+            .query_row(
+                "SELECT event.canonical_path
+                 FROM codex_protection_events event
+                 WHERE event.session_id = ?1
+                   AND event.scope_id IS NOT NULL
+                 ORDER BY event.occurred_at DESC
+                 LIMIT 1",
+                [session_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
     pub fn record_hook_received(&self, receipt: &CodexHookReceipt) -> StorageResult<()> {
         self.connection.execute(
             "INSERT INTO codex_hook_receipts (
