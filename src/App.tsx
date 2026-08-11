@@ -217,7 +217,7 @@ function App() {
               lastHookIssue: null,
               configPath: "",
               state: "misconfigured",
-              issue: "AQM could not inspect the Codex hook configuration.",
+              issue: "Agent Quota Manager could not inspect the Codex hook configuration.",
             }),
           );
         getCodexProtectionEvents().then(setCodexProtectionEvents).catch(() => {
@@ -481,7 +481,7 @@ function App() {
       setCodexProtection(status);
       setNotice(
         enabled
-          ? "Action required: trust and enable UserPromptSubmit and Stop in Codex, then submit a prompt in an allocated workspace. AQM now verifies hook delivery separately from provider sync."
+          ? "Trust and enable UserPromptSubmit and Stop in Codex, then send another prompt in your current task. Agent Quota Manager will verify it automatically."
           : "Codex Desktop protection is off. Other Codex hooks were left unchanged.",
       );
     } catch (reason) {
@@ -720,6 +720,7 @@ function App() {
         >
           <ScopeForm
             unit={unit}
+            maxAllocation={dashboard.window.unallocated}
             submitting={submitting}
             onSubmit={(input: WorkspaceInput) =>
               runMutation(() =>
@@ -739,6 +740,9 @@ function App() {
           <AllocationForm
             scope={modal.scope}
             currentAmount={editingAllocation?.limit ?? 0}
+            maxAmount={
+              dashboard.window.unallocated + (editingAllocation?.limit ?? 0)
+            }
             currentPolicy={
               editingAllocation?.policy ?? {
                 warnAtBasisPoints: 8_000,

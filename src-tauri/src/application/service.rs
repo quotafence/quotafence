@@ -349,6 +349,27 @@ impl QuotaService {
             .turn_observations()
             .get(&session_id, &turn_id)?
             .map(|observation| ProviderTurnObservationSummary {
+                turn_id: observation.turn_id().to_owned(),
+                canonical_path: observation.canonical_path().to_owned(),
+                window_id: observation.window_id().to_string(),
+                scope_id: observation.scope_id().map(ToString::to_string),
+                contended: observation.contended(),
+            }))
+    }
+
+    pub fn previous_provider_turn_observation(
+        &mut self,
+        session_id: &str,
+        current_turn_id: &str,
+    ) -> ApplicationResult<Option<ProviderTurnObservationSummary>> {
+        let session_id = required_request_text(session_id.to_owned(), "session ID")?;
+        let current_turn_id = required_request_text(current_turn_id.to_owned(), "turn ID")?;
+        Ok(self
+            .database
+            .turn_observations()
+            .latest_for_session_except(&session_id, &current_turn_id)?
+            .map(|observation| ProviderTurnObservationSummary {
+                turn_id: observation.turn_id().to_owned(),
                 canonical_path: observation.canonical_path().to_owned(),
                 window_id: observation.window_id().to_string(),
                 scope_id: observation.scope_id().map(ToString::to_string),
@@ -475,6 +496,14 @@ impl QuotaService {
                 occurred_at: event.occurred_at,
             })
             .collect())
+    }
+
+    pub fn codex_session_workspace(&self, session_id: &str) -> ApplicationResult<Option<String>> {
+        let session_id = required_request_text(session_id.to_owned(), "session ID")?;
+        Ok(self
+            .database
+            .codex_protection_events()
+            .last_bound_workspace_for_session(&session_id)?)
     }
 
     pub fn create_scope(&mut self, command: CreateScope) -> ApplicationResult<()> {

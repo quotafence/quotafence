@@ -229,6 +229,29 @@ impl<'connection> TurnObservationRepository<'connection> {
         get_with_connection(self.connection, session_id, turn_id)
     }
 
+    pub fn latest_for_session_except(
+        &self,
+        session_id: &str,
+        excluded_turn_id: &str,
+    ) -> StorageResult<Option<ProviderTurnObservation>> {
+        let turn_id = self
+            .connection
+            .query_row(
+                "SELECT turn_id
+                 FROM provider_turn_observations
+                 WHERE session_id = ?1 AND turn_id <> ?2
+                 ORDER BY started_at DESC
+                 LIMIT 1",
+                params![session_id, excluded_turn_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        turn_id
+            .map(|turn_id| get_with_connection(self.connection, session_id, &turn_id))
+            .transpose()
+            .map(Option::flatten)
+    }
+
     pub fn abandon(&mut self, session_id: &str, turn_id: &str) -> StorageResult<bool> {
         Ok(self.connection.execute(
             "DELETE FROM provider_turn_observations

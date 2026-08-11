@@ -273,6 +273,7 @@ pub struct TurnObservationStartResult {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderTurnObservationSummary {
+    pub turn_id: String,
     pub canonical_path: String,
     pub window_id: String,
     pub scope_id: Option<String>,
