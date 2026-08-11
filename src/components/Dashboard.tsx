@@ -369,8 +369,13 @@ function AllocationRow({
       } ${dragging ? "dragging" : ""} ${dragOver ? "drag-over" : ""}`}
     >
       <div className="allocation-row-identity">
-        <strong>{scope.displayName}</strong>
-        <span>Priority {allocation.priority + 1}</span>
+        <strong>
+          <i className="allocation-rank">#{allocation.priority + 1}</i>
+          {scope.displayName}
+        </strong>
+        <span title={scope.workspacePath ?? undefined}>
+          {scope.workspacePath ?? "Folder path unavailable"}
+        </span>
       </div>
       <div className="allocation-quota">
         <div className="allocation-quota-meta">

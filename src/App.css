@@ -3845,14 +3845,31 @@ h3,
 }
 
 .allocation-row-identity strong {
+  min-width: 0;
   overflow-wrap: anywhere;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
   font-size: 16px;
   font-weight: 580;
 }
 
+.allocation-row-identity .allocation-rank {
+  min-width: 22px;
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 680;
+  letter-spacing: 0.01em;
+}
+
 .allocation-row-identity span {
+  overflow: hidden;
   color: var(--quiet);
   font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .allocation-quota {
