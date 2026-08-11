@@ -36,7 +36,7 @@
   --unassigned: #6ea8fe;
   --focus-ring: #fff;
   --danger: #f06f78;
-  --warning: #f06f78;
+  --warning: #e4b653;
   --shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
 }
 
@@ -70,7 +70,7 @@
   --unassigned: #3978c7;
   --focus-ring: #171716;
   --danger: #c83f4b;
-  --warning: #c83f4b;
+  --warning: #9a6500;
   --shadow: 0 24px 70px rgba(30, 30, 25, 0.16);
 }
 
@@ -2295,6 +2295,94 @@ h3,
   gap: 10px;
 }
 
+.policy-threshold-control {
+  margin-top: 22px;
+  display: block;
+}
+
+.policy-threshold-track {
+  height: 10px;
+  position: relative;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--success) 0 var(--warn-at),
+    var(--warning) var(--warn-at) var(--stop-at),
+    var(--danger) var(--stop-at) 100%
+  );
+  touch-action: none;
+  cursor: pointer;
+}
+
+.policy-threshold-handle {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  border: 3px solid var(--panel);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+  color: var(--panel);
+  background: var(--success);
+  box-shadow: 0 0 0 1px var(--line-strong);
+  transform: translate(-50%, -50%);
+  cursor: grab;
+  touch-action: none;
+}
+
+.policy-threshold-handle.stop {
+  background: var(--danger);
+}
+
+.policy-threshold-handle.confirm {
+  color: #171716;
+  background: var(--warning);
+}
+
+.policy-threshold-handle.active,
+.policy-threshold-handle:focus-visible {
+  z-index: 3;
+  box-shadow: 0 0 0 4px var(--focus-ring);
+  outline: none;
+}
+
+.policy-threshold-handle:active {
+  cursor: grabbing;
+}
+
+.policy-threshold-handle > span {
+  color: inherit;
+  font-size: 8px;
+  font-weight: 750;
+  pointer-events: none;
+}
+
+.policy-threshold-scale {
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  color: var(--quiet);
+  font-size: 9px;
+}
+
+.policy-threshold-inputs {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.policy-threshold-help {
+  margin-top: 12px;
+  color: var(--quiet);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
 .policy-fields .percentage-control-row {
   grid-template-columns: minmax(120px, 1fr) 104px;
 }
@@ -2648,6 +2736,10 @@ h3,
 
   .form-grid,
   .provider-options {
+    grid-template-columns: 1fr;
+  }
+
+  .policy-threshold-inputs {
     grid-template-columns: 1fr;
   }
 

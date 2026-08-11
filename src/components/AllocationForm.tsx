@@ -5,6 +5,7 @@ import type {
   WorkspaceBudgetInput,
 } from "../types";
 import { PercentageControl } from "./PercentageControl";
+import { PolicyThresholdControl } from "./PolicyThresholdControl";
 
 type AllocationFormProps = {
   scope: ScopeSummary;
@@ -38,32 +39,6 @@ export function AllocationForm({
     formatBasisPoints(currentPolicy.stopAtBasisPoints),
   );
   const [validation, setValidation] = useState<string | null>(null);
-  const warnValue = optionalNumber(warnAt);
-  const confirmValue = optionalNumber(confirmAt);
-  const stopValue = optionalNumber(stopAt);
-  const policyFields = [
-    {
-      label: "Warn at",
-      value: warnAt,
-      setValue: setWarnAt,
-      min: 0.01,
-      max: confirmValue ?? stopValue ?? 100,
-    },
-    {
-      label: "Confirm at",
-      value: confirmAt,
-      setValue: setConfirmAt,
-      min: warnValue ?? 0.01,
-      max: stopValue ?? 100,
-    },
-    {
-      label: "Stop at",
-      value: stopAt,
-      setValue: setStopAt,
-      min: confirmValue ?? warnValue ?? 0.01,
-      max: 100,
-    },
-  ];
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -130,23 +105,19 @@ export function AllocationForm({
       <fieldset className="policy-fields">
         <legend>Managed session policy</legend>
         <p className="form-help">
-          Leave a threshold blank to disable it. Stop refuses a new managed
-          launch; it does not terminate unmanaged Codex work.
+          Warn continues with a notice. Confirm requires explicit approval;
+          Codex Desktop cannot show that approval yet, so its hook blocks the
+          prompt at this boundary. Stop always refuses the next managed launch
+          or protected prompt. Clear a threshold to disable it.
         </p>
-        <div>
-          {policyFields.map(({ label, value, setValue, min, max }) => (
-            <PercentageControl
-              key={label}
-              label={label}
-              value={value}
-              onChange={setValue}
-              min={min}
-              max={max}
-              step={0.01}
-              allowEmpty
-            />
-          ))}
-        </div>
+        <PolicyThresholdControl
+          warnAt={warnAt}
+          confirmAt={confirmAt}
+          stopAt={stopAt}
+          onWarnChange={setWarnAt}
+          onConfirmChange={setConfirmAt}
+          onStopChange={setStopAt}
+        />
       </fieldset>
       {validation && <p className="form-error">{validation}</p>}
       <div className="modal-actions">
@@ -175,9 +146,4 @@ function formatBasisPoints(value: number | null): string {
 function parsePercent(value: string): number | null {
   const trimmed = value.trim();
   return trimmed === "" ? null : Math.round(Number(trimmed) * 100);
-}
-
-function optionalNumber(value: string): number | null {
-  const parsed = Number(value);
-  return value.trim() === "" || !Number.isFinite(parsed) ? null : parsed;
 }
