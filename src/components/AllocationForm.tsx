@@ -105,8 +105,10 @@ export function AllocationForm({
       <fieldset className="policy-fields">
         <legend>Managed session policy</legend>
         <p className="form-help">
-          Leave a threshold blank to disable it. Stop refuses a new managed
-          launch; it does not terminate unmanaged Codex work.
+          Warn continues with a notice. Confirm requires explicit approval;
+          Codex Desktop cannot show that approval yet, so its hook blocks the
+          prompt at this boundary. Stop always refuses the next managed launch
+          or protected prompt. Clear a threshold to disable it.
         </p>
         <PolicyThresholdControl
           warnAt={warnAt}

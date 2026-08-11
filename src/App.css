@@ -36,7 +36,7 @@
   --unassigned: #6ea8fe;
   --focus-ring: #fff;
   --danger: #f06f78;
-  --warning: #f06f78;
+  --warning: #e4b653;
   --shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
 }
 
@@ -70,7 +70,7 @@
   --unassigned: #3978c7;
   --focus-ring: #171716;
   --danger: #c83f4b;
-  --warning: #c83f4b;
+  --warning: #9a6500;
   --shadow: 0 24px 70px rgba(30, 30, 25, 0.16);
 }
 
@@ -2306,8 +2306,8 @@ h3,
   border-radius: 999px;
   background: linear-gradient(
     90deg,
-    var(--accent) 0 var(--warn-at),
-    var(--line-strong) var(--warn-at) var(--stop-at),
+    var(--success) 0 var(--warn-at),
+    var(--warning) var(--warn-at) var(--stop-at),
     var(--danger) var(--stop-at) 100%
   );
   touch-action: none;
@@ -2323,8 +2323,11 @@ h3,
   z-index: 1;
   border: 3px solid var(--panel);
   border-radius: 50%;
+  display: grid;
+  place-items: center;
+  line-height: 1;
   color: var(--panel);
-  background: var(--accent);
+  background: var(--success);
   box-shadow: 0 0 0 1px var(--line-strong);
   transform: translate(-50%, -50%);
   cursor: grab;
@@ -2336,8 +2339,8 @@ h3,
 }
 
 .policy-threshold-handle.confirm {
-  color: var(--ink);
-  background: var(--line-strong);
+  color: #171716;
+  background: var(--warning);
 }
 
 .policy-threshold-handle.active,
