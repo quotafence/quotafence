@@ -477,7 +477,7 @@ impl QuotaService {
         &self,
         command: GetCodexProtectionEvents,
     ) -> ApplicationResult<Vec<CodexProtectionEventSummary>> {
-        let limit = command.limit.clamp(1, 20);
+        let limit = command.limit.clamp(1, 100);
         Ok(self
             .database
             .codex_protection_events()
