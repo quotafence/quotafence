@@ -3839,32 +3839,34 @@ h3,
 
 .allocation-row-identity {
   min-width: 0;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.allocation-row-identity > div {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.allocation-row-identity strong {
-  min-width: 0;
+.allocation-row-identity > div > strong {
   overflow-wrap: anywhere;
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
   font-size: 16px;
   font-weight: 580;
 }
 
 .allocation-row-identity .allocation-rank {
-  min-width: 22px;
-  flex: 0 0 auto;
+  width: 26px;
   color: var(--muted);
-  font-size: 12px;
-  font-style: normal;
-  font-weight: 680;
-  letter-spacing: 0.01em;
+  font-size: 14px;
+  font-weight: 650;
+  text-align: center;
 }
 
-.allocation-row-identity span {
+.allocation-row-identity > div > span {
   overflow: hidden;
   color: var(--quiet);
   font-size: 13px;
