@@ -52,7 +52,7 @@ export async function uninstallCodexProtection(): Promise<CodexProtectionStatus>
 }
 
 export async function getCodexProtectionEvents(
-  limit = 5,
+  limit = 100,
 ): Promise<CodexProtectionEvent[]> {
   return invoke<CodexProtectionEvent[]>("get_codex_protection_events", {
     request: { limit },

@@ -1727,9 +1727,46 @@ h3,
 .settings-decisions-header {
   padding: 0 4px;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 20px;
+}
+
+.settings-decisions-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.decision-range {
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  display: flex;
+  background: var(--surface-sunken);
+}
+
+.decision-range button {
+  min-width: 40px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.decision-range button:hover {
+  color: var(--ink);
+}
+
+.decision-range button.active {
+  color: var(--on-accent);
+  background: var(--accent);
 }
 
 .settings-decisions-header h2 {
@@ -1761,6 +1798,13 @@ h3,
   letter-spacing: 0.04em;
 }
 
+.decision-badge {
+  min-width: 72px;
+  justify-self: start;
+  box-sizing: border-box;
+  text-align: center;
+}
+
 .decision-counts .allowed,
 .decision-badge.allowed {
   border-color: color-mix(in srgb, var(--success) 45%, var(--line));
@@ -1786,7 +1830,7 @@ h3,
   padding: 10px 16px;
   border-bottom: 1px solid var(--line);
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) auto;
+  grid-template-columns: 88px minmax(0, 1fr) 64px;
   align-items: center;
   gap: 14px;
 }
@@ -2859,8 +2903,15 @@ h3,
     gap: 12px;
   }
 
+  .settings-decisions-controls {
+    width: 100%;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
   .settings-events article {
-    grid-template-columns: 68px minmax(0, 1fr);
+    grid-template-columns: 80px minmax(0, 1fr);
   }
 
   .settings-events small {

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type {
   CodexProtectionEvent,
   CodexProtectionStatus,
@@ -11,6 +12,17 @@ import {
 import { Icon } from "./Icon";
 
 export type ThemePreference = "system" | "light" | "dark";
+type DecisionRange = "hour" | "day" | "week";
+
+const DECISION_RANGES: Array<{
+  value: DecisionRange;
+  label: string;
+  duration: number;
+}> = [
+  { value: "hour", label: "1h", duration: 60 * 60_000 },
+  { value: "day", label: "24h", duration: 24 * 60 * 60_000 },
+  { value: "week", label: "7d", duration: 7 * 24 * 60 * 60_000 },
+];
 
 type SettingsPanelProps = {
   protection: CodexProtectionStatus | null;
@@ -83,6 +95,7 @@ export function SettingsPanel({
   onProtection,
   onCheck,
 }: SettingsPanelProps) {
+  const [decisionRange, setDecisionRange] = useState<DecisionRange>("day");
   const verifiedAt = verifiedCodexProtectionAt(protection, events);
   const observedAt = observedCodexHookAt(protection);
   const desktopTracking = syncResult?.desktopTracking ?? null;
@@ -99,10 +112,17 @@ export function SettingsPanel({
     workspaceCount === 0 ||
     desktopTracking?.status === "unavailable" ||
     protection?.state === "misconfigured";
-  const allowedDecisionCount = events.filter(
+  const selectedDecisionRange = DECISION_RANGES.find(
+    (range) => range.value === decisionRange,
+  )!;
+  const decisionCutoff = Date.now() - selectedDecisionRange.duration;
+  const visibleEvents = events.filter(
+    (event) => event.occurredAt >= decisionCutoff,
+  );
+  const allowedDecisionCount = visibleEvents.filter(
     (event) => event.outcome === "allowed",
   ).length;
-  const blockedDecisionCount = events.length - allowedDecisionCount;
+  const blockedDecisionCount = visibleEvents.length - allowedDecisionCount;
 
   return (
     <>
@@ -400,19 +420,32 @@ export function SettingsPanel({
         <header className="settings-decisions-header">
           <div>
             <h2>Recent protection decisions</h2>
-            <p>Latest prompts admitted or blocked by the workspace gate.</p>
+            <p>Up to 100 latest prompts admitted or blocked by the workspace gate.</p>
           </div>
-          {events.length > 0 && (
-            <div className="decision-counts" aria-label="Recent decision totals">
+          <div className="settings-decisions-controls">
+            <div className="decision-range" aria-label="Decision time range">
+              {DECISION_RANGES.map((range) => (
+                <button
+                  className={decisionRange === range.value ? "active" : ""}
+                  key={range.value}
+                  type="button"
+                  aria-pressed={decisionRange === range.value}
+                  onClick={() => setDecisionRange(range.value)}
+                >
+                  {range.label}
+                </button>
+              ))}
+            </div>
+            <div className="decision-counts" aria-label="Filtered decision totals">
               <span className="allowed">{allowedDecisionCount} allowed</span>
               <span className="blocked">{blockedDecisionCount} blocked</span>
             </div>
-          )}
+          </div>
         </header>
 
-        {events.length > 0 ? (
+        {visibleEvents.length > 0 ? (
           <div className="settings-events">
-            {events.map((event) => (
+            {visibleEvents.map((event) => (
               <article
                 className={event.outcome}
                 key={`${event.occurredAt}-${event.canonicalPath}-${event.outcome}`}
@@ -432,8 +465,7 @@ export function SettingsPanel({
           </div>
         ) : (
           <div className="settings-empty">
-            No enforceable prompt decisions recorded yet. Hook delivery and
-            provider decisions are tracked separately.
+            No protection decisions in the last {selectedDecisionRange.label}.
           </div>
         )}
       </section>
