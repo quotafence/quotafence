@@ -1516,46 +1516,41 @@ h3,
   color: var(--warning);
 }
 
-.integration-health-summary {
-  margin-top: 24px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+.integration-health-actions {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  background: var(--surface-sunken);
-}
-
-.integration-health-summary strong {
-  font-size: 14px;
-  font-weight: 620;
-}
-
-.integration-health-summary span {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
+  align-items: center;
+  gap: 10px;
 }
 
 .integration-health-list {
-  margin-top: 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  overflow: hidden;
+  margin-top: 24px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .integration-health-row {
-  min-height: 52px;
-  padding: 0 14px;
+  min-height: 76px;
+  padding: 16px 18px 14px 0;
   border-bottom: 1px solid var(--line);
   display: grid;
-  grid-template-columns: 8px minmax(150px, 0.45fr) minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
+  grid-template-columns: 8px minmax(0, 1fr);
+  align-content: center;
+  column-gap: 11px;
+  row-gap: 4px;
 }
 
-.integration-health-row:last-child {
+.integration-health-row:nth-child(odd) {
+  border-right: 1px solid var(--line);
+}
+
+.integration-health-row:nth-child(even) {
+  padding-right: 0;
+  padding-left: 18px;
+}
+
+.integration-health-row:nth-last-child(-n + 2) {
   border-bottom: 0;
 }
 
@@ -1580,12 +1575,10 @@ h3,
 }
 
 .integration-health-row span {
-  overflow: hidden;
+  grid-column: 2;
   color: var(--muted);
   font-size: 11px;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.45;
 }
 
 .theme-options {
@@ -2743,20 +2736,28 @@ h3,
     justify-self: start;
   }
 
-  .integration-health-card .settings-card-header .button {
+  .integration-health-actions {
     grid-column: 2;
     justify-self: start;
   }
 
-  .integration-health-row {
-    grid-template-columns: 8px minmax(0, 1fr);
-    padding: 10px 12px;
+  .integration-health-list {
+    grid-template-columns: 1fr;
   }
 
-  .integration-health-row span {
-    grid-column: 2;
-    text-align: left;
-    white-space: normal;
+  .integration-health-row {
+    min-height: 64px;
+    padding: 12px 0;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--line) !important;
+  }
+
+  .integration-health-row:nth-child(even) {
+    padding-left: 0;
+  }
+
+  .integration-health-row:last-child {
+    border-bottom: 0 !important;
   }
 
   .theme-options {

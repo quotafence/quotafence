@@ -94,6 +94,11 @@ export function SettingsPanel({
     workspaceCount > 0 &&
     desktopHealthy &&
     verifiedAt !== null;
+  const integrationNeedsAttention =
+    syncIssue !== null ||
+    workspaceCount === 0 ||
+    desktopTracking?.status === "unavailable" ||
+    protection?.state === "misconfigured";
 
   return (
     <>
@@ -156,33 +161,37 @@ export function SettingsPanel({
               Verify quota sync, Desktop attribution, mappings, and protection.
             </p>
           </div>
-          <button
-            className="button primary small"
-            type="button"
-            disabled={checking}
-            onClick={onCheck}
-          >
-            <Icon
-              className={checking ? "spin" : undefined}
-              name="refresh"
-              size={15}
-            />
-            {checking ? "Checking…" : "Check now"}
-          </button>
+          <div className="integration-health-actions">
+            <span
+              className={`settings-status ${
+                integrationHealthy
+                  ? "active"
+                  : integrationNeedsAttention
+                    ? "misconfigured"
+                    : "configured"
+              }`}
+            >
+              {integrationHealthy
+                ? "Ready"
+                : integrationNeedsAttention
+                  ? "Needs attention"
+                  : "Passive only"}
+            </span>
+            <button
+              className="button primary small"
+              type="button"
+              disabled={checking}
+              onClick={onCheck}
+            >
+              <Icon
+                className={checking ? "spin" : undefined}
+                name="refresh"
+                size={15}
+              />
+              {checking ? "Checking…" : "Check now"}
+            </button>
+          </div>
         </header>
-
-        <div className="integration-health-summary">
-          <strong>
-            {integrationHealthy
-              ? "All systems ready"
-              : "Review integration status"}
-          </strong>
-          <span>
-            {integrationHealthy
-              ? "AQM can refresh Codex, resolve allocated folders, and has observed an enforceable prompt decision."
-              : "Passive tracking may still work, but every item below must be ready before protection is considered reliable."}
-          </span>
-        </div>
 
         <div className="integration-health-list">
           <IntegrationHealthRow
