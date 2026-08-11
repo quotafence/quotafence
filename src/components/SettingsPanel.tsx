@@ -99,6 +99,10 @@ export function SettingsPanel({
     workspaceCount === 0 ||
     desktopTracking?.status === "unavailable" ||
     protection?.state === "misconfigured";
+  const allowedDecisionCount = events.filter(
+    (event) => event.outcome === "allowed",
+  ).length;
+  const blockedDecisionCount = events.length - allowedDecisionCount;
 
   return (
     <>
@@ -392,24 +396,30 @@ export function SettingsPanel({
         )}
       </section>
 
-      <section className="settings-card">
-        <header className="settings-card-header">
-          <span className="settings-card-icon">
-            <Icon name="activity" size={20} />
-          </span>
+      <section className="settings-decisions-section">
+        <header className="settings-decisions-header">
           <div>
             <h2>Recent protection decisions</h2>
             <p>Latest prompts admitted or blocked by the workspace gate.</p>
           </div>
+          {events.length > 0 && (
+            <div className="decision-counts" aria-label="Recent decision totals">
+              <span className="allowed">{allowedDecisionCount} allowed</span>
+              <span className="blocked">{blockedDecisionCount} blocked</span>
+            </div>
+          )}
         </header>
 
         {events.length > 0 ? (
           <div className="settings-events">
             {events.map((event) => (
               <article
+                className={event.outcome}
                 key={`${event.occurredAt}-${event.canonicalPath}-${event.outcome}`}
               >
-                <i className={event.outcome} />
+                <span className={`decision-badge ${event.outcome}`}>
+                  {event.outcome === "allowed" ? "Allowed" : "Blocked"}
+                </span>
                 <div>
                   <strong>
                     {event.workspaceName ?? folderName(event.canonicalPath)}
@@ -428,19 +438,14 @@ export function SettingsPanel({
         )}
       </section>
 
-      <section className="settings-card settings-privacy">
-        <span className="settings-card-icon">
-          <Icon name="database" size={20} />
-        </span>
-        <div>
-          <h2>Local-first storage</h2>
-          <p>
-            Agent Quota Manager keeps quota state and up to 100 recent protection
-            decisions on this device. Prompt text, responses, transcripts, source
-            code, and provider credentials are not stored.
-          </p>
-        </div>
-      </section>
+      <footer className="settings-privacy-note">
+        <Icon name="database" size={17} />
+        <p>
+          <strong>Local-first.</strong> Quota state and up to 100 recent decisions
+          stay on this device. Prompts, responses, source code, and provider
+          credentials are not stored.
+        </p>
+      </footer>
     </>
   );
 }
