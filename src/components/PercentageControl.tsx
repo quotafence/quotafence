@@ -7,6 +7,10 @@ type PercentageControlProps = {
   min: number;
   max: number;
   step: number;
+  sliderMin?: number;
+  sliderMax?: number;
+  sliderStep?: number;
+  helperText?: string;
   allowEmpty?: boolean;
   autoFocus?: boolean;
 };
@@ -18,17 +22,24 @@ export function PercentageControl({
   min,
   max,
   step,
+  sliderMin = min,
+  sliderMax = max,
+  sliderStep = step,
+  helperText,
   allowEmpty = false,
   autoFocus = false,
 }: PercentageControlProps) {
   const numericValue = Number(value);
   const hasValue = value.trim() !== "" && Number.isFinite(numericValue);
   const boundedMax = Math.max(min, max);
+  const boundedSliderMax = Math.max(sliderMin, sliderMax);
   const sliderValue = hasValue
     ? Math.min(boundedMax, Math.max(min, numericValue))
     : min;
   const progress =
-    boundedMax === min ? 100 : ((sliderValue - min) / (boundedMax - min)) * 100;
+    boundedSliderMax === sliderMin
+      ? 100
+      : ((sliderValue - sliderMin) / (boundedSliderMax - sliderMin)) * 100;
   const rangeStyle = {
     "--range-progress": `${progress}%`,
   } as CSSProperties;
@@ -40,12 +51,18 @@ export function PercentageControl({
         <input
           className={`percent-range ${hasValue ? "" : "inactive"}`}
           type="range"
-          min={min}
-          max={boundedMax}
-          step={step}
+          min={sliderMin}
+          max={boundedSliderMax}
+          step={sliderStep}
           value={sliderValue}
           style={rangeStyle}
-          onChange={(event) => onChange(event.currentTarget.value)}
+          onChange={(event) => {
+            const nextValue = Math.min(
+              boundedMax,
+              Math.max(min, Number(event.currentTarget.value)),
+            );
+            onChange(String(nextValue));
+          }}
           aria-label={`${label} slider`}
         />
         <div className="input-with-suffix percentage-number">
@@ -65,7 +82,8 @@ export function PercentageControl({
       </div>
       <small>
         {hasValue
-          ? `${formatPercent(sliderValue)}% selected · maximum ${formatPercent(max)}%`
+          ? helperText ??
+            `${formatPercent(sliderValue)}% selected · allowed range ${formatPercent(min)}–${formatPercent(max)}%`
           : "Disabled · drag the slider or enter a value to enable"}
       </small>
     </label>
@@ -73,5 +91,7 @@ export function PercentageControl({
 }
 
 function formatPercent(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+  return Number.isInteger(value)
+    ? String(value)
+    : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }

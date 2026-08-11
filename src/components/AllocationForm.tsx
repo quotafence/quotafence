@@ -48,6 +48,9 @@ export function AllocationForm({
       setValue: setWarnAt,
       min: 0.01,
       max: confirmValue ?? stopValue ?? 100,
+      helperText: confirmValue !== null
+        ? `Warn cannot exceed Confirm (${formatPercent(confirmValue)}%).`
+        : "Warn cannot exceed the next enabled threshold.",
     },
     {
       label: "Confirm at",
@@ -55,6 +58,14 @@ export function AllocationForm({
       setValue: setConfirmAt,
       min: warnValue ?? 0.01,
       max: stopValue ?? 100,
+      helperText: [
+        warnValue !== null
+          ? `At least Warn (${formatPercent(warnValue)}%)`
+          : "No Warn minimum",
+        stopValue !== null
+          ? `at most Stop (${formatPercent(stopValue)}%)`
+          : "no Stop maximum",
+      ].join(" · ") + ".",
     },
     {
       label: "Stop at",
@@ -62,6 +73,9 @@ export function AllocationForm({
       setValue: setStopAt,
       min: confirmValue ?? warnValue ?? 0.01,
       max: 100,
+      helperText: confirmValue !== null
+        ? `Stop cannot be below Confirm (${formatPercent(confirmValue)}%).`
+        : "Stop cannot be below the previous enabled threshold.",
     },
   ];
 
@@ -134,18 +148,24 @@ export function AllocationForm({
           launch; it does not terminate unmanaged Codex work.
         </p>
         <div>
-          {policyFields.map(({ label, value, setValue, min, max }) => (
-            <PercentageControl
-              key={label}
-              label={label}
-              value={value}
-              onChange={setValue}
-              min={min}
-              max={max}
-              step={0.01}
-              allowEmpty
-            />
-          ))}
+          {policyFields.map(
+            ({ label, value, setValue, min, max, helperText }) => (
+              <PercentageControl
+                key={label}
+                label={label}
+                value={value}
+                onChange={setValue}
+                min={min}
+                max={max}
+                step={0.01}
+                sliderMin={0}
+                sliderMax={100}
+                sliderStep={1}
+                helperText={helperText}
+                allowEmpty
+              />
+            ),
+          )}
         </div>
       </fieldset>
       {validation && <p className="form-error">{validation}</p>}
@@ -180,4 +200,10 @@ function parsePercent(value: string): number | null {
 function optionalNumber(value: string): number | null {
   const parsed = Number(value);
   return value.trim() === "" || !Number.isFinite(parsed) ? null : parsed;
+}
+
+function formatPercent(value: number): string {
+  return Number.isInteger(value)
+    ? String(value)
+    : String(Number(value.toFixed(2)));
 }
