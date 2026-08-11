@@ -1818,10 +1818,14 @@ h3,
 }
 
 .settings-events {
+  max-height: min(480px, 55vh);
   margin-top: 14px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   background: var(--panel);
 }
 
