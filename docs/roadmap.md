@@ -223,6 +223,25 @@ coverage. The dashboard shows the observation duration and confidence; sparse,
 mostly unattributed, pre-window, and expired-window states omit the burn rate
 and depletion timestamp. Codex aggregate checkpoints cap confidence at medium.
 
+### M7 — Integration health and beta hardening — in progress
+
+- Combine provider checkpoint, Desktop metadata scan, workspace mappings, and
+  prompt-gate status into one diagnostic view.
+- Retain the latest sync failure in the UI instead of relying on a transient
+  toast.
+- Provide one explicit health check that refreshes the provider, scans Desktop
+  metadata, reloads hook configuration, and reads recent protection decisions.
+- Distinguish healthy passive tracking from verified prompt protection; an
+  installed hook is not sufficient evidence that enforcement is active.
+- Exercise real Codex Desktop recovery paths: reset rollover, missing `Stop`,
+  helper working directories, app restart, disabled hooks, and concurrent or
+  unmapped tasks.
+
+Verification: production frontend build, existing adapter/application suites,
+and a manual beta matrix against the installed Codex Desktop client. This
+milestone is complete only when reset and recovery scenarios do not falsely
+block a mapped workspace.
+
 ### Later — Capability-aware routing
 
 Only after M1–M6 work end to end should AQM evaluate another provider. Routing

@@ -28,6 +28,7 @@ import type {
   LocalState,
   CodexProtectionEvent,
   CodexProtectionStatus,
+  CodexSyncResult,
   QuotaSourceInput,
   QuotaSourceSummary,
   ScopeSummary,
@@ -172,6 +173,9 @@ function App() {
     CodexProtectionEvent[]
   >([]);
   const [protectionBusy, setProtectionBusy] = useState(false);
+  const [codexSyncResult, setCodexSyncResult] =
+    useState<CodexSyncResult | null>(null);
+  const [codexSyncIssue, setCodexSyncIssue] = useState<string | null>(null);
   const [priorityBusy, setPriorityBusy] = useState(false);
   const [view, setView] = useState<DashboardView>("overview");
   const [theme, setTheme] = useState<ThemePreference>(storedTheme);
@@ -238,7 +242,15 @@ function App() {
           syncInFlight.current = true;
           try {
             const sync = await syncCodexQuota(source.windowId);
+            setCodexSyncResult(sync);
+            setCodexSyncIssue(
+              sync.status === "synced"
+                ? null
+                : sync.message ?? "Codex sync was unavailable.",
+            );
             await loadState(sync.windowId ?? source.windowId);
+          } catch (reason) {
+            setCodexSyncIssue(getErrorMessage(reason));
           } finally {
             syncInFlight.current = false;
           }
@@ -289,6 +301,12 @@ function App() {
       syncInFlight.current = true;
       try {
         const sync = await syncCodexQuota(windowId);
+        setCodexSyncResult(sync);
+        setCodexSyncIssue(
+          sync.status === "synced"
+            ? null
+            : sync.message ?? "Codex sync was unavailable.",
+        );
         if (cancelled || sync.status !== "synced") {
           return;
         }
@@ -296,7 +314,8 @@ function App() {
           loadState(sync.windowId ?? windowId),
           getCodexProtectionEvents().then(setCodexProtectionEvents),
         ]);
-      } catch {
+      } catch (reason) {
+        setCodexSyncIssue(getErrorMessage(reason));
         // Background refresh stays silent. The visible Sync action reports errors.
       } finally {
         syncInFlight.current = false;
@@ -376,9 +395,16 @@ function App() {
       }
 
       const sync = await syncCodexQuota(windowId);
+      setCodexSyncResult(sync);
+      setCodexSyncIssue(
+        sync.status === "synced"
+          ? null
+          : sync.message ?? "Codex sync was unavailable.",
+      );
       await Promise.all([
         loadState(sync.windowId ?? windowId),
         getCodexProtectionEvents().then(setCodexProtectionEvents),
+        getCodexProtectionStatus().then(setCodexProtection),
       ]);
       if (sync.status !== "synced") {
         setError(
@@ -417,6 +443,7 @@ function App() {
         );
       }
     } catch (reason) {
+      setCodexSyncIssue(getErrorMessage(reason));
       setError(getErrorMessage(reason));
     } finally {
       syncInFlight.current = false;
@@ -580,6 +607,8 @@ function App() {
         removingSource={submitting}
         codexProtection={codexProtection}
         codexProtectionEvents={codexProtectionEvents}
+        codexSyncResult={codexSyncResult}
+        codexSyncIssue={codexSyncIssue}
         protectionBusy={protectionBusy}
         onProtection={(enabled) => void handleProtection(enabled)}
         theme={theme}

@@ -8,6 +8,7 @@ import type {
   AllocationSnapshot,
   CodexProtectionEvent,
   CodexProtectionStatus,
+  CodexSyncResult,
   LocalState,
   QuotaSourceSummary,
   QuotaHistoryPoint,
@@ -41,6 +42,8 @@ type DashboardProps = {
   removingSource: boolean;
   codexProtection: CodexProtectionStatus | null;
   codexProtectionEvents: CodexProtectionEvent[];
+  codexSyncResult: CodexSyncResult | null;
+  codexSyncIssue: string | null;
   protectionBusy: boolean;
   onProtection: (enabled: boolean) => void;
   theme: ThemePreference;
@@ -476,6 +479,8 @@ export function Dashboard({
   removingSource,
   codexProtection,
   codexProtectionEvents,
+  codexSyncResult,
+  codexSyncIssue,
   protectionBusy,
   onProtection,
   theme,
@@ -814,6 +819,12 @@ export function Dashboard({
           <SettingsPanel
             protection={codexProtection}
             events={codexProtectionEvents}
+            source={source}
+            workspaceCount={scopes.filter((scope) => scope.workspacePath).length}
+            syncResult={codexSyncResult}
+            syncIssue={codexSyncIssue}
+            checking={refreshing}
+            onCheck={onRefresh}
             busy={protectionBusy}
             theme={theme}
             onThemeChange={onThemeChange}

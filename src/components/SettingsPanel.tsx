@@ -1,6 +1,8 @@
 import type {
   CodexProtectionEvent,
   CodexProtectionStatus,
+  CodexSyncResult,
+  QuotaSourceSummary,
 } from "../types";
 import {
   observedCodexHookAt,
@@ -13,10 +15,16 @@ export type ThemePreference = "system" | "light" | "dark";
 type SettingsPanelProps = {
   protection: CodexProtectionStatus | null;
   events: CodexProtectionEvent[];
+  source: QuotaSourceSummary;
+  workspaceCount: number;
+  syncResult: CodexSyncResult | null;
+  syncIssue: string | null;
+  checking: boolean;
   busy: boolean;
   theme: ThemePreference;
   onThemeChange: (theme: ThemePreference) => void;
   onProtection: (enabled: boolean) => void;
+  onCheck: () => void;
 };
 
 function formatRelativeTime(timestamp: number): string {
@@ -64,13 +72,28 @@ function statusLabel(
 export function SettingsPanel({
   protection,
   events,
+  source,
+  workspaceCount,
+  syncResult,
+  syncIssue,
+  checking,
   busy,
   theme,
   onThemeChange,
   onProtection,
+  onCheck,
 }: SettingsPanelProps) {
   const verifiedAt = verifiedCodexProtectionAt(protection, events);
   const observedAt = observedCodexHookAt(protection);
+  const desktopTracking = syncResult?.desktopTracking ?? null;
+  const desktopHealthy =
+    desktopTracking !== null && desktopTracking.status !== "unavailable";
+  const integrationHealthy =
+    syncIssue === null &&
+    source.lastSyncedAt !== null &&
+    workspaceCount > 0 &&
+    desktopHealthy &&
+    verifiedAt !== null;
 
   return (
     <>
@@ -119,6 +142,96 @@ export function SettingsPanel({
               {theme === value && <Icon name="check" size={15} />}
             </button>
           ))}
+        </div>
+      </section>
+
+      <section className="settings-card integration-health-card">
+        <header className="settings-card-header">
+          <span className="settings-card-icon">
+            <Icon name="activity" size={20} />
+          </span>
+          <div>
+            <h2>Codex integration health</h2>
+            <p>
+              Verify quota sync, Desktop attribution, mappings, and protection.
+            </p>
+          </div>
+          <button
+            className="button primary small"
+            type="button"
+            disabled={checking}
+            onClick={onCheck}
+          >
+            <Icon
+              className={checking ? "spin" : undefined}
+              name="refresh"
+              size={15}
+            />
+            {checking ? "Checking…" : "Check now"}
+          </button>
+        </header>
+
+        <div className="integration-health-summary">
+          <strong>
+            {integrationHealthy
+              ? "All systems ready"
+              : "Review integration status"}
+          </strong>
+          <span>
+            {integrationHealthy
+              ? "AQM can refresh Codex, resolve allocated folders, and has observed an enforceable prompt decision."
+              : "Passive tracking may still work, but every item below must be ready before protection is considered reliable."}
+          </span>
+        </div>
+
+        <div className="integration-health-list">
+          <IntegrationHealthRow
+            label="Provider checkpoint"
+            tone={
+              syncIssue
+                ? "warning"
+                : source.lastSyncedAt
+                  ? "healthy"
+                  : "muted"
+            }
+            value={
+              syncIssue ??
+              (source.lastSyncedAt
+                ? `Synced ${formatRelativeTime(source.lastSyncedAt)}`
+                : "Not checked yet")
+            }
+          />
+          <IntegrationHealthRow
+            label="Desktop attribution"
+            tone={
+              desktopTracking?.status === "unavailable"
+                ? "warning"
+                : desktopHealthy
+                  ? "healthy"
+                  : "muted"
+            }
+            value={desktopTrackingLabel(desktopTracking)}
+          />
+          <IntegrationHealthRow
+            label="Workspace mappings"
+            tone={workspaceCount > 0 ? "healthy" : "warning"}
+            value={
+              workspaceCount > 0
+                ? `${workspaceCount} allocated ${workspaceCount === 1 ? "folder" : "folders"}`
+                : "No allocated folders"
+            }
+          />
+          <IntegrationHealthRow
+            label="Prompt gate"
+            tone={
+              verifiedAt !== null
+                ? "healthy"
+                : protection?.state === "misconfigured"
+                  ? "warning"
+                  : "muted"
+            }
+            value={promptGateHealthLabel(protection, observedAt, verifiedAt)}
+          />
         </div>
       </section>
 
@@ -321,4 +434,74 @@ export function SettingsPanel({
       </section>
     </>
   );
+}
+
+type IntegrationHealthRowProps = {
+  label: string;
+  value: string;
+  tone: "healthy" | "warning" | "muted";
+};
+
+function IntegrationHealthRow({
+  label,
+  value,
+  tone,
+}: IntegrationHealthRowProps) {
+  return (
+    <div className="integration-health-row">
+      <i className={tone} aria-hidden="true" />
+      <strong>{label}</strong>
+      <span>{value}</span>
+    </div>
+  );
+}
+
+function desktopTrackingLabel(
+  tracking: CodexSyncResult["desktopTracking"],
+): string {
+  if (!tracking) {
+    return "Run a check to inspect Desktop metadata";
+  }
+  if (tracking.message) {
+    return tracking.message;
+  }
+  switch (tracking.status) {
+    case "baseline_established":
+      return `Baseline ready · ${tracking.observedThreads} observed ${tracking.observedThreads === 1 ? "task" : "tasks"}`;
+    case "no_activity":
+      return `Ready · ${tracking.observedThreads} observed ${tracking.observedThreads === 1 ? "task" : "tasks"}`;
+    case "pending_provider_delta":
+      return "Activity found · waiting for provider quota movement";
+    case "attributed":
+      return `${tracking.attributedAmount}% attributed on the latest check`;
+    case "ambiguous":
+      return "Scanner ready · latest activity remained unassigned";
+    case "window_rolled_over":
+      return "Ready · baseline moved to the new quota window";
+    case "unavailable":
+      return "Codex Desktop metadata is unavailable";
+  }
+}
+
+function promptGateHealthLabel(
+  protection: CodexProtectionStatus | null,
+  observedAt: number | null,
+  verifiedAt: number | null,
+): string {
+  if (!protection) {
+    return "Inspecting hook configuration";
+  }
+  if (verifiedAt !== null) {
+    return `Active · decision observed ${formatRelativeTime(verifiedAt)}`;
+  }
+  if (protection.state === "misconfigured") {
+    return protection.issue ?? "Hook configuration needs repair";
+  }
+  if (observedAt !== null) {
+    return "Connected · latest hook was not enforceable";
+  }
+  if (protection.installed) {
+    return "Installed · trust hooks and send a test prompt";
+  }
+  return "Off · passive tracking only";
 }
