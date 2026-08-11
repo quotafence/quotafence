@@ -5,6 +5,7 @@ import type {
   WorkspaceBudgetInput,
 } from "../types";
 import { PercentageControl } from "./PercentageControl";
+import { PolicyThresholdControl } from "./PolicyThresholdControl";
 
 type AllocationFormProps = {
   scope: ScopeSummary;
@@ -38,46 +39,6 @@ export function AllocationForm({
     formatBasisPoints(currentPolicy.stopAtBasisPoints),
   );
   const [validation, setValidation] = useState<string | null>(null);
-  const warnValue = optionalNumber(warnAt);
-  const confirmValue = optionalNumber(confirmAt);
-  const stopValue = optionalNumber(stopAt);
-  const policyFields = [
-    {
-      label: "Warn at",
-      value: warnAt,
-      setValue: setWarnAt,
-      min: 0.01,
-      max: confirmValue ?? stopValue ?? 100,
-      helperText: confirmValue !== null
-        ? `Warn cannot exceed Confirm (${formatPercent(confirmValue)}%).`
-        : "Warn cannot exceed the next enabled threshold.",
-    },
-    {
-      label: "Confirm at",
-      value: confirmAt,
-      setValue: setConfirmAt,
-      min: warnValue ?? 0.01,
-      max: stopValue ?? 100,
-      helperText: [
-        warnValue !== null
-          ? `At least Warn (${formatPercent(warnValue)}%)`
-          : "No Warn minimum",
-        stopValue !== null
-          ? `at most Stop (${formatPercent(stopValue)}%)`
-          : "no Stop maximum",
-      ].join(" · ") + ".",
-    },
-    {
-      label: "Stop at",
-      value: stopAt,
-      setValue: setStopAt,
-      min: confirmValue ?? warnValue ?? 0.01,
-      max: 100,
-      helperText: confirmValue !== null
-        ? `Stop cannot be below Confirm (${formatPercent(confirmValue)}%).`
-        : "Stop cannot be below the previous enabled threshold.",
-    },
-  ];
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -147,26 +108,14 @@ export function AllocationForm({
           Leave a threshold blank to disable it. Stop refuses a new managed
           launch; it does not terminate unmanaged Codex work.
         </p>
-        <div>
-          {policyFields.map(
-            ({ label, value, setValue, min, max, helperText }) => (
-              <PercentageControl
-                key={label}
-                label={label}
-                value={value}
-                onChange={setValue}
-                min={min}
-                max={max}
-                step={0.01}
-                sliderMin={0}
-                sliderMax={100}
-                sliderStep={1}
-                helperText={helperText}
-                allowEmpty
-              />
-            ),
-          )}
-        </div>
+        <PolicyThresholdControl
+          warnAt={warnAt}
+          confirmAt={confirmAt}
+          stopAt={stopAt}
+          onWarnChange={setWarnAt}
+          onConfirmChange={setConfirmAt}
+          onStopChange={setStopAt}
+        />
       </fieldset>
       {validation && <p className="form-error">{validation}</p>}
       <div className="modal-actions">
@@ -195,15 +144,4 @@ function formatBasisPoints(value: number | null): string {
 function parsePercent(value: string): number | null {
   const trimmed = value.trim();
   return trimmed === "" ? null : Math.round(Number(trimmed) * 100);
-}
-
-function optionalNumber(value: string): number | null {
-  const parsed = Number(value);
-  return value.trim() === "" || !Number.isFinite(parsed) ? null : parsed;
-}
-
-function formatPercent(value: number): string {
-  return Number.isInteger(value)
-    ? String(value)
-    : String(Number(value.toFixed(2)));
 }
