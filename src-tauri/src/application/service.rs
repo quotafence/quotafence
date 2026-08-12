@@ -1303,14 +1303,21 @@ impl QuotaService {
         let local_observed_usage = root_attributed_usage
             .checked_add(unattributed.value())
             .ok_or_else(arithmetic_overflow)?;
+        // A provider checkpoint is authoritative for account-wide usage. Local
+        // attribution explains where usage likely occurred, but it must never
+        // make the subscription appear more depleted than the provider reports.
+        // This can happen after conservative attribution, provider corrections,
+        // or an observation that was later superseded.
         let effective_observed_usage = provider_snapshot
             .as_ref()
-            .map_or(local_observed_usage, |snapshot| {
-                snapshot.used().max(local_observed_usage)
-            });
-        let effective_unattributed_usage = effective_observed_usage
-            .saturating_sub(root_attributed_usage)
-            .max(unattributed.value());
+            .map_or(local_observed_usage, ProviderQuotaSnapshot::used);
+        let effective_unattributed_usage = if provider_snapshot.is_some() {
+            effective_observed_usage.saturating_sub(root_attributed_usage)
+        } else {
+            effective_observed_usage
+                .saturating_sub(root_attributed_usage)
+                .max(unattributed.value())
+        };
         let provider_committed = effective_observed_usage
             .checked_add(root_active_reservations)
             .ok_or_else(arithmetic_overflow)?;
@@ -2286,6 +2293,51 @@ mod tests {
         assert_eq!(feature.active_reservations, 0);
         assert_eq!(feature.remaining, 32);
         assert_eq!(dashboard.window.provider_remaining, 82);
+    }
+
+    #[test]
+    fn provider_checkpoint_remains_authoritative_when_local_attribution_is_higher() {
+        let mut service = configured_service();
+        service
+            .record_usage(RecordUsage {
+                id: "conservative-local-attribution".to_owned(),
+                window_id: "week-1".to_owned(),
+                scope_id: Some("feature-a".to_owned()),
+                amount: 52,
+                unit: "quota_points".to_owned(),
+                observed_at: 2_000,
+                source: UsageSource::LocalMeasured,
+                confidence: Confidence::Observed,
+                reservation_id: None,
+            })
+            .unwrap();
+        service
+            .sync_provider_quota(SyncProviderQuota {
+                current_window_id: "week-1".to_owned(),
+                adapter: "codex_app_server".to_owned(),
+                remote_limit_id: "codex".to_owned(),
+                remote_window_kind: "primary".to_owned(),
+                starts_at: 1_000,
+                ends_at: 10_000,
+                capacity: 100,
+                used: 37,
+                unit: "quota_points".to_owned(),
+                observed_at: 3_000,
+                desktop_observations: None,
+            })
+            .unwrap();
+
+        let dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: "week-1".to_owned(),
+                at: 3_500,
+            })
+            .unwrap();
+
+        assert_eq!(snapshot(&dashboard, "project-a").attributed_usage, 52);
+        assert_eq!(dashboard.window.unattributed_usage, 0);
+        assert_eq!(dashboard.window.provider_remaining, 63);
+        assert_eq!(dashboard.window.provider_spendable, 63);
     }
 
     #[test]
