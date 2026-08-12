@@ -127,6 +127,8 @@ The first beta is built from source; signed installers are not published yet.
 Read the [Beta guide](docs/beta.md) before relying on AQM for important work.
 It documents what the beta can enforce, what remains approximate, its privacy
 boundary, and the diagnostic information to include in bug reports.
+Maintainers can follow the [macOS release guide](docs/releasing.md) for tagged
+universal builds, checksums, signing state, and draft prerelease review.
 
 ## Architecture at a glance
 
