@@ -36,9 +36,9 @@ use super::{
     ReconcileProviderTurnObservation, RecordCodexProtectionEvent, RecordUsage, ReleaseReservation,
     RemoveWorkspaceAllocation, ReserveQuota, ResetWorkspacePolicy, ScopeSummary, SetAllocation,
     SetAllocationPriorityOrder, SetWorkspacePolicy, SyncProviderQuota, SyncProviderQuotaResult,
-    TurnObservationStartResult, TurnObservationStartStatus, TurnReconciliationResult,
-    TurnReconciliationStatus, WindowSummary, WorkspaceAllocationContext, WorkspaceBindingSummary,
-    WorkspaceContext, WorkspacePolicySummary,
+    TurnObservationHealthSummary, TurnObservationStartResult, TurnObservationStartStatus,
+    TurnReconciliationResult, TurnReconciliationStatus, WindowSummary, WorkspaceAllocationContext,
+    WorkspaceBindingSummary, WorkspaceContext, WorkspacePolicySummary,
 };
 
 const TURN_OBSERVATION_STALE_AFTER_MILLIS: i64 = 12 * 60 * 60 * 1_000;
@@ -1485,6 +1485,26 @@ impl QuotaService {
                 .database
                 .provider_sync_health()
                 .get(window.id().as_str())?;
+            let turn_health = if let Some(snapshot) = snapshot.as_ref() {
+                let stale_before = UnixMillis::new(
+                    command
+                        .at
+                        .saturating_sub(TURN_OBSERVATION_STALE_AFTER_MILLIS),
+                );
+                let health = self.database.turn_observations().health(
+                    snapshot.adapter(),
+                    window.id(),
+                    stale_before,
+                )?;
+                Some(TurnObservationHealthSummary {
+                    pending_count: health.pending_count,
+                    contended_count: health.contended_count,
+                    oldest_started_at: health.oldest_started_at,
+                    stale_count: health.stale_count,
+                })
+            } else {
+                None
+            };
             sources.push(QuotaSourceSummary {
                 provider_id: provider.id().to_string(),
                 provider_display_name: provider.display_name().to_owned(),
@@ -1505,6 +1525,7 @@ impl QuotaService {
                     message: health.message,
                     checked_at: health.checked_at,
                 }),
+                turn_health,
             });
         }
 
@@ -2511,6 +2532,65 @@ mod tests {
             Some("Codex App Server is unavailable.")
         );
         assert_eq!(health.checked_at, 2_500);
+    }
+
+    #[test]
+    fn local_state_reports_pending_contended_and_stale_turn_health() {
+        let mut service = configured_service();
+        service
+            .sync_provider_quota(SyncProviderQuota {
+                current_window_id: "week-1".to_owned(),
+                adapter: "codex_app_server".to_owned(),
+                remote_limit_id: "codex".to_owned(),
+                remote_window_kind: "primary".to_owned(),
+                starts_at: 1_000,
+                ends_at: 10_000,
+                capacity: 100,
+                used: 10,
+                unit: "quota_points".to_owned(),
+                observed_at: 1_900,
+                desktop_observations: None,
+            })
+            .unwrap();
+        for (session_id, turn_id, started_at) in [
+            ("desktop-a", "turn-a", 2_000),
+            ("desktop-b", "turn-b", 2_100),
+        ] {
+            service
+                .begin_provider_turn_observation(BeginProviderTurnObservation {
+                    session_id: session_id.to_owned(),
+                    turn_id: turn_id.to_owned(),
+                    adapter: "codex_app_server".to_owned(),
+                    canonical_path: "/code/workspace-a".to_owned(),
+                    scope_id: None,
+                    window_id: "week-1".to_owned(),
+                    started_at,
+                })
+                .unwrap();
+        }
+
+        let active = service
+            .local_state(GetLocalState {
+                selected_window_id: Some("week-1".to_owned()),
+                at: 3_000,
+            })
+            .unwrap();
+        let active_health = active.sources[0].turn_health.as_ref().unwrap();
+        assert_eq!(active_health.pending_count, 2);
+        assert_eq!(active_health.contended_count, 2);
+        assert_eq!(active_health.oldest_started_at, Some(2_000));
+        assert_eq!(active_health.stale_count, 0);
+
+        let stale = service
+            .local_state(GetLocalState {
+                selected_window_id: Some("week-1".to_owned()),
+                at: 2_001 + TURN_OBSERVATION_STALE_AFTER_MILLIS,
+            })
+            .unwrap();
+        assert_eq!(
+            stale.sources[0].turn_health.as_ref().unwrap().stale_count,
+            1
+        );
     }
 
     #[test]
