@@ -153,6 +153,7 @@ fn run(args: Vec<String>) -> Result<u8, String> {
                 })
                 .map_err(|error| error.to_string())?;
             let allocation = provider_allocation(&context, &provider_id)?;
+            let resolved_provider_id = allocation.provider_id.clone();
             let checkpoint = match provider_id.to_ascii_lowercase().as_str() {
                 "codex" => codex::sync_detection(
                     &mut service,
@@ -187,7 +188,7 @@ fn run(args: Vec<String>) -> Result<u8, String> {
             let assessment = service
                 .evaluate_workspace_admission(EvaluateWorkspaceAdmission {
                     canonical_path,
-                    provider_id,
+                    provider_id: resolved_provider_id,
                     at: now,
                 })
                 .map_err(|error| error.to_string())?;
@@ -357,6 +358,7 @@ fn run_managed_codex(
         })
         .map_err(|error| error.to_string())?;
     let allocation = provider_allocation(&context, "codex")?;
+    let resolved_provider_id = allocation.provider_id.clone();
     let checkpoint = codex::sync_detection(
         &mut service,
         allocation.window_id.clone(),
@@ -391,7 +393,7 @@ fn run_managed_codex(
             id: identity.0.clone(),
             reservation_id: identity.1,
             canonical_path: canonical_path.clone(),
-            provider_id: "codex".to_owned(),
+            provider_id: resolved_provider_id,
             assume_yes,
             admitted_at: now,
             expires_at,
@@ -748,10 +750,13 @@ fn provider_allocation<'a>(
             context.canonical_path
         )
     })?;
-    let mut matching = context
-        .allocations
-        .iter()
-        .filter(|allocation| allocation.provider_id.eq_ignore_ascii_case(provider_id));
+    let mut matching = context.allocations.iter().filter(|allocation| {
+        provider_matches(
+            &allocation.provider_id,
+            &allocation.provider_display_name,
+            provider_id,
+        )
+    });
     let allocation = matching.next().ok_or_else(|| {
         format!(
             "scope {} has no allocation for provider {provider_id}",
@@ -765,6 +770,10 @@ fn provider_allocation<'a>(
         ));
     }
     Ok(allocation)
+}
+
+fn provider_matches(provider_id: &str, display_name: &str, reference: &str) -> bool {
+    provider_id.eq_ignore_ascii_case(reference) || display_name.eq_ignore_ascii_case(reference)
 }
 
 fn open_context(options: &CommonOptions) -> Result<(QuotaService, String), String> {
@@ -1353,6 +1362,21 @@ mod tests {
             admission_exit_code(EnforcementDecision::Stop, true),
             EXIT_STOP
         );
+    }
+
+    #[test]
+    fn codex_reference_matches_a_ui_generated_provider_id_by_display_name() {
+        assert!(provider_matches(
+            "source-generated-provider-id",
+            "Codex",
+            "codex"
+        ));
+        assert!(provider_matches("codex", "OpenAI Codex", "CODEX"));
+        assert!(!provider_matches(
+            "source-generated-provider-id",
+            "Claude Code",
+            "codex"
+        ));
     }
 
     #[test]
