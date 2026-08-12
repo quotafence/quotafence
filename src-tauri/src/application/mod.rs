@@ -23,8 +23,8 @@ pub use view::{
     DepletionForecast, DepletionForecastStatus, DesktopUsageReconciliation,
     DesktopUsageReconciliationStatus, ForecastConfidence, LocalState, ManagedSessionLaunch,
     ManagedSessionReconciliation, ManagedSessionReconciliationStatus, PolicySummary,
-    ProviderTurnObservationSummary, QuotaDashboard, QuotaHistoryPoint, QuotaSourceSummary,
-    ScopeSummary, SyncProviderQuotaResult, TurnObservationStartResult, TurnObservationStartStatus,
-    TurnReconciliationResult, TurnReconciliationStatus, WindowSummary, WorkspaceAllocationContext,
-    WorkspaceBindingSummary, WorkspaceContext, WorkspacePolicySummary,
+    ProviderSyncHealthSummary, ProviderTurnObservationSummary, QuotaDashboard, QuotaHistoryPoint,
+    QuotaSourceSummary, ScopeSummary, SyncProviderQuotaResult, TurnObservationStartResult,
+    TurnObservationStartStatus, TurnReconciliationResult, TurnReconciliationStatus, WindowSummary,
+    WorkspaceAllocationContext, WorkspaceBindingSummary, WorkspaceContext, WorkspacePolicySummary,
 };

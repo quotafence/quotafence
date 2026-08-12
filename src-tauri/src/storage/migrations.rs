@@ -344,6 +344,15 @@ CREATE INDEX idx_codex_hook_receipts_event_occurred
     ON codex_hook_receipts(event_name, occurred_at DESC);
 "#;
 
+const PROVIDER_SYNC_HEALTH: &str = r#"
+CREATE TABLE provider_sync_health (
+    window_id TEXT PRIMARY KEY NOT NULL REFERENCES quota_windows(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK (status IN ('synced', 'not_applicable', 'unavailable')),
+    message TEXT,
+    checked_at INTEGER NOT NULL
+);
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -419,6 +428,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 15,
         name: "codex_hook_receipts",
         sql: CODEX_HOOK_RECEIPTS,
+    },
+    Migration {
+        version: 16,
+        name: "provider_sync_health",
+        sql: PROVIDER_SYNC_HEALTH,
     },
 ];
 

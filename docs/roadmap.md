@@ -242,6 +242,12 @@ and a manual beta matrix against the installed Codex Desktop client. This
 milestone is complete only when reset and recovery scenarios do not falsely
 block a mapped workspace.
 
+The diagnostic view and explicit health check are implemented. Provider sync
+health is persisted per quota window, so the latest failure remains visible
+after an app restart and is cleared by the next successful checkpoint. The
+remaining M7 work is the real Desktop recovery matrix and fixes discovered by
+that exercise.
+
 ### Later — Capability-aware routing
 
 Only after M1–M6 work end to end should AQM evaluate another provider. Routing

@@ -31,7 +31,7 @@ use super::{
     FinishManagedSession, GetCodexProtectionEvents, GetLocalState, GetProviderTurnObservation,
     GetQuotaDashboard, GetWorkspaceContext, GetWorkspacePolicy, LocalState, ManagedSessionLaunch,
     ManagedSessionOutcome, ManagedSessionReconciliation, ManagedSessionReconciliationStatus,
-    MarkManagedSessionRunning, PolicySummary, PrepareManagedSession,
+    MarkManagedSessionRunning, PolicySummary, PrepareManagedSession, ProviderSyncHealthSummary,
     ProviderTurnObservationSummary, QuotaDashboard, QuotaHistoryPoint, QuotaSourceSummary,
     ReconcileProviderTurnObservation, RecordCodexProtectionEvent, RecordUsage, ReleaseReservation,
     RemoveWorkspaceAllocation, ReserveQuota, ResetWorkspacePolicy, ScopeSummary, SetAllocation,
@@ -62,6 +62,19 @@ impl QuotaService {
             database,
             default_policy: policy,
         }
+    }
+
+    pub fn record_provider_sync_health(
+        &mut self,
+        window_id: &str,
+        status: &str,
+        message: Option<&str>,
+        checked_at: i64,
+    ) -> ApplicationResult<()> {
+        self.database
+            .provider_sync_health()
+            .put(window_id, status, message, checked_at)?;
+        Ok(())
     }
 
     pub fn create_provider(&mut self, command: CreateProvider) -> ApplicationResult<()> {
@@ -1468,6 +1481,10 @@ impl QuotaService {
             })?;
 
             let snapshot = self.database.provider_quota_snapshot(window.id())?;
+            let sync_health = self
+                .database
+                .provider_sync_health()
+                .get(window.id().as_str())?;
             sources.push(QuotaSourceSummary {
                 provider_id: provider.id().to_string(),
                 provider_display_name: provider.display_name().to_owned(),
@@ -1483,6 +1500,11 @@ impl QuotaService {
                 is_active: window.contains(at),
                 provider_managed: snapshot.is_some(),
                 last_synced_at: snapshot.map(|snapshot| snapshot.observed_at().value()),
+                sync_health: sync_health.map(|health| ProviderSyncHealthSummary {
+                    status: health.status,
+                    message: health.message,
+                    checked_at: health.checked_at,
+                }),
             });
         }
 
@@ -2461,6 +2483,34 @@ mod tests {
         assert!(state.scopes.is_empty());
         assert_eq!(state.selected_window_id, None);
         assert_eq!(state.dashboard, None);
+    }
+
+    #[test]
+    fn local_state_rehydrates_the_latest_provider_sync_issue() {
+        let mut service = configured_service();
+        service
+            .record_provider_sync_health(
+                "week-1",
+                "unavailable",
+                Some("Codex App Server is unavailable."),
+                2_500,
+            )
+            .unwrap();
+
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: Some("week-1".to_owned()),
+                at: 3_000,
+            })
+            .unwrap();
+        let health = state.sources[0].sync_health.as_ref().unwrap();
+
+        assert_eq!(health.status, "unavailable");
+        assert_eq!(
+            health.message.as_deref(),
+            Some("Codex App Server is unavailable.")
+        );
+        assert_eq!(health.checked_at, 2_500);
     }
 
     #[test]
