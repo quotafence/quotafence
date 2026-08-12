@@ -113,9 +113,42 @@ pub struct TurnObservationRepository<'connection> {
     connection: &'connection mut Connection,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnObservationHealth {
+    pub pending_count: u64,
+    pub contended_count: u64,
+    pub oldest_started_at: Option<i64>,
+    pub stale_count: u64,
+}
+
 impl<'connection> TurnObservationRepository<'connection> {
     pub(crate) fn new(connection: &'connection mut Connection) -> Self {
         Self { connection }
+    }
+
+    pub fn health(
+        &self,
+        adapter: &str,
+        window_id: &WindowId,
+        stale_before: UnixMillis,
+    ) -> StorageResult<TurnObservationHealth> {
+        let (pending, contended, oldest, stale): (i64, i64, Option<i64>, i64) =
+            self.connection.query_row(
+                "SELECT COUNT(*),
+                        COALESCE(SUM(contended), 0),
+                        MIN(started_at),
+                        COALESCE(SUM(CASE WHEN started_at < ?3 THEN 1 ELSE 0 END), 0)
+                 FROM provider_turn_observations
+                 WHERE adapter = ?1 AND window_id = ?2",
+                params![adapter, window_id.as_str(), stale_before.value()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )?;
+        Ok(TurnObservationHealth {
+            pending_count: u64::try_from(pending).unwrap_or(0),
+            contended_count: u64::try_from(contended).unwrap_or(0),
+            oldest_started_at: oldest,
+            stale_count: u64::try_from(stale).unwrap_or(0),
+        })
     }
 
     pub fn begin(

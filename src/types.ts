@@ -112,6 +112,12 @@ export type QuotaSourceSummary = {
     message: string | null;
     checkedAt: number;
   } | null;
+  turnHealth: {
+    pendingCount: number;
+    contendedCount: number;
+    oldestStartedAt: number | null;
+    staleCount: number;
+  } | null;
 };
 
 export type ScopeSummary = {

@@ -38,6 +38,6 @@ pub use provider_snapshots::{ProviderQuotaHistoryPoint, ProviderQuotaSnapshot};
 pub use sync_health::{ProviderSyncHealth, ProviderSyncHealthRepository};
 pub use turn_observations::{
     BeginObservationResult, BeginObservationStatus, ProviderTurnObservation,
-    ReconcileObservationResult, TurnObservationRepository,
+    ReconcileObservationResult, TurnObservationHealth, TurnObservationRepository,
 };
 pub use workspace_bindings::{WorkspaceBinding, WorkspaceBindingRepository};
