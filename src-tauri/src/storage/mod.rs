@@ -10,6 +10,7 @@ mod migrations;
 mod policies;
 mod protection_events;
 mod provider_snapshots;
+mod sync_health;
 mod turn_observations;
 mod workspace_bindings;
 
@@ -34,6 +35,7 @@ pub use protection_events::{
     CodexProtectionEventRepository, NewCodexProtectionEvent,
 };
 pub use provider_snapshots::{ProviderQuotaHistoryPoint, ProviderQuotaSnapshot};
+pub use sync_health::{ProviderSyncHealth, ProviderSyncHealthRepository};
 pub use turn_observations::{
     BeginObservationResult, BeginObservationStatus, ProviderTurnObservation,
     ReconcileObservationResult, TurnObservationRepository,

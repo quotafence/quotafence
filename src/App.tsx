@@ -285,6 +285,18 @@ function App() {
   );
 
   useEffect(() => {
+    const persistedHealth = selectedSource?.syncHealth ?? null;
+    if (!persistedHealth) {
+      return;
+    }
+    setCodexSyncIssue(
+      persistedHealth.status === "synced"
+        ? null
+        : persistedHealth.message ?? "Codex sync was unavailable.",
+    );
+  }, [selectedSource?.syncHealth]);
+
+  useEffect(() => {
     const windowId = localState?.selectedWindowId ?? null;
     if (
       !windowId ||

@@ -107,6 +107,11 @@ export type QuotaSourceSummary = {
   isActive: boolean;
   providerManaged: boolean;
   lastSyncedAt: number | null;
+  syncHealth: {
+    status: "synced" | "not_applicable" | "unavailable";
+    message: string | null;
+    checkedAt: number;
+  } | null;
 };
 
 export type ScopeSummary = {

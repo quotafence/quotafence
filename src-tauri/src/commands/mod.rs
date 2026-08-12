@@ -9,7 +9,7 @@ use std::{
 
 use tauri::{Manager, Runtime, State};
 
-use crate::providers::codex::{self, CodexDetection, CodexSyncResult};
+use crate::providers::codex::{self, CodexDetection, CodexSyncResult, CodexSyncStatus};
 use crate::providers::codex_hooks::{self, CodexProtectionStatus};
 use crate::{
     application::{
@@ -186,13 +186,26 @@ pub(crate) async fn sync_codex_quota(
         )
     });
     state.execute(|service| {
-        Ok(codex::sync_detection_with_desktop(
+        let result = codex::sync_detection_with_desktop(
             service,
-            window_id,
+            window_id.clone(),
             now,
             detection,
             desktop_scan,
-        ))
+        );
+        let status = match result.status {
+            CodexSyncStatus::Synced => "synced",
+            CodexSyncStatus::NotApplicable => "not_applicable",
+            CodexSyncStatus::Unavailable => "unavailable",
+        };
+        let health_window_id = result.window_id.as_deref().unwrap_or(&window_id);
+        service.record_provider_sync_health(
+            health_window_id,
+            status,
+            result.message.as_deref(),
+            now,
+        )?;
+        Ok(result)
     })
 }
 

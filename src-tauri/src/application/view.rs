@@ -28,6 +28,15 @@ pub struct QuotaSourceSummary {
     pub is_active: bool,
     pub provider_managed: bool,
     pub last_synced_at: Option<i64>,
+    pub sync_health: Option<ProviderSyncHealthSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSyncHealthSummary {
+    pub status: String,
+    pub message: Option<String>,
+    pub checked_at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

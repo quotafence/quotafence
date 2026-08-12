@@ -76,6 +76,10 @@ impl Database {
         super::CodexProtectionEventRepository::new(&self.connection)
     }
 
+    pub fn provider_sync_health(&self) -> super::ProviderSyncHealthRepository<'_> {
+        super::ProviderSyncHealthRepository::new(&self.connection)
+    }
+
     pub fn schema_version(&self) -> StorageResult<i64> {
         Ok(self.connection.query_row(
             "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
