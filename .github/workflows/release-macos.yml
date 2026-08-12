@@ -107,7 +107,12 @@ jobs:
             src-tauri/target/x86_64-apple-darwin/release/aqm \
             -output src-tauri/target/universal-apple-darwin/release/aqm
 
-      - name: Build universal app and DMG
+      - name: Build ad-hoc universal app and DMG
+        if: env.AQM_DEVELOPER_SIGNING == 'false'
+        run: npm run tauri -- build --target universal-apple-darwin --bundles app,dmg
+
+      - name: Build Developer ID universal app and DMG
+        if: env.AQM_DEVELOPER_SIGNING == 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
