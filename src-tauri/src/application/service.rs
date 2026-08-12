@@ -1331,6 +1331,27 @@ impl QuotaService {
                 .saturating_sub(root_attributed_usage)
                 .max(unattributed.value())
         };
+        if provider_snapshot.is_some() && root_attributed_usage > effective_observed_usage {
+            reconcile_root_attribution(
+                &mut snapshots,
+                effective_observed_usage,
+                root_attributed_usage,
+                &mut |scope_id, limit, attributed_usage, active_reservations| {
+                    let unit = QuotaUnit::new(window.capacity().unit().as_str())?;
+                    let balance = QuotaBalance::new(
+                        QuotaAmount::new(limit, unit.clone()),
+                        QuotaAmount::new(attributed_usage, unit.clone()),
+                        QuotaAmount::new(active_reservations, unit),
+                    )?;
+                    let (policy, _) = self.effective_policy(&ScopeId::new(scope_id)?)?;
+                    Ok((
+                        to_view_integer(balance.remaining(), "allocation remaining")?,
+                        balance.spendable().value(),
+                        policy.evaluate(&balance),
+                    ))
+                },
+            )?;
+        }
         let provider_committed = effective_observed_usage
             .checked_add(root_active_reservations)
             .ok_or_else(arithmetic_overflow)?;
@@ -1582,6 +1603,62 @@ impl QuotaService {
             dashboard,
         })
     }
+}
+
+fn reconcile_root_attribution(
+    snapshots: &mut [AllocationSnapshot],
+    effective_total: u64,
+    raw_total: u64,
+    update_balance: &mut impl FnMut(
+        String,
+        u64,
+        u64,
+        u64,
+    )
+        -> ApplicationResult<(i64, u64, crate::domain::EnforcementDecision)>,
+) -> ApplicationResult<()> {
+    if raw_total == 0 || effective_total >= raw_total {
+        return Ok(());
+    }
+
+    let mut shares = snapshots
+        .iter()
+        .enumerate()
+        .filter(|(_, snapshot)| snapshot.parent_id.is_none() && snapshot.attributed_usage > 0)
+        .map(|(index, snapshot)| {
+            let numerator = u128::from(snapshot.attributed_usage) * u128::from(effective_total);
+            (
+                index,
+                u64::try_from(numerator / u128::from(raw_total)).unwrap_or(0),
+                numerator % u128::from(raw_total),
+            )
+        })
+        .collect::<Vec<_>>();
+    let assigned = shares.iter().map(|(_, value, _)| *value).sum::<u64>();
+    let mut remainder = effective_total.saturating_sub(assigned);
+    shares.sort_by(|left, right| right.2.cmp(&left.2).then_with(|| left.0.cmp(&right.0)));
+    for (_, value, _) in &mut shares {
+        if remainder == 0 {
+            break;
+        }
+        *value += 1;
+        remainder -= 1;
+    }
+
+    for (index, attributed_usage, _) in shares {
+        let snapshot = &mut snapshots[index];
+        let (remaining, spendable, decision) = update_balance(
+            snapshot.scope_id.clone(),
+            snapshot.limit,
+            attributed_usage,
+            snapshot.active_reservations,
+        )?;
+        snapshot.attributed_usage = attributed_usage;
+        snapshot.remaining = remaining;
+        snapshot.spendable = spendable;
+        snapshot.decision = decision;
+    }
+    Ok(())
 }
 
 fn arithmetic_overflow() -> ApplicationError {
@@ -2377,7 +2454,10 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(snapshot(&dashboard, "project-a").attributed_usage, 52);
+        let project = snapshot(&dashboard, "project-a");
+        assert_eq!(project.attributed_usage, 37);
+        assert_eq!(project.remaining, 33);
+        assert_eq!(project.spendable, 33);
         assert_eq!(dashboard.window.unattributed_usage, 0);
         assert_eq!(dashboard.window.provider_remaining, 63);
         assert_eq!(dashboard.window.provider_spendable, 63);
