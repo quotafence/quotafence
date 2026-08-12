@@ -139,6 +139,14 @@ must not disappear without explanation.
 
 Local attribution and provider totals are separate observations:
 
+When accumulated local workspace attribution exceeds the latest authoritative
+provider total, the application retains the immutable raw events for audit but
+normalizes their effective shares to the provider total for display, funding,
+and admission. With multiple attributed workspaces, integer shares are scaled
+proportionally and deterministic remainder points are assigned by largest
+fractional remainder. A stale local observation therefore cannot falsely
+exhaust a workspace after a provider correction or reset.
+
 1. Read the last provider checkpoint.
 2. Read the latest provider total for the same pool and window.
 3. Compare the provider delta with locally attributed events.

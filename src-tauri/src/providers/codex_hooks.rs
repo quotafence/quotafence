@@ -1421,7 +1421,7 @@ mod tests {
             hook_event_name: "UserPromptSubmit".to_owned(),
         };
 
-        let outcome = handle_event(&mut service, &event, 3_000, || Some(detection(10))).unwrap();
+        let outcome = handle_event(&mut service, &event, 3_000, || Some(detection(20))).unwrap();
 
         assert!(matches!(
             outcome,
@@ -1438,6 +1438,40 @@ mod tests {
             .unwrap()
             .is_none());
 
+        std::fs::remove_dir(folder).unwrap();
+    }
+
+    #[test]
+    fn stale_local_attribution_does_not_false_block_a_workspace() {
+        let folder = temporary_folder("provider-corrected");
+        let canonical_path = canonicalize_workspace_path(&folder).unwrap();
+        let mut service = protected_service(&folder);
+        service
+            .record_usage(RecordUsage {
+                id: "stale-local-attribution".to_owned(),
+                window_id: "codex-window".to_owned(),
+                scope_id: Some("workspace-a".to_owned()),
+                amount: 20,
+                unit: "percent".to_owned(),
+                observed_at: 2_500,
+                source: UsageSource::LocalMeasured,
+                confidence: Confidence::Observed,
+                reservation_id: None,
+            })
+            .unwrap();
+        let event = CodexHookEvent {
+            session_id: "session-provider-corrected".to_owned(),
+            turn_id: Some("turn-provider-corrected".to_owned()),
+            cwd: canonical_path,
+            hook_event_name: "UserPromptSubmit".to_owned(),
+        };
+
+        let outcome = handle_event(&mut service, &event, 3_000, || Some(detection(10))).unwrap();
+
+        assert!(matches!(
+            outcome,
+            CodexHookOutcome::ObservationStarted { .. }
+        ));
         std::fs::remove_dir(folder).unwrap();
     }
 
