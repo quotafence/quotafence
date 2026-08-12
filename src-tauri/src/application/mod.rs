@@ -24,7 +24,8 @@ pub use view::{
     DesktopUsageReconciliationStatus, ForecastConfidence, LocalState, ManagedSessionLaunch,
     ManagedSessionReconciliation, ManagedSessionReconciliationStatus, PolicySummary,
     ProviderSyncHealthSummary, ProviderTurnObservationSummary, QuotaDashboard, QuotaHistoryPoint,
-    QuotaSourceSummary, ScopeSummary, SyncProviderQuotaResult, TurnObservationStartResult,
-    TurnObservationStartStatus, TurnReconciliationResult, TurnReconciliationStatus, WindowSummary,
-    WorkspaceAllocationContext, WorkspaceBindingSummary, WorkspaceContext, WorkspacePolicySummary,
+    QuotaSourceSummary, ScopeSummary, SyncProviderQuotaResult, TurnObservationHealthSummary,
+    TurnObservationStartResult, TurnObservationStartStatus, TurnReconciliationResult,
+    TurnReconciliationStatus, WindowSummary, WorkspaceAllocationContext, WorkspaceBindingSummary,
+    WorkspaceContext, WorkspacePolicySummary,
 };

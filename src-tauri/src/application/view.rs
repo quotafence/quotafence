@@ -29,6 +29,7 @@ pub struct QuotaSourceSummary {
     pub provider_managed: bool,
     pub last_synced_at: Option<i64>,
     pub sync_health: Option<ProviderSyncHealthSummary>,
+    pub turn_health: Option<TurnObservationHealthSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -37,6 +38,15 @@ pub struct ProviderSyncHealthSummary {
     pub status: String,
     pub message: Option<String>,
     pub checked_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnObservationHealthSummary {
+    pub pending_count: u64,
+    pub contended_count: u64,
+    pub oldest_started_at: Option<i64>,
+    pub stale_count: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

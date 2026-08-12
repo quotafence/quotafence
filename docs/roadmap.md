@@ -245,8 +245,10 @@ block a mapped workspace.
 The diagnostic view and explicit health check are implemented. Provider sync
 health is persisted per quota window, so the latest failure remains visible
 after an app restart and is cleared by the next successful checkpoint. The
-remaining M7 work is the real Desktop recovery matrix and fixes discovered by
-that exercise.
+view also reports pending, overlapping, and stale Desktop turn observations so
+missing `Stop` recovery is visible instead of silently degrading attribution.
+The remaining M7 work is the real Desktop recovery matrix and fixes discovered
+by that exercise.
 
 ### Later — Capability-aware routing
 

@@ -99,6 +99,7 @@ export function SettingsPanel({
   const verifiedAt = verifiedCodexProtectionAt(protection, events);
   const observedAt = observedCodexHookAt(protection);
   const desktopTracking = syncResult?.desktopTracking ?? null;
+  const turnHealth = source.turnHealth;
   const desktopHealthy =
     desktopTracking !== null && desktopTracking.status !== "unavailable";
   const integrationHealthy =
@@ -111,6 +112,8 @@ export function SettingsPanel({
     syncIssue !== null ||
     workspaceCount === 0 ||
     desktopTracking?.status === "unavailable" ||
+    (turnHealth?.staleCount ?? 0) > 0 ||
+    (turnHealth?.contendedCount ?? 0) > 0 ||
     protection?.state === "misconfigured";
   const selectedDecisionRange = DECISION_RANGES.find(
     (range) => range.value === decisionRange,
@@ -244,6 +247,18 @@ export function SettingsPanel({
                   : "muted"
             }
             value={desktopTrackingLabel(desktopTracking)}
+          />
+          <IntegrationHealthRow
+            label="Turn recovery"
+            tone={
+              (turnHealth?.staleCount ?? 0) > 0 ||
+              (turnHealth?.contendedCount ?? 0) > 0
+                ? "warning"
+                : (turnHealth?.pendingCount ?? 0) > 0
+                  ? "muted"
+                  : "healthy"
+            }
+            value={turnRecoveryLabel(turnHealth)}
           />
           <IntegrationHealthRow
             label="Workspace mappings"
@@ -550,4 +565,22 @@ function promptGateHealthLabel(
     return "Installed · trust hooks and send a test prompt";
   }
   return "Off · passive tracking only";
+}
+
+function turnRecoveryLabel(
+  health: QuotaSourceSummary["turnHealth"],
+): string {
+  if (!health || health.pendingCount === 0) {
+    return "No pending Codex turns";
+  }
+  if (health.staleCount > 0) {
+    return `${health.staleCount} stale ${health.staleCount === 1 ? "turn" : "turns"}; the next prompt recovers them conservatively`;
+  }
+  if (health.contendedCount > 0) {
+    return `${health.pendingCount} pending; overlapping usage will remain unassigned`;
+  }
+  const age = health.oldestStartedAt
+    ? ` since ${formatRelativeTime(health.oldestStartedAt)}`
+    : "";
+  return `${health.pendingCount} turn ${health.pendingCount === 1 ? "is" : "are"} awaiting reconciliation${age}`;
 }
