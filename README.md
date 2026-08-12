@@ -3,7 +3,8 @@
 Local-first budget guard and routing layer for AI coding agents.
 
 > [!IMPORTANT]
-> Agent Quota Manager is an early local MVP with no stable release. Codex quota
+> Agent Quota Manager `v0.1.0-beta.1` is an early, source-distributed beta for
+> macOS. It is not yet a stable release. Codex quota
 > discovery, checkpoint refresh, reset rollover, and manual allocations work
 > locally. Folder-based workspace mapping plus `aqm context` and the provider-refreshing
 > `aqm admit codex` dry run are implemented. `aqm run codex` now admits,
@@ -102,6 +103,30 @@ deadline. Those dimensions are not assumed to be interchangeable.
 Additional providers, cloud sync, teams, RBAC, billing, and routing are outside
 the current slice. See the [Roadmap](docs/roadmap.md) for implementation gaps,
 milestones, and recommended architecture decisions.
+
+## Beta quick start
+
+The first beta is built from source; signed installers are not published yet.
+
+1. Install the prerequisites listed below, clone the repository, and launch it:
+
+   ```bash
+   npm install
+   npm run tauri -- dev
+   ```
+
+2. Add the detected **Codex** quota source and sync it.
+3. Select a local folder, create an allocation, and drag allocations into the
+   desired protection order.
+4. Open **Settings → Codex Desktop protection**, install the prompt gate, then
+   complete the Codex trust steps shown in the app.
+5. Restart Codex Desktop, submit a test prompt from an allocated folder, and
+   run AQM's integration health check. Do not rely on protection while AQM says
+   it is unverified or degraded.
+
+Read the [Beta guide](docs/beta.md) before relying on AQM for important work.
+It documents what the beta can enforce, what remains approximate, its privacy
+boundary, and the diagnostic information to include in bug reports.
 
 ## Architecture at a glance
 
