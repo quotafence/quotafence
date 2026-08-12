@@ -1,0 +1,57 @@
+name: Incorrect prompt block
+description: Report an allocated Codex workspace being blocked unexpectedly.
+title: "[False block]: "
+labels: ["bug", "enforcement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If work is urgent, disable Codex Desktop protection in AQM Settings while investigating. Do not share prompt text, credentials, transcripts, source code, or database files.
+  - type: input
+    id: aqm_version
+    attributes:
+      label: AQM version
+      placeholder: 0.1.0-beta.1
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: macOS version, Mac architecture, and Codex version.
+    validations:
+      required: true
+  - type: textarea
+    id: block_message
+    attributes:
+      label: Exact block message with private paths redacted
+    validations:
+      required: true
+  - type: textarea
+    id: state
+    attributes:
+      label: Allocation and window state
+      description: Include allocation target/remaining, priority, total quota remaining, reset time, and protection health.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Include whether Codex was restarted and whether this was a new or existing task.
+    validations:
+      required: true
+  - type: checkboxes
+    id: reset
+    attributes:
+      label: Recovery checks
+      options:
+        - label: I synced AQM after the latest provider reset.
+        - label: I fully quit and reopened Codex after changing hooks.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I removed credentials, prompts, transcripts, source code, database files, and private path details.
+          required: true

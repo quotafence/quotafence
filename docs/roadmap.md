@@ -223,7 +223,7 @@ coverage. The dashboard shows the observation duration and confidence; sparse,
 mostly unattributed, pre-window, and expired-window states omit the burn rate
 and depletion timestamp. Codex aggregate checkpoints cap confidence at medium.
 
-### M7 — Integration health and beta hardening — in progress
+### M7 — Integration health and beta hardening — complete
 
 - Combine provider checkpoint, Desktop metadata scan, workspace mappings, and
   prompt-gate status into one diagnostic view.
@@ -247,11 +247,25 @@ health is persisted per quota window, so the latest failure remains visible
 after an app restart and is cleared by the next successful checkpoint. The
 view also reports pending, overlapping, and stale Desktop turn observations so
 missing `Stop` recovery is visible instead of silently degrading attribution.
-The remaining M7 work is the real Desktop recovery matrix and fixes discovered
-by that exercise.
+The real Desktop recovery matrix is complete for the first macOS beta. It
+covers reset rollover, missing `Stop`, helper working directories, app restart,
+disabled hooks, concurrent work, provider corrections, and UI-generated source
+identifiers. Newly discovered regressions remain release blockers rather than
+being hidden by the milestone status.
 
 The current automated and live results are tracked in the
 [Codex Desktop beta recovery matrix](beta-recovery-matrix.md).
+
+### Beta release readiness — current
+
+- Publish honest source-build onboarding, privacy boundaries, and known limits.
+- Keep JavaScript, Rust, and Tauri versions aligned for `v0.1.0-beta.1`.
+- Provide structured issue forms for sync, attribution, and false-block bugs.
+- Require the full frontend and Rust validation suite before tagging.
+
+Signed artifacts, automatic updates, checksums, and a GitHub release workflow
+belong to the following release-engineering milestone; they are not implied by
+the source-distributed beta.
 
 ### Later — Capability-aware routing
 

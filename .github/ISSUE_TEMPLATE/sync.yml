@@ -1,0 +1,48 @@
+name: Quota sync problem
+description: Report a failed, stale, or incorrect Codex quota checkpoint.
+title: "[Sync]: "
+labels: ["bug", "sync"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not attach credentials, prompts, transcripts, source code, or database files. Redact usernames and private folder names from diagnostics.
+  - type: input
+    id: aqm_version
+    attributes:
+      label: AQM version
+      placeholder: 0.1.0-beta.1
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: macOS version, Mac architecture, and Codex version.
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: Expected and actual quota
+      description: Include percentage, reset time, last successful sync, and the visible error.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: health
+    attributes:
+      label: Redacted integration health
+      description: Paste only the relevant AQM health fields after removing private paths.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I removed credentials, prompts, transcripts, source code, database files, and private path details.
+          required: true
