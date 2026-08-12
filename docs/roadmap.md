@@ -250,6 +250,9 @@ missing `Stop` recovery is visible instead of silently degrading attribution.
 The remaining M7 work is the real Desktop recovery matrix and fixes discovered
 by that exercise.
 
+The current automated and live results are tracked in the
+[Codex Desktop beta recovery matrix](beta-recovery-matrix.md).
+
 ### Later — Capability-aware routing
 
 Only after M1–M6 work end to end should AQM evaluate another provider. Routing
