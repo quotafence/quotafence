@@ -4,6 +4,9 @@ Provider adapters isolate subscription-specific behavior from the quota core.
 Codex is the first implemented adapter. AQM will complete its managed workflow
 before using another provider to generalize the contract.
 
+The evidence and implementation order for a second provider are tracked in the
+[provider capability matrix](provider-capability-matrix.md).
+
 ## Capability discovery
 
 An adapter reports capabilities at runtime rather than relying on a hard-coded
@@ -141,11 +144,10 @@ unattributed; invisible external usage is why this signal is not
 provider-confirmed.
 
 Workspace policy overrides are now persisted and applied to dry-run admission,
-managed launch, and the trusted Desktop prompt gate. For the hook, stop and
-exhausted protected capacity mean refusing the next prompt. Confirmation still
-requires an explicit override for managed CLI admission. For Desktop, the hook
-persists a short-lived approval request, blocks the original prompt, and allows
-one matching retry only after the user approves it in AQM. Aggregate Codex
+managed launch, and the trusted Desktop prompt gate. Warning is advisory; Stop
+and exhausted protected capacity mean refusing the next prompt or managed
+launch. Legacy confirmation fields remain readable for beta database
+compatibility but are not part of the active policy workflow. Aggregate Codex
 checkpoints are not timely enough to justify live termination.
 
 Only after that slice is stable should the adapter contract be generalized from
