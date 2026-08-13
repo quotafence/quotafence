@@ -148,9 +148,9 @@ launches all resolve that same effective policy.
 at this layer. A confirmation is enforced and audited only for an actual
 AQM-managed launch; a stop refuses that launch. The trusted Desktop prompt gate
 uses priority-funded `protected_now` plus the allocation-specific result and
-rejects stop before the prompt starts. Because Codex Desktop has no interactive
-approval channel, `require_confirmation` is advisory there rather than an
-undocumented early stop. Usage
+rejects stop before the prompt starts. A Desktop `require_confirmation` result
+creates a short-lived request; approval is scoped to session, workspace, and
+window, then atomically consumed by one retried prompt. Usage
 outside a trusted AQM gate can still reduce real provider capacity and therefore
 current protection; AQM cannot recreate capacity already consumed. A dry run
 has no audit side effect, and an already-running Codex turn is not terminated.

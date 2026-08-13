@@ -13,8 +13,8 @@ use crate::{
     storage::{
         BeginObservationStatus, CodexProtectionEventOutcome, Database, DesktopReconciliationStatus,
         DesktopThreadObservation, ManagedSessionReconciliationOutcome,
-        ManagedSessionReconciliationResult, ManagedSessionStatus, NewCodexProtectionEvent,
-        NewManagedSession, ProviderQuotaSnapshot, ProviderTurnObservation,
+        ManagedSessionReconciliationResult, ManagedSessionStatus, NewCodexDesktopConfirmation,
+        NewCodexProtectionEvent, NewManagedSession, ProviderQuotaSnapshot, ProviderTurnObservation,
         ReconcileObservationResult, StorageError, WorkspaceBinding, WorkspacePolicy,
     },
     workspace::{contains_path, path_depth},
@@ -25,16 +25,18 @@ use super::{
     error::to_view_integer, AbandonProviderSessionObservations, AbandonProviderTurnObservation,
     ActiveManagedSession, AdmissionAssessment, AllocationSnapshot, ApplicationError,
     ApplicationResult, ArchiveQuotaSource, BeginProviderTurnObservation, BindWorkspace,
-    CodexProtectionEventSummary, CreateAccount, CreateAllocatedScope, CreateAllocatedWorkspace,
-    CreateProvider, CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow, CreateScope,
-    DesktopUsageReconciliation, DesktopUsageReconciliationStatus, EvaluateWorkspaceAdmission,
-    FinishManagedSession, GetCodexProtectionEvents, GetLocalState, GetProviderTurnObservation,
-    GetQuotaDashboard, GetWorkspaceContext, GetWorkspacePolicy, LocalState, ManagedSessionLaunch,
-    ManagedSessionOutcome, ManagedSessionReconciliation, ManagedSessionReconciliationStatus,
-    MarkManagedSessionRunning, PolicySummary, PrepareManagedSession, ProviderSyncHealthSummary,
-    ProviderTurnObservationSummary, QuotaDashboard, QuotaHistoryPoint, QuotaSourceSummary,
-    ReconcileProviderTurnObservation, RecordCodexProtectionEvent, RecordUsage, ReleaseReservation,
-    RemoveWorkspaceAllocation, ReserveQuota, ResetWorkspacePolicy, ScopeSummary, SetAllocation,
+    CodexDesktopConfirmationSummary, CodexProtectionEventSummary, CreateAccount,
+    CreateAllocatedScope, CreateAllocatedWorkspace, CreateProvider, CreateQuotaPool,
+    CreateQuotaSource, CreateQuotaWindow, CreateScope, DesktopUsageReconciliation,
+    DesktopUsageReconciliationStatus, EvaluateWorkspaceAdmission, FinishManagedSession,
+    GetCodexProtectionEvents, GetLocalState, GetPendingCodexConfirmations,
+    GetProviderTurnObservation, GetQuotaDashboard, GetWorkspaceContext, GetWorkspacePolicy,
+    LocalState, ManagedSessionLaunch, ManagedSessionOutcome, ManagedSessionReconciliation,
+    ManagedSessionReconciliationStatus, MarkManagedSessionRunning, PolicySummary,
+    PrepareManagedSession, ProviderSyncHealthSummary, ProviderTurnObservationSummary,
+    QuotaDashboard, QuotaHistoryPoint, QuotaSourceSummary, ReconcileProviderTurnObservation,
+    RecordCodexProtectionEvent, RecordUsage, ReleaseReservation, RemoveWorkspaceAllocation,
+    ReserveQuota, ResetWorkspacePolicy, ResolveCodexConfirmation, ScopeSummary, SetAllocation,
     SetAllocationPriorityOrder, SetWorkspacePolicy, SyncProviderQuota, SyncProviderQuotaResult,
     TurnObservationHealthSummary, TurnObservationStartResult, TurnObservationStartStatus,
     TurnReconciliationResult, TurnReconciliationStatus, WindowSummary, WorkspaceAllocationContext,
@@ -509,6 +511,59 @@ impl QuotaService {
                 occurred_at: event.occurred_at,
             })
             .collect())
+    }
+
+    pub fn request_codex_desktop_confirmation(
+        &mut self,
+        request: NewCodexDesktopConfirmation,
+    ) -> ApplicationResult<()> {
+        self.database
+            .codex_protection_events()
+            .request_desktop_confirmation(&request)?;
+        Ok(())
+    }
+
+    pub fn consume_codex_desktop_approval(
+        &mut self,
+        session_id: &str,
+        scope_id: &str,
+        window_id: &str,
+        at: i64,
+    ) -> ApplicationResult<bool> {
+        Ok(self
+            .database
+            .codex_protection_events()
+            .consume_desktop_approval(session_id, scope_id, window_id, at)?)
+    }
+
+    pub fn pending_codex_confirmations(
+        &self,
+        command: GetPendingCodexConfirmations,
+    ) -> ApplicationResult<Vec<CodexDesktopConfirmationSummary>> {
+        Ok(self
+            .database
+            .codex_protection_events()
+            .list_pending_desktop_confirmations(command.at)?
+            .into_iter()
+            .map(|confirmation| CodexDesktopConfirmationSummary {
+                id: confirmation.id,
+                workspace_name: confirmation.workspace_name,
+                canonical_path: confirmation.canonical_path,
+                requested_at: confirmation.requested_at,
+                expires_at: confirmation.expires_at,
+            })
+            .collect())
+    }
+
+    pub fn resolve_codex_confirmation(
+        &mut self,
+        command: ResolveCodexConfirmation,
+    ) -> ApplicationResult<bool> {
+        let id = required_request_text(command.id, "confirmation ID")?;
+        Ok(self
+            .database
+            .codex_protection_events()
+            .resolve_desktop_confirmation(&id, command.approved, command.resolved_at)?)
     }
 
     pub fn codex_session_workspace(&self, session_id: &str) -> ApplicationResult<Option<String>> {

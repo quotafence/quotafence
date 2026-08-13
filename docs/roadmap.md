@@ -22,7 +22,7 @@ This queue is the source of truth for what maintainers intend to ship next.
 Items are ordered by user risk and vertical product value. A later item must not
 delay a correctness or false-block fix above it.
 
-### P0 — Make Desktop confirmation semantics honest — next
+### P0 — Make Desktop confirmation semantics honest — complete
 
 Problem: the managed CLI can explicitly accept a confirmation-required
 decision, but a Codex Desktop hook has no interactive confirmation channel.
@@ -33,8 +33,6 @@ threshold behave like an undocumented early stop.
 - Do not block a Desktop prompt at `Confirm` until AQM provides a real approval
   interaction.
 - Keep `Stop` as the actual blocking boundary.
-- Default new Codex Desktop policies to `Warn 80%`, `Confirm off`, and
-  `Stop 100%` while confirmation is unavailable.
 - Explain capability-specific behavior in Settings and policy help text.
 - Preserve managed CLI confirmation and its audited `--yes` override.
 
@@ -43,7 +41,7 @@ boundary, blocks at stop, and the managed CLI still requires explicit
 confirmation. Existing customized policies must migrate without silent data
 loss.
 
-### P1 — Add real temporary approval for Codex Desktop
+### P1 — Add real temporary approval for Codex Desktop — in progress
 
 - Present `Allow once`, `Allow this session`, and `Cancel` in AQM when a mapped
   workspace reaches its confirmation boundary.
@@ -53,6 +51,11 @@ loss.
   integration as active protection.
 - Restore `Confirm` as an available default only after this flow works end to
   end in Codex Desktop.
+
+The first vertical slice uses `Allow once` and `Cancel`. Codex blocks the
+original prompt, AQM presents the pending request, and the user retries after
+approval. `Allow this session` remains follow-up work so its lifecycle and
+expiry semantics can be verified independently.
 
 Done when: a real Desktop prompt pauses at confirm, one-time approval admits
 exactly one prompt, session approval expires predictably, cancel blocks, and

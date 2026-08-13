@@ -333,6 +333,16 @@ pub struct CodexProtectionEventSummary {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CodexDesktopConfirmationSummary {
+    pub id: String,
+    pub workspace_name: String,
+    pub canonical_path: String,
+    pub requested_at: i64,
+    pub expires_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AllocationSnapshot {
     pub scope_id: String,
     pub parent_id: Option<String>,

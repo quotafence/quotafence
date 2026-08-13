@@ -216,6 +216,20 @@ pub struct GetCodexProtectionEvents {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GetPendingCodexConfirmations {
+    pub at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolveCodexConfirmation {
+    pub id: String,
+    pub approved: bool,
+    pub resolved_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateScope {
     pub id: String,
     pub parent_id: Option<String>,

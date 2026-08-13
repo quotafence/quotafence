@@ -5,6 +5,27 @@ use super::StorageResult;
 const RETAINED_EVENT_COUNT: u64 = 100;
 const RETAINED_RECEIPT_COUNT: u64 = 200;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewCodexDesktopConfirmation {
+    pub id: String,
+    pub session_id: String,
+    pub turn_id: String,
+    pub scope_id: String,
+    pub window_id: String,
+    pub canonical_path: String,
+    pub requested_at: i64,
+    pub expires_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodexDesktopConfirmation {
+    pub id: String,
+    pub workspace_name: String,
+    pub canonical_path: String,
+    pub requested_at: i64,
+    pub expires_at: i64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodexHookReceiptStatus {
     Received,
@@ -285,6 +306,109 @@ impl<'connection> CodexProtectionEventRepository<'connection> {
             )
             .transpose()
     }
+
+    pub fn consume_desktop_approval(
+        &self,
+        session_id: &str,
+        scope_id: &str,
+        window_id: &str,
+        now: i64,
+    ) -> StorageResult<bool> {
+        let updated = self.connection.execute(
+            "UPDATE codex_desktop_confirmations
+             SET status = 'consumed', resolved_at = ?4
+             WHERE id = (
+                SELECT id FROM codex_desktop_confirmations
+                WHERE session_id = ?1 AND scope_id = ?2 AND window_id = ?3
+                  AND status = 'approved' AND expires_at > ?4
+                ORDER BY resolved_at DESC LIMIT 1
+             )",
+            params![session_id, scope_id, window_id, now],
+        )?;
+        Ok(updated == 1)
+    }
+
+    pub fn request_desktop_confirmation(
+        &self,
+        request: &NewCodexDesktopConfirmation,
+    ) -> StorageResult<()> {
+        self.connection.execute(
+            "UPDATE codex_desktop_confirmations
+             SET status = 'expired', resolved_at = ?1
+             WHERE status IN ('pending', 'approved') AND expires_at <= ?1",
+            [request.requested_at],
+        )?;
+        self.connection.execute(
+            "INSERT INTO codex_desktop_confirmations (
+                id, session_id, turn_id, scope_id, window_id, canonical_path,
+                status, requested_at, expires_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+                turn_id = excluded.turn_id,
+                canonical_path = excluded.canonical_path,
+                status = 'pending',
+                requested_at = excluded.requested_at,
+                resolved_at = NULL,
+                expires_at = excluded.expires_at
+             WHERE codex_desktop_confirmations.status IN ('denied', 'consumed', 'expired')",
+            params![
+                request.id,
+                request.session_id,
+                request.turn_id,
+                request.scope_id,
+                request.window_id,
+                request.canonical_path,
+                request.requested_at,
+                request.expires_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_pending_desktop_confirmations(
+        &self,
+        now: i64,
+    ) -> StorageResult<Vec<CodexDesktopConfirmation>> {
+        self.connection.execute(
+            "UPDATE codex_desktop_confirmations
+             SET status = 'expired', resolved_at = ?1
+             WHERE status = 'pending' AND expires_at <= ?1",
+            [now],
+        )?;
+        let mut statement = self.connection.prepare(
+            "SELECT confirmation.id, scope.display_name, confirmation.canonical_path,
+                    confirmation.requested_at, confirmation.expires_at
+             FROM codex_desktop_confirmations confirmation
+             JOIN scopes scope ON scope.id = confirmation.scope_id
+             WHERE confirmation.status = 'pending' AND confirmation.expires_at > ?1
+             ORDER BY confirmation.requested_at ASC",
+        )?;
+        let rows = statement.query_map([now], |row| {
+            Ok(CodexDesktopConfirmation {
+                id: row.get(0)?,
+                workspace_name: row.get(1)?,
+                canonical_path: row.get(2)?,
+                requested_at: row.get(3)?,
+                expires_at: row.get(4)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn resolve_desktop_confirmation(
+        &self,
+        id: &str,
+        approved: bool,
+        resolved_at: i64,
+    ) -> StorageResult<bool> {
+        let status = if approved { "approved" } else { "denied" };
+        Ok(self.connection.execute(
+            "UPDATE codex_desktop_confirmations
+             SET status = ?2, resolved_at = ?3
+             WHERE id = ?1 AND status = 'pending' AND expires_at > ?3",
+            params![id, status, resolved_at],
+        )? == 1)
+    }
 }
 
 #[cfg(test)]
@@ -376,5 +500,63 @@ mod tests {
             database.codex_protection_events().list_recent(5).unwrap(),
             vec![]
         );
+    }
+
+    #[test]
+    fn desktop_approval_is_scoped_expires_and_is_consumed_once() {
+        let database = seeded_database();
+        let repository = database.codex_protection_events();
+        repository
+            .request_desktop_confirmation(&NewCodexDesktopConfirmation {
+                id: "confirmation-1".to_owned(),
+                session_id: "session-1".to_owned(),
+                turn_id: "turn-1".to_owned(),
+                scope_id: "feature-a".to_owned(),
+                window_id: "week-1".to_owned(),
+                canonical_path: "/code/a".to_owned(),
+                requested_at: 2_000,
+                expires_at: 3_000,
+            })
+            .unwrap();
+
+        assert_eq!(
+            repository
+                .list_pending_desktop_confirmations(2_100)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(repository
+            .resolve_desktop_confirmation("confirmation-1", true, 2_200)
+            .unwrap());
+        assert!(!repository
+            .consume_desktop_approval("other-session", "feature-a", "week-1", 2_300)
+            .unwrap());
+        assert!(repository
+            .consume_desktop_approval("session-1", "feature-a", "week-1", 2_300)
+            .unwrap());
+        assert!(!repository
+            .consume_desktop_approval("session-1", "feature-a", "week-1", 2_400)
+            .unwrap());
+
+        repository
+            .request_desktop_confirmation(&NewCodexDesktopConfirmation {
+                id: "confirmation-expired".to_owned(),
+                session_id: "session-2".to_owned(),
+                turn_id: "turn-2".to_owned(),
+                scope_id: "feature-a".to_owned(),
+                window_id: "week-1".to_owned(),
+                canonical_path: "/code/a".to_owned(),
+                requested_at: 3_000,
+                expires_at: 4_000,
+            })
+            .unwrap();
+        assert!(repository
+            .list_pending_desktop_confirmations(4_001)
+            .unwrap()
+            .is_empty());
+        assert!(!repository
+            .resolve_desktop_confirmation("confirmation-expired", true, 4_001)
+            .unwrap());
     }
 }

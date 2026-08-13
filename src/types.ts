@@ -92,6 +92,14 @@ export type CodexProtectionEvent = {
   occurredAt: number;
 };
 
+export type CodexDesktopConfirmation = {
+  id: string;
+  workspaceName: string;
+  canonicalPath: string;
+  requestedAt: number;
+  expiresAt: number;
+};
+
 export type QuotaSourceSummary = {
   providerId: string;
   providerDisplayName: string;

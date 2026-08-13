@@ -13,11 +13,12 @@ use crate::providers::codex::{self, CodexDetection, CodexSyncResult, CodexSyncSt
 use crate::providers::codex_hooks::{self, CodexProtectionStatus};
 use crate::{
     application::{
-        ArchiveQuotaSource, CodexProtectionEventSummary, CreateAccount, CreateAllocatedWorkspace,
-        CreateProvider, CreateQuotaPool, CreateQuotaSource, CreateQuotaWindow,
-        GetCodexProtectionEvents, GetLocalState, GetQuotaDashboard, LocalState, PolicySummary,
-        QuotaDashboard, ReleaseReservation, RemoveWorkspaceAllocation, ReserveQuota,
-        ResetWorkspacePolicy, SetAllocation, SetAllocationPriorityOrder, SetWorkspacePolicy,
+        ArchiveQuotaSource, CodexDesktopConfirmationSummary, CodexProtectionEventSummary,
+        CreateAccount, CreateAllocatedWorkspace, CreateProvider, CreateQuotaPool,
+        CreateQuotaSource, CreateQuotaWindow, GetCodexProtectionEvents, GetLocalState,
+        GetPendingCodexConfirmations, GetQuotaDashboard, LocalState, PolicySummary, QuotaDashboard,
+        ReleaseReservation, RemoveWorkspaceAllocation, ReserveQuota, ResetWorkspacePolicy,
+        ResolveCodexConfirmation, SetAllocation, SetAllocationPriorityOrder, SetWorkspacePolicy,
     },
     paths::DATABASE_FILENAME,
     workspace::canonicalize_workspace_path,
@@ -235,6 +236,32 @@ pub(crate) fn get_codex_protection_events(
     request: GetCodexProtectionEvents,
 ) -> IpcResult<Vec<CodexProtectionEventSummary>> {
     state.execute(|service| service.codex_protection_events(request))
+}
+
+#[tauri::command]
+pub(crate) fn get_pending_codex_confirmations(
+    state: State<'_, AppState>,
+) -> IpcResult<Vec<CodexDesktopConfirmationSummary>> {
+    state.execute(|service| {
+        service.pending_codex_confirmations(GetPendingCodexConfirmations {
+            at: current_time_millis(),
+        })
+    })
+}
+
+#[tauri::command]
+pub(crate) fn resolve_codex_confirmation(
+    state: State<'_, AppState>,
+    id: String,
+    approved: bool,
+) -> IpcResult<bool> {
+    state.execute(|service| {
+        service.resolve_codex_confirmation(ResolveCodexConfirmation {
+            id,
+            approved,
+            resolved_at: current_time_millis(),
+        })
+    })
 }
 
 fn current_time_millis() -> i64 {
