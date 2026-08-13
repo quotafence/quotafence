@@ -30,6 +30,7 @@ pub fn run() {
             commands::get_quota_dashboard,
             commands::get_local_state,
             commands::detect_codex_quota,
+            commands::probe_claude_code,
             commands::sync_codex_quota,
             commands::get_codex_protection_status,
             commands::install_codex_protection,
