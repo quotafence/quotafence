@@ -386,12 +386,13 @@ function AllocationRow({
             {allocation.protectedNow > 0 ? ` · ${remainingLabel}` : null}
           </span>
           <span>
+            {formatAmount(allocation.attributedUsage, unit)} tracked used
             {overage > 0 ? (
               <strong className="allocation-overage">
-                {formatAmount(overage, unit)} over allocation
+                {` · ${formatAmount(overage, unit)} over allocation`}
               </strong>
             ) : (
-              <>{remainingPercent}% of allocation left</>
+              <> · {remainingPercent}% of allocation left</>
             )}
           </span>
         </div>
@@ -593,6 +594,21 @@ export function Dashboard({
     0,
     quotaWindow.capacity - quotaWindow.providerSpendable,
   );
+  const attributedUsage = dashboard.allocations.reduce(
+    (total, allocation) => total + allocation.attributedUsage,
+    0,
+  );
+  const turnHealth = source.turnHealth;
+  const attributionIssue =
+    (turnHealth?.contendedCount ?? 0) > 0
+      ? `${turnHealth?.contendedCount} overlapping ${turnHealth?.contendedCount === 1 ? "turn is" : "turns are"} being kept unassigned rather than guessed.`
+      : (turnHealth?.staleCount ?? 0) > 0
+        ? `${turnHealth?.staleCount} unfinished ${turnHealth?.staleCount === 1 ? "turn needs" : "turns need"} conservative recovery after a missing lifecycle event.`
+        : quotaWindow.unattributedUsage > 0
+          ? "Some provider usage could not be tied safely to one allocated folder."
+          : (turnHealth?.pendingCount ?? 0) > 0
+            ? `${turnHealth?.pendingCount} ${turnHealth?.pendingCount === 1 ? "turn is" : "turns are"} waiting for a closing checkpoint.`
+            : "All observed usage currently has a clear attribution state.";
   const percentOfWindow = (amount: number) =>
     quotaWindow.capacity
       ? Math.min(100, Math.max(0, (amount / quotaWindow.capacity) * 100))
@@ -1030,6 +1046,44 @@ export function Dashboard({
                     </dl>
                   </div>
                 </article>
+              </section>
+
+              <section className="attribution-diagnostics dashboard-block">
+                <div className="attribution-diagnostics-heading">
+                  <div>
+                    <span className="block-kicker">Attribution</span>
+                    <h2>Where provider usage went</h2>
+                  </div>
+                  <p>{attributionIssue}</p>
+                </div>
+                <dl>
+                  <div>
+                    <dt>Tracked to folders</dt>
+                    <dd>{formatAmount(attributedUsage, quotaWindow.unit)}</dd>
+                    <small>Debited from matching allocations</small>
+                  </div>
+                  <div>
+                    <dt>Unassigned usage</dt>
+                    <dd>
+                      {formatAmount(
+                        quotaWindow.unattributedUsage,
+                        quotaWindow.unit,
+                      )}
+                    </dd>
+                    <small>Reduces total quota, not a guessed folder</small>
+                  </div>
+                  <div>
+                    <dt>Open observations</dt>
+                    <dd>{turnHealth?.pendingCount ?? 0}</dd>
+                    <small>
+                      {(turnHealth?.contendedCount ?? 0) > 0
+                        ? `${turnHealth?.contendedCount} overlapping`
+                        : (turnHealth?.staleCount ?? 0) > 0
+                          ? `${turnHealth?.staleCount} stale`
+                          : "Awaiting safe reconciliation"}
+                    </small>
+                  </div>
+                </dl>
               </section>
 
               <section className="workspace-budget-section dashboard-block">
