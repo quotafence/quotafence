@@ -6,46 +6,37 @@ import {
   type PointerEvent,
 } from "react";
 
-type ThresholdKey = "warn" | "confirm" | "stop";
+type ThresholdKey = "warn" | "stop";
 
 type PolicyThresholdControlProps = {
   warnAt: string;
-  confirmAt: string;
   stopAt: string;
   onWarnChange: (value: string) => void;
-  onConfirmChange: (value: string) => void;
   onStopChange: (value: string) => void;
 };
 
 export function PolicyThresholdControl({
   warnAt,
-  confirmAt,
   stopAt,
   onWarnChange,
-  onConfirmChange,
   onStopChange,
 }: PolicyThresholdControlProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState<ThresholdKey | null>(null);
   const values = {
     warn: optionalPercent(warnAt),
-    confirm: optionalPercent(confirmAt),
     stop: optionalPercent(stopAt),
   };
   const setters = {
     warn: onWarnChange,
-    confirm: onConfirmChange,
     stop: onStopChange,
   };
 
   function bounds(key: ThresholdKey): [number, number] {
     if (key === "warn") {
-      return [0.01, values.confirm ?? values.stop ?? 100];
+      return [0.01, values.stop ?? 100];
     }
-    if (key === "confirm") {
-      return [values.warn ?? 0.01, values.stop ?? 100];
-    }
-    return [values.confirm ?? values.warn ?? 0.01, 100];
+    return [values.warn ?? 0.01, 100];
   }
 
   function setThreshold(key: ThresholdKey, next: number) {
@@ -123,7 +114,7 @@ export function PolicyThresholdControl({
 
   const trackStyle = {
     "--warn-at": `${values.warn ?? 0}%`,
-    "--confirm-at": `${values.confirm ?? values.warn ?? 0}%`,
+    "--confirm-at": `${values.warn ?? 0}%`,
     "--stop-at": `${values.stop ?? 100}%`,
   } as CSSProperties;
 
@@ -176,27 +167,20 @@ export function PolicyThresholdControl({
           label="Warn"
           value={warnAt}
           min={0.01}
-          max={values.confirm ?? values.stop ?? 100}
-          onChange={onWarnChange}
-        />
-        <ThresholdInput
-          label="Confirm"
-          value={confirmAt}
-          min={values.warn ?? 0.01}
           max={values.stop ?? 100}
-          onChange={onConfirmChange}
+          onChange={onWarnChange}
         />
         <ThresholdInput
           label="Stop"
           value={stopAt}
-          min={values.confirm ?? values.warn ?? 0.01}
+          min={values.warn ?? 0.01}
           max={100}
           onChange={onStopChange}
         />
       </div>
       <p className="policy-threshold-help">
         Drag a marker in whole percentages, or type an exact value. Thresholds
-        stay ordered: Warn ≤ Confirm ≤ Stop. Clear a value to disable it.
+        stay ordered: Warn ≤ Stop. Clear a value to disable it.
       </p>
     </div>
   );

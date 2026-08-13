@@ -2876,14 +2876,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(assessment.allocation_decision, EnforcementDecision::Allow);
-        assert_eq!(
-            assessment.provider_decision,
-            EnforcementDecision::RequireConfirmation
-        );
-        assert_eq!(
-            assessment.decision,
-            EnforcementDecision::RequireConfirmation
-        );
+        assert_eq!(assessment.provider_decision, EnforcementDecision::Warn);
+        assert_eq!(assessment.decision, EnforcementDecision::Warn);
         assert_eq!(assessment.allocation_remaining, 30);
         assert_eq!(assessment.provider_remaining, 5);
     }
@@ -3058,7 +3052,7 @@ mod tests {
     }
 
     #[test]
-    fn managed_confirmation_override_is_required_and_audited_atomically() {
+    fn legacy_confirmation_threshold_is_ignored_without_an_audit() {
         let mut service = managed_workspace_service();
         service
             .set_workspace_policy(SetWorkspacePolicy {
@@ -3070,50 +3064,25 @@ mod tests {
             })
             .unwrap();
 
-        let refused = service.prepare_managed_session(PrepareManagedSession {
-            id: "session-refused".to_owned(),
-            reservation_id: "reservation-refused".to_owned(),
-            canonical_path: "/code/workspace-a".to_owned(),
-            provider_id: "codex".to_owned(),
-            assume_yes: false,
-            admitted_at: 2_000,
-            expires_at: 8_000,
-            supervisor_pid: 42,
-        });
-        assert!(refused.unwrap_err().to_string().contains("--yes"));
+        let launch = service
+            .prepare_managed_session(PrepareManagedSession {
+                id: "session-legacy-confirm".to_owned(),
+                reservation_id: "reservation-legacy-confirm".to_owned(),
+                canonical_path: "/code/workspace-a".to_owned(),
+                provider_id: "codex".to_owned(),
+                assume_yes: false,
+                admitted_at: 2_000,
+                expires_at: 8_000,
+                supervisor_pid: 42,
+            })
+            .unwrap();
+        assert_eq!(launch.assessment.decision, EnforcementDecision::Allow);
         assert!(service
             .database
             .workspace_policies()
             .list_override_audits(&ScopeId::new("workspace-a").unwrap())
             .unwrap()
             .is_empty());
-
-        let launch = service
-            .prepare_managed_session(PrepareManagedSession {
-                id: "session-accepted".to_owned(),
-                reservation_id: "reservation-accepted".to_owned(),
-                canonical_path: "/code/workspace-a".to_owned(),
-                provider_id: "codex".to_owned(),
-                assume_yes: true,
-                admitted_at: 2_100,
-                expires_at: 8_000,
-                supervisor_pid: 42,
-            })
-            .unwrap();
-        assert_eq!(
-            launch.assessment.decision,
-            EnforcementDecision::RequireConfirmation
-        );
-
-        let audits = service
-            .database
-            .workspace_policies()
-            .list_override_audits(&ScopeId::new("workspace-a").unwrap())
-            .unwrap();
-        assert_eq!(audits.len(), 1);
-        assert_eq!(audits[0].session_id, "session-accepted");
-        assert_eq!(audits[0].window_id.as_str(), "week-1");
-        assert_eq!(audits[0].accepted_at.value(), 2_100);
     }
 
     #[test]

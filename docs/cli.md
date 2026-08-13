@@ -58,16 +58,15 @@ Inspect the effective policy for the current bound folder:
 npm run aqm -- policy show
 ```
 
-The standard default is warn at 80%, require confirmation at 90%, and stop at
-100% of the workspace allocation consumed. Persist a folder override by
-supplying all three thresholds:
+The standard default is warn at 80% and stop at 100% of the workspace
+allocation consumed. Persist a folder override with confirmation disabled:
 
 ```bash
-npm run aqm -- policy set --warn 75 --confirm 90 --stop 100
+npm run aqm -- policy set --warn 75 --confirm off --stop 100
 ```
 
-Values accept up to two decimal places. Use `off` to disable a threshold while
-still preserving the required ordering among enabled thresholds:
+Values accept up to two decimal places. The `--confirm` compatibility argument
+should remain `off`; confirmation values from older beta databases are ignored.
 
 ```bash
 npm run aqm -- policy set --warn off --confirm 90 --stop 100

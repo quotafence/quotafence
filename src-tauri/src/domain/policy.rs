@@ -64,7 +64,7 @@ impl EnforcementPolicy {
     pub fn standard() -> Self {
         Self {
             warn_at: Some(BasisPoints(8_000)),
-            confirm_at: Some(BasisPoints(9_000)),
+            confirm_at: None,
             stop_at: Some(BasisPoints(10_000)),
         }
     }
@@ -91,13 +91,6 @@ impl EnforcementPolicy {
             .is_some_and(|threshold| reached(balance, threshold))
         {
             return EnforcementDecision::Stop;
-        }
-
-        if self
-            .confirm_at
-            .is_some_and(|threshold| reached(balance, threshold))
-        {
-            return EnforcementDecision::RequireConfirmation;
         }
 
         if self
@@ -144,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn standard_policy_escalates_at_each_threshold() {
+    fn standard_policy_warns_then_stops() {
         let policy = EnforcementPolicy::standard();
 
         assert_eq!(
@@ -157,7 +150,7 @@ mod tests {
         );
         assert_eq!(
             policy.evaluate(&balance(100, 85, 5)),
-            EnforcementDecision::RequireConfirmation
+            EnforcementDecision::Warn
         );
         assert_eq!(
             policy.evaluate(&balance(100, 100, 0)),
