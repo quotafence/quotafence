@@ -201,6 +201,18 @@ pub(crate) fn uninstall_claude_integration() -> IpcResult<ClaudeStatusLineStatus
 }
 
 #[tauri::command]
+pub(crate) async fn sync_claude_quota(state: State<'_, AppState>) -> IpcResult<()> {
+    let observation = tauri::async_runtime::spawn_blocking(claude_code::fetch_subscription_usage)
+        .await
+        .map_err(|_| IpcError::integration_error("Claude usage refresh stopped unexpectedly"))?
+        .map_err(IpcError::integration_error)?;
+    let observed_at = current_time_millis();
+    state.execute_integration(|service| {
+        claude_code::ingest_observation(service, &observation, observed_at)
+    })
+}
+
+#[tauri::command]
 pub(crate) async fn sync_codex_quota(
     state: State<'_, AppState>,
     window_id: String,

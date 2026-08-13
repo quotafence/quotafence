@@ -5,6 +5,7 @@ use std::{
     process::Command,
 };
 
+use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -23,6 +24,8 @@ const CLAUDE_PROVIDER_ID: &str = "claude-code";
 const CLAUDE_HEARTBEAT_FILENAME: &str = "claude-statusline-heartbeat.json";
 const FIVE_HOURS_MILLIS: i64 = 5 * 60 * 60 * 1_000;
 const SEVEN_DAYS_MILLIS: i64 = 7 * 24 * 60 * 60 * 1_000;
+const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
+const CLAUDE_KEYCHAIN_SERVICE: &str = "Claude Code-credentials";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -49,6 +52,30 @@ pub struct ClaudeStatusLineStatus {
 struct ClaudeStatusLineHeartbeat {
     last_observed_at: Option<i64>,
     last_quota_observed_at: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaudeCredentialsFile {
+    claude_ai_oauth: ClaudeOAuthCredential,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaudeOAuthCredential {
+    access_token: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeUsageResponse {
+    five_hour: Option<ClaudeUsageWindow>,
+    seven_day: Option<ClaudeUsageWindow>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeUsageWindow {
+    utilization: f64,
+    resets_at: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -464,6 +491,96 @@ impl TryFrom<StatusLineRateLimitWindow> for ClaudeRateLimitWindow {
             resets_at_seconds: value.resets_at,
         })
     }
+}
+
+fn read_claude_code_oauth_token() -> Result<String, String> {
+    let account = env::var("USER").map_err(|_| "cannot resolve the macOS account name")?;
+    let output = Command::new("/usr/bin/security")
+        .args([
+            "find-generic-password",
+            "-w",
+            "-s",
+            CLAUDE_KEYCHAIN_SERVICE,
+            "-a",
+            account.as_str(),
+        ])
+        .output()
+        .map_err(|_| "could not ask macOS Keychain for the Claude Code login")?;
+    if !output.status.success() {
+        return Err(
+            "Claude login access was denied or unavailable. Allow Keychain access and try again."
+                .to_owned(),
+        );
+    }
+    let credentials: ClaudeCredentialsFile = serde_json::from_slice(&output.stdout)
+        .map_err(|_| "Claude Code returned an unsupported credential format")?;
+    let token = credentials.claude_ai_oauth.access_token.trim();
+    if token.is_empty() {
+        return Err("Claude Code login does not contain an access token".to_owned());
+    }
+    Ok(token.to_owned())
+}
+
+fn map_usage_window(window: ClaudeUsageWindow) -> Result<ClaudeRateLimitWindow, String> {
+    if !window.utilization.is_finite() || !(0.0..=100.0).contains(&window.utilization) {
+        return Err("Claude returned an invalid subscription utilization".to_owned());
+    }
+    let resets_at_seconds = DateTime::parse_from_rfc3339(&window.resets_at)
+        .map_err(|_| "Claude returned an invalid subscription reset time")?
+        .timestamp();
+    if resets_at_seconds <= 0 {
+        return Err("Claude returned an invalid subscription reset time".to_owned());
+    }
+    Ok(ClaudeRateLimitWindow {
+        used_percentage: window.utilization,
+        resets_at_seconds,
+    })
+}
+
+pub fn fetch_subscription_usage() -> Result<ClaudeStatusLineObservation, String> {
+    let token = read_claude_code_oauth_token()?;
+    let response = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|_| "could not initialize Claude usage refresh")?
+        .get(CLAUDE_USAGE_URL)
+        .bearer_auth(token)
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .header("anthropic-beta", "oauth-2025-04-20")
+        .header("User-Agent", "claude-code/2.1.69")
+        .send()
+        .map_err(|_| "could not reach Claude subscription usage")?;
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED
+        || response.status() == reqwest::StatusCode::FORBIDDEN
+    {
+        return Err(
+            "Claude login cannot read subscription usage. Sign in to Claude Code again.".to_owned(),
+        );
+    }
+    if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Err("Claude usage refresh is rate limited. Wait before trying again.".to_owned());
+    }
+    if !response.status().is_success() {
+        return Err(format!(
+            "Claude usage refresh failed with status {}",
+            response.status().as_u16()
+        ));
+    }
+    let usage: ClaudeUsageResponse = response
+        .json()
+        .map_err(|_| "Claude returned an unsupported usage response")?;
+    let observation = ClaudeStatusLineObservation {
+        session_id: "oauth-usage-refresh".to_owned(),
+        current_directory: "provider-account".to_owned(),
+        five_hour: usage.five_hour.map(map_usage_window).transpose()?,
+        seven_day: usage.seven_day.map(map_usage_window).transpose()?,
+    };
+    record_status_line_heartbeat(
+        current_time_millis(),
+        observation.five_hour.is_some() || observation.seven_day.is_some(),
+    )?;
+    Ok(observation)
 }
 
 pub fn run_status_line(reader: impl Read) -> Result<String, String> {

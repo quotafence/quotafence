@@ -41,6 +41,7 @@ type SettingsPanelProps = {
   claudeIntegration: ClaudeStatusLineStatus | null;
   claudeBusy: boolean;
   onClaudeIntegration: (enabled: boolean) => void;
+  onClaudeSync: () => void;
   onCheck: () => void;
 };
 
@@ -101,6 +102,7 @@ export function SettingsPanel({
   claudeIntegration,
   claudeBusy,
   onClaudeIntegration,
+  onClaudeSync,
   onCheck,
 }: SettingsPanelProps) {
   const [decisionRange, setDecisionRange] = useState<DecisionRange>("day");
@@ -253,7 +255,7 @@ export function SettingsPanel({
                 : claudeIntegration.lastObservedAt !== null
                   ? "Connected"
                 : claudeIntegration.state === "configured"
-                  ? "Restart required"
+                  ? "Ready to refresh"
                   : claudeIntegration.state === "conflict"
                     ? "Status line conflict"
                     : claudeIntegration.state === "misconfigured"
@@ -275,7 +277,7 @@ export function SettingsPanel({
                       ? `Claude Code is connected · last heartbeat ${formatRelativeTime(claudeIntegration.lastObservedAt)}. Send a prompt from a subscribed account to receive quota.`
                     : claudeIntegration.issue ??
                       (claudeIntegration.installed
-                        ? "Quit and reopen Claude Desktop or the CLI, then start a new Code task. AQM has not received a heartbeat yet."
+                        ? "Refresh once to authorize the existing Claude login. AQM reads the token only in memory and imports the shared CLI/Desktop quota."
                         : "Install the observer to add Claude's 5-hour and weekly subscription windows automatically.")}
                 </p>
               </div>
@@ -311,6 +313,23 @@ export function SettingsPanel({
               <span>Claude configuration</span>
               <code>{claudeIntegration.configPath || "Unavailable"}</code>
             </div>
+            {claudeIntegration.installed && (
+              <div className="settings-actions">
+                <button
+                  className="button primary"
+                  type="button"
+                  disabled={claudeBusy}
+                  onClick={onClaudeSync}
+                >
+                  <Icon name="refresh" size={16} />
+                  {claudeBusy ? "Refreshing…" : "Refresh Claude quota"}
+                </button>
+                <small>
+                  Uses your existing Claude login once in memory. AQM never stores
+                  the OAuth token.
+                </small>
+              </div>
+            )}
           </>
         ) : (
           <div className="settings-loading">Inspecting Claude Code settings…</div>

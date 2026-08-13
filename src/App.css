@@ -1849,6 +1849,19 @@ h3,
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.settings-actions small {
+  max-width: 520px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .settings-callout code {
   color: var(--ink);
 }

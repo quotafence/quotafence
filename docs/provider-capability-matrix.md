@@ -24,7 +24,7 @@ row ever observed for that provider.
 | Capability | Codex subscription | Claude Code subscription | AQM implication |
 | --- | --- | --- | --- |
 | Local executable probe | Implemented and live-tested | Documented through the `claude` CLI | Probe version and installation only; do not authenticate automatically |
-| Subscription quota windows | Implemented through App Server `account/rateLimits/read` | Documented in status-line input as optional 5-hour and 7-day windows after the first response for Claude.ai Pro/Max; CLI and the Desktop Code tab share user settings and the same Claude Code engine | Observe both CLI and Desktop Code through one integration; Claude Chat and Cowork are outside this adapter |
+| Subscription quota windows | Implemented through App Server `account/rateLimits/read` | Available from the shared Claude subscription usage endpoint using an explicitly authorized existing Claude login; CLI status-line input is a secondary passive source | Use one account checkpoint for CLI and Desktop Code while keeping OAuth tokens memory-only; Claude Chat and Cowork remain outside folder attribution |
 | Reset timestamp | Implemented | Documented with each optional status-line rate-limit window | Preserve each provider window independently |
 | Account checkpoint refresh | Implemented on demand | Not established as a standalone local API | Do not add a Claude Sync button until a supported refresh surface is proven |
 | Workspace identity | Explicit canonical folder binding | Hooks and status-line data expose current working-directory/session context | Reuse AQM folder bindings; never derive identity from prompt text |

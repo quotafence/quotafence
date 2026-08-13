@@ -50,6 +50,7 @@ type DashboardProps = {
   claudeIntegration: ClaudeStatusLineStatus | null;
   claudeBusy: boolean;
   onClaudeIntegration: (enabled: boolean) => void;
+  onClaudeSync: () => void;
   theme: ThemePreference;
   onThemeChange: (theme: ThemePreference) => void;
   priorityBusy: boolean;
@@ -496,6 +497,7 @@ export function Dashboard({
   claudeIntegration,
   claudeBusy,
   onClaudeIntegration,
+  onClaudeSync,
   theme,
   onThemeChange,
   priorityBusy,
@@ -857,7 +859,7 @@ export function Dashboard({
                     <strong>Claude Code</strong>
                     <small>
                       {claudeIntegration.lastObservedAt === null
-                        ? "Restart Claude to connect"
+                        ? "Refresh quota to connect"
                         : "Connected · waiting for quota"}
                     </small>
                   </span>
@@ -886,6 +888,7 @@ export function Dashboard({
             claudeIntegration={claudeIntegration}
             claudeBusy={claudeBusy}
             onClaudeIntegration={onClaudeIntegration}
+            onClaudeSync={onClaudeSync}
           />
         ) : (
           <>

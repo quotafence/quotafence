@@ -65,6 +65,10 @@ export async function uninstallClaudeIntegration(): Promise<ClaudeStatusLineStat
   return invoke<ClaudeStatusLineStatus>("uninstall_claude_integration");
 }
 
+export async function syncClaudeQuota(): Promise<void> {
+  return invoke<void>("sync_claude_quota");
+}
+
 export async function getCodexProtectionEvents(
   limit = 100,
 ): Promise<CodexProtectionEvent[]> {

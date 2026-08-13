@@ -25,6 +25,7 @@ import {
   setAllocationPriorityOrder,
   setWorkspacePolicy,
   syncCodexQuota,
+  syncClaudeQuota,
   uninstallCodexProtection,
   uninstallClaudeIntegration,
 } from "./lib/api";
@@ -109,7 +110,7 @@ function SourcePicker({
             ? "Tracking"
             : claudeIntegration.lastObservedAt !== null
               ? "Connected"
-              : "Restart required"
+              : "Ready to refresh"
           : claudeIntegration?.state === "conflict"
             ? "Conflict"
             : "Connect",
@@ -565,7 +566,18 @@ function App() {
         setError("No quota window is selected.");
         return;
       }
-      if (selectedSource?.providerDisplayName.toLowerCase() !== "codex") {
+      const providerName = selectedSource?.providerDisplayName.toLowerCase();
+      if (providerName === "claude code") {
+        await syncClaudeQuota();
+        const [status] = await Promise.all([
+          getClaudeIntegrationStatus(),
+          loadState(windowId),
+        ]);
+        setClaudeIntegration(status);
+        setNotice("Claude subscription quota refreshed.");
+        return;
+      }
+      if (providerName !== "codex") {
         await loadState(windowId);
         setNotice("Local quota state refreshed.");
         return;
@@ -704,15 +716,41 @@ function App() {
         ? await installClaudeIntegration()
         : await uninstallClaudeIntegration();
       setClaudeIntegration(status);
-      await loadState(localState?.selectedWindowId ?? null);
+      if (enabled) {
+        await syncClaudeQuota();
+      }
+      const [latestStatus] = await Promise.all([
+        getClaudeIntegrationStatus(),
+        loadState(localState?.selectedWindowId ?? null),
+      ]);
+      setClaudeIntegration(latestStatus);
       setNotice(
         enabled
-          ? "Claude tracking installed. Start or continue a Claude Code session; AQM will add its subscription windows after the first response."
+          ? "Claude tracking connected. Its shared CLI and Desktop subscription quota is now available."
           : "Claude Code tracking is off. Existing quota history remains local.",
       );
     } catch (reason) {
       setError(getErrorMessage(reason));
       getClaudeIntegrationStatus().then(setClaudeIntegration).catch(() => undefined);
+    } finally {
+      setClaudeBusy(false);
+    }
+  }
+
+  async function handleClaudeSync() {
+    setClaudeBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await syncClaudeQuota();
+      const [status] = await Promise.all([
+        getClaudeIntegrationStatus(),
+        loadState(localState?.selectedWindowId ?? null),
+      ]);
+      setClaudeIntegration(status);
+      setNotice("Claude subscription quota refreshed.");
+    } catch (reason) {
+      setError(getErrorMessage(reason));
     } finally {
       setClaudeBusy(false);
     }
@@ -829,6 +867,7 @@ function App() {
         claudeIntegration={claudeIntegration}
         claudeBusy={claudeBusy}
         onClaudeIntegration={(enabled) => void handleClaudeIntegration(enabled)}
+        onClaudeSync={() => void handleClaudeSync()}
         theme={theme}
         onThemeChange={setTheme}
         priorityBusy={priorityBusy}
