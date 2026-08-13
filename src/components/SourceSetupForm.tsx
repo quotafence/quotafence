@@ -21,7 +21,7 @@ type SourceSetupFormProps = {
   submitLabel?: string;
 };
 
-const providerOptions = ["Codex", "Claude Code", "Other"] as const;
+const providerOptions = ["Codex", "Other"] as const;
 
 function toLocalDateTime(date: Date): string {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);

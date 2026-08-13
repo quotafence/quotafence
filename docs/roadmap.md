@@ -110,9 +110,11 @@ percentages, credits, USD spend, and concurrency are interchangeable. It must
 not weaken Codex correctness or reuse provider-specific assumptions as shared
 domain rules.
 
-The initial comparison and the bounded Claude Code discovery slice are defined
-in the [provider capability matrix](provider-capability-matrix.md). No Claude
-adapter implementation should exceed that slice without new evidence.
+The initial comparison and bounded Claude Code observation slice are defined in
+the [provider capability matrix](provider-capability-matrix.md). Discovery,
+reversible status-line setup, 5-hour/7-day checkpoint ingestion, and rollover
+are implemented. Claude folder attribution, admission, enforcement, managed
+launch, and routing remain evidence-gated follow-up work.
 
 ## Current implementation
 
@@ -124,6 +126,8 @@ The repository currently has:
 - a Tauri/React desktop workflow for source setup and manual allocations;
 - drag-and-drop folder priority with target-versus-current protection funding;
 - a Codex adapter using the official local App Server protocol;
+- a reversible Claude Code status-line observer for provider-reported 5-hour
+  and 7-day subscription windows, with automatic source creation and rollover;
 - automatic Codex checkpoint refresh on startup and explicit refresh;
 - absolute snapshots that do not double-count repeated reads;
 - reset-window rollover that carries allocations without carrying old usage;

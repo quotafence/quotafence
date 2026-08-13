@@ -16,5 +16,18 @@ fn main() {
         println!("{output}");
         return;
     }
+    if arguments == ["observe", "claude-statusline"] {
+        match agent_quota_manager_lib::providers::claude_code::run_status_line(
+            std::io::stdin().lock(),
+        ) {
+            Ok(status) => println!("{status}"),
+            Err(error) => {
+                if std::env::var_os("AQM_HOOK_DEBUG").is_some() {
+                    eprintln!("aqm Claude status line: {error}");
+                }
+            }
+        }
+        return;
+    }
     agent_quota_manager_lib::run()
 }

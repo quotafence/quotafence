@@ -1,5 +1,6 @@
 use std::{
     env, fs,
+    io::Read,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -7,7 +8,20 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use crate::{
+    application::{
+        CreateQuotaSource, GetLocalState, ProviderQuotaSnapshotInput, QuotaService,
+        SyncProviderQuota,
+    },
+    paths,
+    storage::Database,
+};
+
 const AQM_STATUS_LINE_MARKER: &str = " observe claude-statusline";
+const CLAUDE_ADAPTER: &str = "claude_statusline";
+const CLAUDE_PROVIDER_ID: &str = "claude-code";
+const FIVE_HOURS_MILLIS: i64 = 5 * 60 * 60 * 1_000;
+const SEVEN_DAYS_MILLIS: i64 = 7 * 24 * 60 * 60 * 1_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -121,6 +135,27 @@ pub fn default_user_settings_path() -> Result<PathBuf, String> {
     dirs::home_dir()
         .map(|home| home.join(".claude").join("settings.json"))
         .ok_or_else(|| "cannot resolve the current user's home directory".to_owned())
+}
+
+pub fn integration_status() -> Result<ClaudeStatusLineStatus, String> {
+    let config_path = default_user_settings_path()?;
+    let executable = env::current_exe()
+        .map_err(|error| format!("cannot resolve the Agent Quota Manager executable: {error}"))?;
+    Ok(status_line_status(&config_path, &executable))
+}
+
+pub fn install_integration(executable: &Path) -> Result<ClaudeStatusLineStatus, String> {
+    let config_path = default_user_settings_path()?;
+    install_status_line(&config_path, executable)?;
+    Ok(status_line_status(&config_path, executable))
+}
+
+pub fn uninstall_integration() -> Result<ClaudeStatusLineStatus, String> {
+    let config_path = default_user_settings_path()?;
+    uninstall_status_line(&config_path)?;
+    let executable = env::current_exe()
+        .map_err(|error| format!("cannot resolve the Agent Quota Manager executable: {error}"))?;
+    Ok(status_line_status(&config_path, &executable))
 }
 
 pub fn status_line_status(config_path: &Path, executable: &Path) -> ClaudeStatusLineStatus {
@@ -333,6 +368,16 @@ impl ClaudeStatusLineObservation {
     pub fn parse(input: &str) -> Result<Self, String> {
         let input: StatusLineInput = serde_json::from_str(input)
             .map_err(|_| "invalid Claude status-line input".to_owned())?;
+        Self::from_input(input)
+    }
+
+    pub fn from_reader(reader: impl Read) -> Result<Self, String> {
+        let input: StatusLineInput = serde_json::from_reader(reader)
+            .map_err(|_| "invalid Claude status-line input".to_owned())?;
+        Self::from_input(input)
+    }
+
+    fn from_input(input: StatusLineInput) -> Result<Self, String> {
         let rate_limits = input.rate_limits.unwrap_or_default();
         Ok(Self {
             session_id: non_empty(input.session_id, "session_id")?,
@@ -364,6 +409,140 @@ impl TryFrom<StatusLineRateLimitWindow> for ClaudeRateLimitWindow {
             resets_at_seconds: value.resets_at,
         })
     }
+}
+
+pub fn run_status_line(reader: impl Read) -> Result<String, String> {
+    let observation = ClaudeStatusLineObservation::from_reader(reader)?;
+    let observed_at = current_time_millis();
+    let database_path = paths::default_database_path()
+        .map_err(|error| format!("cannot resolve the AQM database: {error}"))?;
+    if let Some(parent) = database_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
+    }
+    let database = Database::open(database_path).map_err(|error| error.to_string())?;
+    let mut service = QuotaService::new(database);
+    ingest_observation(&mut service, &observation, observed_at)?;
+    let summary = observation
+        .seven_day
+        .as_ref()
+        .or(observation.five_hour.as_ref())
+        .map(|window| 100.0 - window.used_percentage);
+    Ok(summary.map_or_else(
+        || "AQM · waiting for Claude subscription quota".to_owned(),
+        |remaining| format!("AQM · Claude {remaining:.0}% left"),
+    ))
+}
+
+pub fn ingest_observation(
+    service: &mut QuotaService,
+    observation: &ClaudeStatusLineObservation,
+    observed_at: i64,
+) -> Result<(), String> {
+    if let Some(window) = observation.five_hour.as_ref() {
+        ingest_window(
+            service,
+            "five_hour",
+            "5-hour allowance",
+            FIVE_HOURS_MILLIS,
+            window,
+            observed_at,
+        )?;
+    }
+    if let Some(window) = observation.seven_day.as_ref() {
+        ingest_window(
+            service,
+            "seven_day",
+            "Weekly allowance",
+            SEVEN_DAYS_MILLIS,
+            window,
+            observed_at,
+        )?;
+    }
+    Ok(())
+}
+
+fn ingest_window(
+    service: &mut QuotaService,
+    kind: &str,
+    display_name: &str,
+    duration_millis: i64,
+    window: &ClaudeRateLimitWindow,
+    observed_at: i64,
+) -> Result<(), String> {
+    let ends_at = window
+        .resets_at_seconds
+        .checked_mul(1_000)
+        .ok_or_else(|| "Claude reset timestamp is out of range".to_owned())?;
+    if ends_at <= observed_at {
+        return Err("Claude returned an expired subscription window".to_owned());
+    }
+    let starts_at = ends_at - duration_millis;
+    let used = window.used_percentage.round() as u64;
+    let state = service
+        .local_state(GetLocalState {
+            selected_window_id: None,
+            at: observed_at,
+        })
+        .map_err(|error| error.to_string())?;
+    let existing = state.sources.into_iter().find(|source| {
+        source
+            .provider_display_name
+            .eq_ignore_ascii_case("Claude Code")
+            && source.pool_display_name == display_name
+            && source.unit == "percent"
+    });
+    if let Some(source) = existing {
+        service
+            .sync_provider_quota(SyncProviderQuota {
+                current_window_id: source.window_id,
+                adapter: CLAUDE_ADAPTER.to_owned(),
+                remote_limit_id: CLAUDE_PROVIDER_ID.to_owned(),
+                remote_window_kind: kind.to_owned(),
+                starts_at,
+                ends_at,
+                capacity: 100,
+                used,
+                unit: "percent".to_owned(),
+                observed_at,
+                desktop_observations: None,
+            })
+            .map_err(|error| error.to_string())?;
+    } else {
+        let suffix = kind.replace('_', "-");
+        service
+            .create_quota_source(CreateQuotaSource {
+                provider_id: format!("claude-code-{suffix}-provider"),
+                provider_display_name: "Claude Code".to_owned(),
+                account_id: format!("claude-code-{suffix}-account"),
+                account_display_name: "Claude subscription".to_owned(),
+                pool_id: format!("claude-code-{suffix}"),
+                pool_display_name: display_name.to_owned(),
+                window_id: format!("claude-code-{suffix}-window-{ends_at}"),
+                starts_at,
+                ends_at,
+                capacity: 100,
+                unit: "percent".to_owned(),
+                provider_snapshot: Some(ProviderQuotaSnapshotInput {
+                    adapter: CLAUDE_ADAPTER.to_owned(),
+                    remote_limit_id: CLAUDE_PROVIDER_ID.to_owned(),
+                    remote_window_kind: kind.to_owned(),
+                    used,
+                    observed_at,
+                    resets_at: ends_at,
+                }),
+            })
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn current_time_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
+        .unwrap_or(0)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -420,6 +599,7 @@ fn non_empty(value: String, field: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{application::GetQuotaDashboard, storage::Database};
 
     fn temp_settings(name: &str) -> PathBuf {
         let directory = std::env::temp_dir().join(format!(
@@ -481,6 +661,89 @@ mod tests {
         assert!(uninstall_status_line(&path).unwrap());
         assert_eq!(read_settings(&path).unwrap(), json!({"theme": "light"}));
         assert!(!uninstall_status_line(&path).unwrap());
+    }
+
+    #[test]
+    fn status_line_observation_creates_both_subscription_sources() {
+        let mut service = QuotaService::new(Database::open_in_memory().unwrap());
+        let observation = ClaudeStatusLineObservation {
+            session_id: "session-1".to_owned(),
+            current_directory: "/workspace".to_owned(),
+            five_hour: Some(ClaudeRateLimitWindow {
+                used_percentage: 12.4,
+                resets_at_seconds: 120_000,
+            }),
+            seven_day: Some(ClaudeRateLimitWindow {
+                used_percentage: 31.6,
+                resets_at_seconds: 700_000,
+            }),
+        };
+
+        ingest_observation(&mut service, &observation, 100_000_000).unwrap();
+
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: None,
+                at: 100_000_000,
+            })
+            .unwrap();
+        assert_eq!(state.sources.len(), 2);
+        assert!(state
+            .sources
+            .iter()
+            .all(|source| source.provider_display_name == "Claude Code"));
+        let weekly = state
+            .sources
+            .iter()
+            .find(|source| source.pool_display_name == "Weekly allowance")
+            .unwrap();
+        let dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: weekly.window_id.clone(),
+                at: 100_000_000,
+            })
+            .unwrap();
+        assert_eq!(dashboard.window.provider_remaining, 68);
+    }
+
+    #[test]
+    fn status_line_observation_updates_and_rolls_over_existing_source() {
+        let mut service = QuotaService::new(Database::open_in_memory().unwrap());
+        let mut observation = ClaudeStatusLineObservation {
+            session_id: "session-1".to_owned(),
+            current_directory: "/workspace".to_owned(),
+            five_hour: None,
+            seven_day: Some(ClaudeRateLimitWindow {
+                used_percentage: 20.0,
+                resets_at_seconds: 700_000,
+            }),
+        };
+        ingest_observation(&mut service, &observation, 100_000_000).unwrap();
+        let first_window = service
+            .local_state(GetLocalState {
+                selected_window_id: None,
+                at: 100_000_000,
+            })
+            .unwrap()
+            .sources[0]
+            .window_id
+            .clone();
+
+        observation.seven_day = Some(ClaudeRateLimitWindow {
+            used_percentage: 7.0,
+            resets_at_seconds: 1_304_800,
+        });
+        ingest_observation(&mut service, &observation, 700_001_000).unwrap();
+
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: None,
+                at: 700_001_000,
+            })
+            .unwrap();
+        assert_eq!(state.sources.len(), 1);
+        assert_ne!(state.sources[0].window_id, first_window);
+        assert_eq!(state.dashboard.unwrap().window.provider_remaining, 93);
     }
 
     #[test]

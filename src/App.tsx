@@ -14,8 +14,10 @@ import {
   getErrorMessage,
   getCodexProtectionEvents,
   getCodexProtectionStatus,
+  getClaudeIntegrationStatus,
   getLocalState,
   installCodexProtection,
+  installClaudeIntegration,
   removeWorkspaceAllocation,
   resetWorkspacePolicy,
   setAllocation,
@@ -23,12 +25,14 @@ import {
   setWorkspacePolicy,
   syncCodexQuota,
   uninstallCodexProtection,
+  uninstallClaudeIntegration,
 } from "./lib/api";
 import type {
   LocalState,
   CodexProtectionEvent,
   CodexProtectionStatus,
   CodexSyncResult,
+  ClaudeStatusLineStatus,
   QuotaSourceInput,
   QuotaSourceSummary,
   ScopeSummary,
@@ -70,9 +74,15 @@ function LoadingScreen() {
 function WelcomeScreen({
   submitting,
   onSubmit,
+  claudeIntegration,
+  claudeBusy,
+  onClaudeIntegration,
 }: {
   submitting: boolean;
   onSubmit: (input: QuotaSourceInput) => Promise<void>;
+  claudeIntegration: ClaudeStatusLineStatus | null;
+  claudeBusy: boolean;
+  onClaudeIntegration: (enabled: boolean) => void;
 }) {
   return (
     <main className="welcome-screen">
@@ -153,6 +163,31 @@ function WelcomeScreen({
             </p>
           </header>
           <SourceSetupForm onSubmit={onSubmit} submitting={submitting} />
+          <div className="welcome-provider-divider"><span>or observe automatically</span></div>
+          <button
+            className="button subtle welcome-claude-button"
+            type="button"
+            disabled={
+              claudeBusy ||
+              claudeIntegration === null ||
+              claudeIntegration.state === "conflict"
+            }
+            onClick={() =>
+              onClaudeIntegration(!(claudeIntegration?.installed ?? false))
+            }
+          >
+            <Icon name="activity" size={18} />
+            {claudeBusy
+              ? "Updating Claude tracking…"
+              : claudeIntegration?.installed
+                ? "Claude tracking installed"
+                : claudeIntegration?.state === "conflict"
+                  ? "Claude status line already in use"
+                  : "Connect Claude Code"}
+          </button>
+          <p className="welcome-claude-help">
+            AQM creates the 5-hour and weekly sources after Claude's first response.
+          </p>
         </div>
       </section>
     </main>
@@ -176,6 +211,9 @@ function App() {
   const [codexSyncResult, setCodexSyncResult] =
     useState<CodexSyncResult | null>(null);
   const [codexSyncIssue, setCodexSyncIssue] = useState<string | null>(null);
+  const [claudeIntegration, setClaudeIntegration] =
+    useState<ClaudeStatusLineStatus | null>(null);
+  const [claudeBusy, setClaudeBusy] = useState(false);
   const [priorityBusy, setPriorityBusy] = useState(false);
   const [view, setView] = useState<DashboardView>("overview");
   const [theme, setTheme] = useState<ThemePreference>(storedTheme);
@@ -227,6 +265,16 @@ function App() {
         getCodexProtectionEvents().then(setCodexProtectionEvents).catch(() => {
           setCodexProtectionEvents([]);
         });
+        getClaudeIntegrationStatus()
+          .then(setClaudeIntegration)
+          .catch(() =>
+            setClaudeIntegration({
+              installed: false,
+              configPath: "",
+              state: "misconfigured",
+              issue: "Agent Quota Manager could not inspect Claude Code settings.",
+            }),
+          );
         const nextState = await loadState();
         if (initialSyncStarted.current) {
           return;
@@ -271,6 +319,7 @@ function App() {
       getCodexProtectionEvents()
         .then(setCodexProtectionEvents)
         .catch(() => undefined);
+      getClaudeIntegrationStatus().then(setClaudeIntegration).catch(() => undefined);
     };
     window.addEventListener("focus", refreshProtection);
     return () => window.removeEventListener("focus", refreshProtection);
@@ -531,6 +580,29 @@ function App() {
     }
   }
 
+  async function handleClaudeIntegration(enabled: boolean) {
+    setClaudeBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const status = enabled
+        ? await installClaudeIntegration()
+        : await uninstallClaudeIntegration();
+      setClaudeIntegration(status);
+      await loadState(localState?.selectedWindowId ?? null);
+      setNotice(
+        enabled
+          ? "Claude tracking installed. Start or continue a Claude Code session; AQM will add its subscription windows after the first response."
+          : "Claude Code tracking is off. Existing quota history remains local.",
+      );
+    } catch (reason) {
+      setError(getErrorMessage(reason));
+      getClaudeIntegrationStatus().then(setClaudeIntegration).catch(() => undefined);
+    } finally {
+      setClaudeBusy(false);
+    }
+  }
+
   async function handlePriorityOrder(
     windowId: string,
     orderedScopeIds: string[],
@@ -579,11 +651,26 @@ function App() {
   if (localState.sources.length === 0) {
     return (
       <>
-        <WelcomeScreen submitting={submitting} onSubmit={handleCreateSource} />
+        <WelcomeScreen
+          submitting={submitting}
+          onSubmit={handleCreateSource}
+          claudeIntegration={claudeIntegration}
+          claudeBusy={claudeBusy}
+          onClaudeIntegration={(enabled) => void handleClaudeIntegration(enabled)}
+        />
         {error && (
           <div className="error-toast" role="alert">
             <span>{error}</span>
             <button type="button" onClick={() => setError(null)} aria-label="Dismiss">
+              <Icon name="x" size={17} />
+            </button>
+          </div>
+        )}
+        {notice && (
+          <div className="error-toast success" role="status">
+            <Icon name="check" size={17} />
+            <span>{notice}</span>
+            <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss">
               <Icon name="x" size={17} />
             </button>
           </div>
@@ -624,6 +711,9 @@ function App() {
         codexSyncIssue={codexSyncIssue}
         protectionBusy={protectionBusy}
         onProtection={(enabled) => void handleProtection(enabled)}
+        claudeIntegration={claudeIntegration}
+        claudeBusy={claudeBusy}
+        onClaudeIntegration={(enabled) => void handleClaudeIntegration(enabled)}
         theme={theme}
         onThemeChange={setTheme}
         priorityBusy={priorityBusy}

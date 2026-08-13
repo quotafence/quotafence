@@ -3,6 +3,7 @@ import type {
   CodexProtectionEvent,
   CodexProtectionStatus,
   CodexSyncResult,
+  ClaudeStatusLineStatus,
   QuotaSourceSummary,
 } from "../types";
 import {
@@ -27,7 +28,7 @@ const DECISION_RANGES: Array<{
 type SettingsPanelProps = {
   protection: CodexProtectionStatus | null;
   events: CodexProtectionEvent[];
-  source: QuotaSourceSummary;
+  sources: QuotaSourceSummary[];
   workspaceCount: number;
   syncResult: CodexSyncResult | null;
   syncIssue: string | null;
@@ -36,6 +37,9 @@ type SettingsPanelProps = {
   theme: ThemePreference;
   onThemeChange: (theme: ThemePreference) => void;
   onProtection: (enabled: boolean) => void;
+  claudeIntegration: ClaudeStatusLineStatus | null;
+  claudeBusy: boolean;
+  onClaudeIntegration: (enabled: boolean) => void;
   onCheck: () => void;
 };
 
@@ -84,7 +88,7 @@ function statusLabel(
 export function SettingsPanel({
   protection,
   events,
-  source,
+  sources,
   workspaceCount,
   syncResult,
   syncIssue,
@@ -93,18 +97,24 @@ export function SettingsPanel({
   theme,
   onThemeChange,
   onProtection,
+  claudeIntegration,
+  claudeBusy,
+  onClaudeIntegration,
   onCheck,
 }: SettingsPanelProps) {
   const [decisionRange, setDecisionRange] = useState<DecisionRange>("day");
   const verifiedAt = verifiedCodexProtectionAt(protection, events);
   const observedAt = observedCodexHookAt(protection);
   const desktopTracking = syncResult?.desktopTracking ?? null;
-  const turnHealth = source.turnHealth;
+  const codexSource = sources.find(
+    (candidate) => candidate.providerDisplayName.toLowerCase() === "codex",
+  );
+  const turnHealth = codexSource?.turnHealth ?? null;
   const desktopHealthy =
     desktopTracking !== null && desktopTracking.status !== "unavailable";
   const integrationHealthy =
     syncIssue === null &&
-    source.lastSyncedAt !== null &&
+    codexSource?.lastSyncedAt != null &&
     workspaceCount > 0 &&
     desktopHealthy &&
     verifiedAt !== null;
@@ -126,6 +136,17 @@ export function SettingsPanel({
     (event) => event.outcome === "allowed",
   ).length;
   const blockedDecisionCount = visibleEvents.length - allowedDecisionCount;
+  const claudeSources = sources.filter(
+    (candidate) => candidate.providerDisplayName.toLowerCase() === "claude code",
+  );
+  const latestClaudeSync = claudeSources.reduce<number | null>(
+    (latest, candidate) =>
+      candidate.lastSyncedAt !== null &&
+      (latest === null || candidate.lastSyncedAt > latest)
+        ? candidate.lastSyncedAt
+        : latest,
+    null,
+  );
 
   return (
     <>
@@ -177,6 +198,91 @@ export function SettingsPanel({
         </div>
       </section>
 
+      <section className="settings-card">
+        <header className="settings-card-header">
+          <span className="settings-card-icon">
+            <Icon name="activity" size={20} />
+          </span>
+          <div>
+            <h2>Claude Code tracking</h2>
+            <p>Observe subscription quota through Claude's local status line.</p>
+          </div>
+          {claudeIntegration && (
+            <span
+              className={`settings-status ${
+                latestClaudeSync !== null
+                  ? "active"
+                  : claudeIntegration.state === "conflict" ||
+                      claudeIntegration.state === "misconfigured"
+                    ? "misconfigured"
+                    : claudeIntegration.state
+              }`}
+            >
+              {latestClaudeSync !== null
+                ? "Active"
+                : claudeIntegration.state === "configured"
+                  ? "Waiting for quota"
+                  : claudeIntegration.state === "conflict"
+                    ? "Status line conflict"
+                    : claudeIntegration.state === "misconfigured"
+                      ? "Needs attention"
+                      : "Off"}
+            </span>
+          )}
+        </header>
+
+        {claudeIntegration ? (
+          <>
+            <div className="settings-control-row">
+              <div>
+                <strong>Subscription window observer</strong>
+                <p>
+                  {latestClaudeSync !== null
+                    ? `${claudeSources.length} Claude quota ${claudeSources.length === 1 ? "window" : "windows"} observed · last update ${formatRelativeTime(latestClaudeSync)}.`
+                    : claudeIntegration.issue ??
+                      (claudeIntegration.installed
+                        ? "Continue a Claude Code session. Quota appears after Claude receives its first API response."
+                        : "Install the observer to add Claude's 5-hour and weekly subscription windows automatically.")}
+                </p>
+              </div>
+              <button
+                className={`protection-toggle ${claudeIntegration.installed ? "enabled" : ""}`}
+                type="button"
+                disabled={claudeBusy || claudeIntegration.state === "conflict"}
+                onClick={() => onClaudeIntegration(!claudeIntegration.installed)}
+                role="switch"
+                aria-checked={claudeIntegration.installed}
+              >
+                <i />
+                {claudeBusy
+                  ? "Updating…"
+                  : claudeIntegration.installed
+                    ? "Installed"
+                    : "Off"}
+              </button>
+            </div>
+            {claudeIntegration.state === "conflict" && (
+              <div className="settings-callout warning" role="alert">
+                <Icon name="activity" size={18} />
+                <div>
+                  <strong>Your existing Claude status line was not changed</strong>
+                  <p>
+                    Claude supports one status-line command. Remove or combine the
+                    existing command manually before enabling AQM.
+                  </p>
+                </div>
+              </div>
+            )}
+            <div className="settings-path">
+              <span>Claude configuration</span>
+              <code>{claudeIntegration.configPath || "Unavailable"}</code>
+            </div>
+          </>
+        ) : (
+          <div className="settings-loading">Inspecting Claude Code settings…</div>
+        )}
+      </section>
+
       <section className="settings-card integration-health-card">
         <header className="settings-card-header">
           <span className="settings-card-icon">
@@ -226,14 +332,14 @@ export function SettingsPanel({
             tone={
               syncIssue
                 ? "warning"
-                : source.lastSyncedAt
+                : codexSource?.lastSyncedAt
                   ? "healthy"
                   : "muted"
             }
             value={
               syncIssue ??
-              (source.lastSyncedAt
-                ? `Synced ${formatRelativeTime(source.lastSyncedAt)}`
+              (codexSource?.lastSyncedAt
+                ? `Synced ${formatRelativeTime(codexSource.lastSyncedAt)}`
                 : "Not checked yet")
             }
           />

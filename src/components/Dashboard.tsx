@@ -9,6 +9,7 @@ import type {
   CodexProtectionEvent,
   CodexProtectionStatus,
   CodexSyncResult,
+  ClaudeStatusLineStatus,
   LocalState,
   QuotaSourceSummary,
   QuotaHistoryPoint,
@@ -46,6 +47,9 @@ type DashboardProps = {
   codexSyncIssue: string | null;
   protectionBusy: boolean;
   onProtection: (enabled: boolean) => void;
+  claudeIntegration: ClaudeStatusLineStatus | null;
+  claudeBusy: boolean;
+  onClaudeIntegration: (enabled: boolean) => void;
   theme: ThemePreference;
   onThemeChange: (theme: ThemePreference) => void;
   priorityBusy: boolean;
@@ -489,6 +493,9 @@ export function Dashboard({
   codexSyncIssue,
   protectionBusy,
   onProtection,
+  claudeIntegration,
+  claudeBusy,
+  onClaudeIntegration,
   theme,
   onThemeChange,
   priorityBusy,
@@ -840,7 +847,7 @@ export function Dashboard({
           <SettingsPanel
             protection={codexProtection}
             events={codexProtectionEvents}
-            source={source}
+            sources={state.sources}
             workspaceCount={scopes.filter((scope) => scope.workspacePath).length}
             syncResult={codexSyncResult}
             syncIssue={codexSyncIssue}
@@ -850,6 +857,9 @@ export function Dashboard({
             theme={theme}
             onThemeChange={onThemeChange}
             onProtection={onProtection}
+            claudeIntegration={claudeIntegration}
+            claudeBusy={claudeBusy}
+            onClaudeIntegration={onClaudeIntegration}
           />
         ) : (
           <>

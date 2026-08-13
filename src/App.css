@@ -558,6 +558,37 @@ h3,
   line-height: 1.55;
 }
 
+.welcome-provider-divider {
+  margin: 24px 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--quiet);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.welcome-provider-divider::before,
+.welcome-provider-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--line);
+}
+
+.welcome-claude-button {
+  width: 100%;
+  justify-content: center;
+}
+
+.welcome-claude-help {
+  margin: 9px 0 0;
+  color: var(--quiet);
+  font-size: 12px;
+  text-align: center;
+}
+
 .setup-form,
 .modal-form {
   display: flex;

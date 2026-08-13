@@ -117,9 +117,15 @@ subscription rate-limit metadata. It does not accept a command string from the
 webview and returns sanitized detection states instead of raw process errors.
 `probe_claude_code` resolves a supported `claude` executable and runs only
 `claude --version`. It does not authenticate, start a Claude session, read
-credentials, install hooks, or claim that subscription quota is available.
-Status-line and hook schemas are parsed separately because their fields appear
-only during an active provider session.
+credentials, or claim that subscription quota is available. The explicit
+`install_claude_integration`, `get_claude_integration_status`, and
+`uninstall_claude_integration` commands manage only AQM's single user-level
+`statusLine` entry. Installation refuses to replace an existing custom command,
+backs up the settings file, and preserves unrelated settings. During an active
+Claude session, the non-GUI observer reads only the session ID, current folder,
+and optional 5-hour/7-day subscription windows from stdin. It stores absolute
+provider observations locally and carries allocations across reset rollover;
+prompt, transcript, tool, cost, and context-window fields are ignored.
 `sync_codex_quota` applies the selected provider window as an absolute local
 snapshot and rolls the local window forward when its reset boundary changes.
 In the same blocking task it opens Codex's newest local state database
