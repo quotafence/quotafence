@@ -105,7 +105,11 @@ function SourcePicker({
       status: claudeBusy
         ? "Installing…"
         : claudeIntegration?.installed
-          ? "Waiting for response"
+          ? claudeIntegration.lastQuotaObservedAt !== null
+            ? "Tracking"
+            : claudeIntegration.lastObservedAt !== null
+              ? "Connected"
+              : "Restart required"
           : claudeIntegration?.state === "conflict"
             ? "Conflict"
             : "Connect",
@@ -357,6 +361,8 @@ function App() {
               configPath: "",
               state: "misconfigured",
               issue: "Agent Quota Manager could not inspect Claude Code settings.",
+              lastObservedAt: null,
+              lastQuotaObservedAt: null,
             }),
           );
         const nextState = await loadState();
@@ -396,6 +402,31 @@ function App() {
 
     void initialize();
   }, [loadState]);
+
+  useEffect(() => {
+    if (!claudeIntegration?.installed) {
+      return;
+    }
+    let cancelled = false;
+    const refreshClaude = async () => {
+      try {
+        const [status] = await Promise.all([
+          getClaudeIntegrationStatus(),
+          loadState(localState?.selectedWindowId ?? null),
+        ]);
+        if (!cancelled) {
+          setClaudeIntegration(status);
+        }
+      } catch {
+        // Keep the last known integration state during background polling.
+      }
+    };
+    const intervalId = window.setInterval(() => void refreshClaude(), 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [claudeIntegration?.installed, loadState, localState?.selectedWindowId]);
 
   useEffect(() => {
     const refreshProtection = () => {

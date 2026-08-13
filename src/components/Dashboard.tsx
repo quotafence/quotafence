@@ -855,7 +855,11 @@ export function Dashboard({
                   />
                   <span>
                     <strong>Claude Code</strong>
-                    <small>Waiting for first response</small>
+                    <small>
+                      {claudeIntegration.lastObservedAt === null
+                        ? "Restart Claude to connect"
+                        : "Connected · waiting for quota"}
+                    </small>
                   </span>
                   <i />
                 </button>

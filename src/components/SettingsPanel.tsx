@@ -248,10 +248,12 @@ export function SettingsPanel({
                     : claudeIntegration.state
               }`}
             >
-              {latestClaudeSync !== null
+              {claudeIntegration.lastQuotaObservedAt !== null
                 ? "Active"
+                : claudeIntegration.lastObservedAt !== null
+                  ? "Connected"
                 : claudeIntegration.state === "configured"
-                  ? "Waiting for quota"
+                  ? "Restart required"
                   : claudeIntegration.state === "conflict"
                     ? "Status line conflict"
                     : claudeIntegration.state === "misconfigured"
@@ -267,11 +269,13 @@ export function SettingsPanel({
               <div>
                 <strong>Subscription window observer</strong>
                 <p>
-                  {latestClaudeSync !== null
-                    ? `${claudeSources.length} Claude quota ${claudeSources.length === 1 ? "window" : "windows"} observed · last update ${formatRelativeTime(latestClaudeSync)}.`
+                  {claudeIntegration.lastQuotaObservedAt !== null
+                    ? `${claudeSources.length} Claude quota ${claudeSources.length === 1 ? "window" : "windows"} observed · last update ${formatRelativeTime(claudeIntegration.lastQuotaObservedAt)}.`
+                    : claudeIntegration.lastObservedAt !== null
+                      ? `Claude Code is connected · last heartbeat ${formatRelativeTime(claudeIntegration.lastObservedAt)}. Send a prompt from a subscribed account to receive quota.`
                     : claudeIntegration.issue ??
                       (claudeIntegration.installed
-                        ? "Continue a Claude Code session. Quota appears after Claude receives its first API response."
+                        ? "Quit and reopen Claude Desktop or the CLI, then start a new Code task. AQM has not received a heartbeat yet."
                         : "Install the observer to add Claude's 5-hour and weekly subscription windows automatically.")}
                 </p>
               </div>

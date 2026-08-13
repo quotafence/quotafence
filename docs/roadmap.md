@@ -126,8 +126,9 @@ The repository currently has:
 - a Tauri/React desktop workflow for source setup and manual allocations;
 - drag-and-drop folder priority with target-versus-current protection funding;
 - a Codex adapter using the official local App Server protocol;
-- a reversible Claude Code status-line observer for provider-reported 5-hour
-  and 7-day subscription windows, with automatic source creation and rollover;
+- a reversible Claude Code status-line observer shared by CLI and the Desktop
+  Code tab for provider-reported 5-hour and 7-day subscription windows, with
+  runtime heartbeat, automatic source creation, and rollover;
 - automatic Codex checkpoint refresh on startup and explicit refresh;
 - absolute snapshots that do not double-count repeated reads;
 - reset-window rollover that carries allocations without carrying old usage;

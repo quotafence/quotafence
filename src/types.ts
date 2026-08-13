@@ -88,6 +88,8 @@ export type ClaudeStatusLineStatus = {
   configPath: string;
   state: "disabled" | "configured" | "conflict" | "misconfigured";
   issue: string | null;
+  lastObservedAt: number | null;
+  lastQuotaObservedAt: number | null;
 };
 
 export type CodexProtectionEvent = {

@@ -20,6 +20,7 @@ use crate::{
 const AQM_STATUS_LINE_MARKER: &str = " observe claude-statusline";
 const CLAUDE_ADAPTER: &str = "claude_statusline";
 const CLAUDE_PROVIDER_ID: &str = "claude-code";
+const CLAUDE_HEARTBEAT_FILENAME: &str = "claude-statusline-heartbeat.json";
 const FIVE_HOURS_MILLIS: i64 = 5 * 60 * 60 * 1_000;
 const SEVEN_DAYS_MILLIS: i64 = 7 * 24 * 60 * 60 * 1_000;
 
@@ -39,6 +40,15 @@ pub struct ClaudeStatusLineStatus {
     pub config_path: String,
     pub state: ClaudeStatusLineState,
     pub issue: Option<String>,
+    pub last_observed_at: Option<i64>,
+    pub last_quota_observed_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaudeStatusLineHeartbeat {
+    last_observed_at: Option<i64>,
+    last_quota_observed_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -160,6 +170,7 @@ pub fn uninstall_integration() -> Result<ClaudeStatusLineStatus, String> {
 
 pub fn status_line_status(config_path: &Path, executable: &Path) -> ClaudeStatusLineStatus {
     let config_path_text = config_path.display().to_string();
+    let heartbeat = read_status_line_heartbeat();
     let config = match read_settings(config_path) {
         Ok(config) => config,
         Err(issue) => {
@@ -168,6 +179,8 @@ pub fn status_line_status(config_path: &Path, executable: &Path) -> ClaudeStatus
                 config_path: config_path_text,
                 state: ClaudeStatusLineState::Misconfigured,
                 issue: Some(issue),
+                last_observed_at: heartbeat.last_observed_at,
+                last_quota_observed_at: heartbeat.last_quota_observed_at,
             };
         }
     };
@@ -177,6 +190,8 @@ pub fn status_line_status(config_path: &Path, executable: &Path) -> ClaudeStatus
             config_path: config_path_text,
             state: ClaudeStatusLineState::Disabled,
             issue: None,
+            last_observed_at: heartbeat.last_observed_at,
+            last_quota_observed_at: heartbeat.last_quota_observed_at,
         };
     };
     if !is_aqm_status_line(status_line) {
@@ -188,6 +203,8 @@ pub fn status_line_status(config_path: &Path, executable: &Path) -> ClaudeStatus
                 "Claude Code already has a custom status line. AQM left it unchanged because Claude supports only one statusLine command."
                     .to_owned(),
             ),
+            last_observed_at: heartbeat.last_observed_at,
+            last_quota_observed_at: heartbeat.last_quota_observed_at,
         };
     }
     let expected = status_line_command(executable);
@@ -205,7 +222,45 @@ pub fn status_line_status(config_path: &Path, executable: &Path) -> ClaudeStatus
             "AQM found an outdated Claude status-line entry. Repair the integration to point it to the current application executable."
                 .to_owned()
         }),
+        last_observed_at: heartbeat.last_observed_at,
+        last_quota_observed_at: heartbeat.last_quota_observed_at,
     }
+}
+
+fn status_line_heartbeat_path() -> Option<PathBuf> {
+    paths::default_database_path().ok().and_then(|path| {
+        path.parent()
+            .map(|parent| parent.join(CLAUDE_HEARTBEAT_FILENAME))
+    })
+}
+
+fn read_status_line_heartbeat() -> ClaudeStatusLineHeartbeat {
+    status_line_heartbeat_path()
+        .and_then(|path| fs::read_to_string(path).ok())
+        .and_then(|contents| serde_json::from_str(&contents).ok())
+        .unwrap_or_default()
+}
+
+fn record_status_line_heartbeat(observed_at: i64, has_quota: bool) -> Result<(), String> {
+    let Some(path) = status_line_heartbeat_path() else {
+        return Err("cannot resolve the Claude observer heartbeat path".to_owned());
+    };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
+    }
+    let mut heartbeat = read_status_line_heartbeat();
+    heartbeat.last_observed_at = Some(observed_at);
+    if has_quota {
+        heartbeat.last_quota_observed_at = Some(observed_at);
+    }
+    let contents = serde_json::to_string(&heartbeat)
+        .map_err(|error| format!("cannot serialize Claude observer heartbeat: {error}"))?;
+    let temporary = path.with_extension("json.tmp");
+    fs::write(&temporary, contents)
+        .map_err(|error| format!("cannot write {}: {error}", temporary.display()))?;
+    fs::rename(&temporary, &path)
+        .map_err(|error| format!("cannot replace {}: {error}", path.display()))
 }
 
 pub fn install_status_line(config_path: &Path, executable: &Path) -> Result<bool, String> {
@@ -414,6 +469,10 @@ impl TryFrom<StatusLineRateLimitWindow> for ClaudeRateLimitWindow {
 pub fn run_status_line(reader: impl Read) -> Result<String, String> {
     let observation = ClaudeStatusLineObservation::from_reader(reader)?;
     let observed_at = current_time_millis();
+    record_status_line_heartbeat(
+        observed_at,
+        observation.five_hour.is_some() || observation.seven_day.is_some(),
+    )?;
     let database_path = paths::default_database_path()
         .map_err(|error| format!("cannot resolve the AQM database: {error}"))?;
     if let Some(parent) = database_path.parent() {
