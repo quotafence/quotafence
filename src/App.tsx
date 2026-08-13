@@ -42,6 +42,7 @@ import type {
 
 type ModalState =
   | { type: "source" }
+  | { type: "source-form"; mode: "codex" | "manual" }
   | { type: "scope" }
   | { type: "allocation"; scope: ScopeSummary }
   | { type: "remove-allocation"; scope: ScopeSummary }
@@ -68,6 +69,83 @@ function LoadingScreen() {
       <span>Opening your local ledger…</span>
       <i />
     </main>
+  );
+}
+
+function SourcePicker({
+  claudeIntegration,
+  claudeBusy,
+  onChooseForm,
+  onClaude,
+}: {
+  claudeIntegration: ClaudeStatusLineStatus | null;
+  claudeBusy: boolean;
+  onChooseForm: (mode: "codex" | "manual") => void;
+  onClaude: () => void;
+}) {
+  const options = [
+    {
+      id: "codex",
+      title: "Codex",
+      description: "Detect signed-in subscription windows automatically.",
+      action: () => onChooseForm("codex"),
+      disabled: false,
+      status: "Detect quota",
+    },
+    {
+      id: "claude",
+      title: "Claude Code",
+      description: "Observe 5-hour and weekly limits from Claude's status line.",
+      action: onClaude,
+      disabled:
+        claudeBusy ||
+        claudeIntegration === null ||
+        claudeIntegration.state === "conflict",
+      status: claudeBusy
+        ? "Installing…"
+        : claudeIntegration?.installed
+          ? "Installed"
+          : claudeIntegration?.state === "conflict"
+            ? "Conflict"
+            : "Connect",
+    },
+    {
+      id: "custom",
+      title: "Custom source",
+      description: "Create a local allowance for another provider or unit.",
+      action: () => onChooseForm("manual"),
+      disabled: false,
+      status: "Set manually",
+    },
+  ];
+
+  return (
+    <div className="source-picker">
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          disabled={option.disabled}
+          onClick={option.action}
+        >
+          <span className="source-picker-mark">
+            {option.id === "custom" ? "+" : option.title.slice(0, 2)}
+          </span>
+          <span>
+            <strong>{option.title}</strong>
+            <small>{option.description}</small>
+          </span>
+          <b>{option.status}</b>
+          <Icon name="arrow-right" size={17} />
+        </button>
+      ))}
+      {claudeIntegration?.state === "conflict" && (
+        <p className="source-picker-warning">
+          Claude already has a custom status line. AQM left it unchanged; resolve
+          the conflict in Settings before connecting.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -751,7 +829,23 @@ function App() {
           title="Add a quota source"
           onClose={() => setModal(null)}
         >
+          <SourcePicker
+            claudeIntegration={claudeIntegration}
+            claudeBusy={claudeBusy}
+            onChooseForm={(mode) => setModal({ type: "source-form", mode })}
+            onClaude={() => void handleClaudeIntegration(true)}
+          />
+        </Modal>
+      )}
+
+      {modal?.type === "source-form" && (
+        <Modal
+          eyebrow={modal.mode === "codex" ? "Provider detection" : "Local allowance"}
+          title={modal.mode === "codex" ? "Connect Codex" : "Add a custom source"}
+          onClose={() => setModal(null)}
+        >
           <SourceSetupForm
+            initialMode={modal.mode}
             onSubmit={handleCreateSource}
             submitting={submitting}
             submitLabel="Add quota source"

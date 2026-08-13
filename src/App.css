@@ -589,6 +589,74 @@ h3,
   text-align: center;
 }
 
+.source-picker {
+  display: grid;
+  gap: 10px;
+}
+
+.source-picker > button {
+  width: 100%;
+  min-height: 82px;
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto 20px;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.source-picker > button:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: var(--panel-raised);
+}
+
+.source-picker > button:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.source-picker-mark {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel-raised);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.source-picker > button > span:nth-child(2) {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.source-picker strong {
+  font-size: 15px;
+}
+
+.source-picker small,
+.source-picker b {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.source-picker-warning {
+  margin: 4px 2px 0;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .setup-form,
 .modal-form {
   display: flex;
