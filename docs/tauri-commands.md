@@ -37,6 +37,7 @@ The approved product commands are:
 - `get_quota_dashboard`
 - `get_local_state`
 - `detect_codex_quota`
+- `probe_claude_code`
 - `sync_codex_quota`
 - `get_codex_protection_status`
 - `install_codex_protection`
@@ -114,6 +115,11 @@ not read.
 `codex app-server --stdio` process, perform its documented handshake, and read
 subscription rate-limit metadata. It does not accept a command string from the
 webview and returns sanitized detection states instead of raw process errors.
+`probe_claude_code` resolves a supported `claude` executable and runs only
+`claude --version`. It does not authenticate, start a Claude session, read
+credentials, install hooks, or claim that subscription quota is available.
+Status-line and hook schemas are parsed separately because their fields appear
+only during an active provider session.
 `sync_codex_quota` applies the selected provider window as an absolute local
 snapshot and rolls the local window forward when its reset boundary changes.
 In the same blocking task it opens Codex's newest local state database

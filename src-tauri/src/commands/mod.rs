@@ -9,6 +9,7 @@ use std::{
 
 use tauri::{Manager, Runtime, State};
 
+use crate::providers::claude_code::{self, ClaudeCodeProbe};
 use crate::providers::codex::{self, CodexDetection, CodexSyncResult, CodexSyncStatus};
 use crate::providers::codex_hooks::{self, CodexProtectionStatus};
 use crate::{
@@ -165,6 +166,18 @@ pub(crate) async fn detect_codex_quota() -> CodexDetection {
     tauri::async_runtime::spawn_blocking(codex::detect)
         .await
         .unwrap_or_else(|_| codex::detection_failed())
+}
+
+#[tauri::command]
+pub(crate) async fn probe_claude_code() -> ClaudeCodeProbe {
+    tauri::async_runtime::spawn_blocking(claude_code::probe)
+        .await
+        .unwrap_or_else(|_| ClaudeCodeProbe {
+            status: claude_code::ClaudeCodeProbeStatus::Unavailable,
+            executable: None,
+            version: None,
+            message: Some("Claude Code detection stopped unexpectedly.".to_owned()),
+        })
 }
 
 #[tauri::command]
