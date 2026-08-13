@@ -4,6 +4,7 @@ import { AllocationForm } from "./components/AllocationForm";
 import { Dashboard, type DashboardView } from "./components/Dashboard";
 import { Icon } from "./components/Icon";
 import { Modal } from "./components/Modal";
+import { ProviderLogo } from "./components/ProviderLogo";
 import { ScopeForm } from "./components/ScopeForm";
 import type { ThemePreference } from "./components/SettingsPanel";
 import { SourceSetupForm } from "./components/SourceSetupForm";
@@ -128,9 +129,14 @@ function SourcePicker({
           disabled={option.disabled}
           onClick={option.action}
         >
-          <span className="source-picker-mark">
-            {option.id === "custom" ? "+" : option.title.slice(0, 2)}
-          </span>
+          {option.id === "custom" ? (
+            <span className="source-picker-mark">+</span>
+          ) : (
+            <ProviderLogo
+              className="source-picker-mark"
+              providerName={option.title}
+            />
+          )}
           <span>
             <strong>{option.title}</strong>
             <small>{option.description}</small>

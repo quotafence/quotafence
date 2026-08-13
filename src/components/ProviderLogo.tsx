@@ -1,5 +1,6 @@
 import codexDark from "../assets/providers/codex-dark.png";
 import codexLight from "../assets/providers/codex-light.png";
+import claudeLogo from "../assets/providers/claude.svg";
 
 type ProviderLogoProps = {
   providerName: string;
@@ -23,10 +24,11 @@ export function ProviderLogo({
   fallback,
 }: ProviderLogoProps) {
   const isCodex = providerName.trim().toLowerCase() === "codex";
+  const isClaude = providerName.trim().toLowerCase() === "claude code";
 
   return (
     <span
-      className={`${className} provider-logo ${isCodex ? "codex" : ""}`.trim()}
+      className={`${className} provider-logo ${isCodex ? "codex" : isClaude ? "claude" : ""}`.trim()}
       aria-hidden="true"
     >
       {isCodex ? (
@@ -42,6 +44,8 @@ export function ProviderLogo({
             alt=""
           />
         </>
+      ) : isClaude ? (
+        <img className="provider-logo-image" src={claudeLogo} alt="" />
       ) : (
         fallback ?? providerInitials(providerName)
       )}
