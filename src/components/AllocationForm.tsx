@@ -105,10 +105,10 @@ export function AllocationForm({
       <fieldset className="policy-fields">
         <legend>Managed session policy</legend>
         <p className="form-help">
-          Warn continues with a notice. Confirm requires explicit approval for
-          an AQM-managed CLI launch. Codex Desktop cannot request that approval
-          yet, so Desktop continues until Stop. Stop always refuses the next
-          managed launch or protected prompt. Clear a threshold to disable it.
+          Warn continues with a notice. Confirm requires approval: managed CLI
+          uses --yes, while Codex Desktop asks through AQM and requires you to
+          retry the blocked prompt. Stop always refuses the next managed launch
+          or protected prompt. Clear a threshold to disable it.
         </p>
         <PolicyThresholdControl
           warnAt={warnAt}

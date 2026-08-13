@@ -353,6 +353,29 @@ CREATE TABLE provider_sync_health (
 );
 "#;
 
+const CODEX_DESKTOP_CONFIRMATIONS: &str = r#"
+CREATE TABLE codex_desktop_confirmations (
+    id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+    session_id TEXT NOT NULL CHECK (length(trim(session_id)) > 0),
+    turn_id TEXT NOT NULL CHECK (length(trim(turn_id)) > 0),
+    scope_id TEXT NOT NULL REFERENCES scopes(id) ON DELETE CASCADE,
+    window_id TEXT NOT NULL REFERENCES quota_windows(id) ON DELETE CASCADE,
+    canonical_path TEXT NOT NULL CHECK (length(trim(canonical_path)) > 0),
+    status TEXT NOT NULL CHECK (
+        status IN ('pending', 'approved', 'denied', 'consumed', 'expired')
+    ),
+    requested_at INTEGER NOT NULL,
+    resolved_at INTEGER,
+    expires_at INTEGER NOT NULL,
+    CHECK (expires_at > requested_at)
+);
+
+CREATE INDEX idx_codex_desktop_confirmations_pending
+    ON codex_desktop_confirmations(status, expires_at, requested_at);
+CREATE INDEX idx_codex_desktop_confirmations_scope
+    ON codex_desktop_confirmations(session_id, scope_id, window_id, status);
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -433,6 +456,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 16,
         name: "provider_sync_health",
         sql: PROVIDER_SYNC_HEALTH,
+    },
+    Migration {
+        version: 17,
+        name: "codex_desktop_confirmations",
+        sql: CODEX_DESKTOP_CONFIRMATIONS,
     },
 ];
 

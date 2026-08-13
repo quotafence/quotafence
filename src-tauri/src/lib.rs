@@ -35,6 +35,8 @@ pub fn run() {
             commands::install_codex_protection,
             commands::uninstall_codex_protection,
             commands::get_codex_protection_events,
+            commands::get_pending_codex_confirmations,
+            commands::resolve_codex_confirmation,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

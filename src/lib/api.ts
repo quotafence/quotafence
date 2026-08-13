@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   CodexDetection,
+  CodexDesktopConfirmation,
   CodexProtectionEvent,
   CodexProtectionStatus,
   CodexSyncResult,
@@ -57,6 +58,17 @@ export async function getCodexProtectionEvents(
   return invoke<CodexProtectionEvent[]>("get_codex_protection_events", {
     request: { limit },
   });
+}
+
+export async function getPendingCodexConfirmations(): Promise<CodexDesktopConfirmation[]> {
+  return invoke<CodexDesktopConfirmation[]>("get_pending_codex_confirmations");
+}
+
+export async function resolveCodexConfirmation(
+  id: string,
+  approved: boolean,
+): Promise<boolean> {
+  return invoke<boolean>("resolve_codex_confirmation", { id, approved });
 }
 
 export async function createQuotaSource(

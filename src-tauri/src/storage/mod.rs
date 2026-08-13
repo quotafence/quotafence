@@ -31,8 +31,9 @@ pub use managed_sessions::{
 };
 pub use policies::{PolicyOverrideAudit, WorkspacePolicy, WorkspacePolicyRepository};
 pub use protection_events::{
-    CodexHookReceipt, CodexHookReceiptStatus, CodexProtectionEvent, CodexProtectionEventOutcome,
-    CodexProtectionEventRepository, NewCodexProtectionEvent,
+    CodexDesktopConfirmation, CodexHookReceipt, CodexHookReceiptStatus, CodexProtectionEvent,
+    CodexProtectionEventOutcome, CodexProtectionEventRepository, NewCodexDesktopConfirmation,
+    NewCodexProtectionEvent,
 };
 pub use provider_snapshots::{ProviderQuotaHistoryPoint, ProviderQuotaSnapshot};
 pub use sync_health::{ProviderSyncHealth, ProviderSyncHealthRepository};
