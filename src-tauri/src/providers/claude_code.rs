@@ -813,11 +813,9 @@ pub fn fetch_subscription_usage() -> Result<ClaudeStatusLineObservation, String>
         .expires_at
         .is_some_and(|expires_at| expires_at <= current_time_millis() as f64 + 5.0 * 60_000.0);
     let mut using_desktop = false;
-    if expires_soon {
-        if refresh_claude_access_token(&client, &account, &mut credentials).is_err() {
-            credentials.claude_ai_oauth.access_token = read_desktop_access_token()?;
-            using_desktop = true;
-        }
+    if expires_soon && refresh_claude_access_token(&client, &account, &mut credentials).is_err() {
+        credentials.claude_ai_oauth.access_token = read_desktop_access_token()?;
+        using_desktop = true;
     }
     let mut response = client
         .get(CLAUDE_USAGE_URL)
