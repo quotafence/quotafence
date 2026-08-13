@@ -238,9 +238,10 @@ The effective policy resolves from a persisted workspace-scope override and
 then the application default. This keeps thresholds stable across provider
 window rollover and gives the desktop, dry-run admission, and managed launch
 one precedence rule. The Desktop hook cannot open an interactive confirmation
-dialog, so a confirmation decision rejects that prompt and asks the user to
-adjust policy or capacity. Explicit confirmation acceptance is audited only
-when the managed session and reservation are committed.
+dialog, so it treats a confirmation decision as advisory rather than silently
+turning it into an early stop. Explicit confirmation remains required and is
+audited when a managed session and reservation are committed. Desktop blocks
+only at stop or when protected capacity is unavailable.
 
 ## Trust boundaries
 
