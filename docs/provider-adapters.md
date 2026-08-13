@@ -142,8 +142,11 @@ provider-confirmed.
 
 Workspace policy overrides are now persisted and applied to dry-run admission,
 managed launch, and the trusted Desktop prompt gate. For the hook, stop and
-non-interactive confirmation mean refusing the next prompt. Aggregate Codex
-checkpoints are not timely enough to justify live termination.
+exhausted protected capacity mean refusing the next prompt. Confirmation still
+requires an explicit override for managed CLI admission. Codex Desktop has no
+interactive confirmation channel, so its hook treats that intermediate result
+as advisory and continues until stop. Aggregate Codex checkpoints are not
+timely enough to justify live termination.
 
 Only after that slice is stable should the adapter contract be generalized from
 real implementation evidence for a second provider.

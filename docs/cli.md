@@ -218,7 +218,10 @@ The installed lifecycle is:
 1. `UserPromptSubmit` invokes `aqm hook codex` in the task's working folder.
 2. When at least one Codex allocation exists, AQM blocks a prompt from an
    unallocated folder. For an allocated folder it refreshes quota and applies
-   that workspace's warn, confirmation, and stop policy.
+   that workspace's warn, confirmation, and stop policy. Since Codex Desktop
+   cannot present an interactive confirmation, confirmation is advisory in the
+   Desktop hook; the hook blocks only at stop or when protected capacity is
+   unavailable. Managed CLI launches still require explicit confirmation.
 3. Allowed prompts capture an absolute provider baseline.
 4. `Stop` captures another checkpoint and records the delta against the folder
    only when the turn was mapped, uncontended, and remained in the same window.

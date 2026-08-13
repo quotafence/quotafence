@@ -654,15 +654,14 @@ where
                     reason: exhausted_allocation_reason(scope_display_name, assessment.limit),
                 });
             }
-            EnforcementDecision::RequireConfirmation => {
-                return Ok(CodexHookOutcome::Blocked {
-                    reason: format!(
-                        "AQM blocked this prompt because {} reached its confirmation boundary. Adjust its policy or use an AQM-managed launch with explicit confirmation.",
-                        scope_display_name
-                    ),
-                });
-            }
-            EnforcementDecision::Allow | EnforcementDecision::Warn => {}
+            // Codex Desktop hooks have no interactive confirmation channel.
+            // Requiring confirmation here would silently turn the confirm
+            // threshold into an early stop. Managed CLI launches still require
+            // and audit explicit confirmation; Desktop remains admitted until
+            // the actual stop boundary.
+            EnforcementDecision::Allow
+            | EnforcementDecision::Warn
+            | EnforcementDecision::RequireConfirmation => {}
         }
     }
 
@@ -1496,6 +1495,51 @@ mod tests {
                 ..
             } if scope_id == "workspace-a"
         ));
+
+        std::fs::remove_dir(folder).unwrap();
+    }
+
+    #[test]
+    fn desktop_prompt_is_admitted_at_workspace_confirmation_boundary() {
+        let folder = temporary_folder("desktop-confirmation");
+        let canonical_path = canonicalize_workspace_path(&folder).unwrap();
+        let mut service = protected_service(&folder);
+        service
+            .record_usage(RecordUsage {
+                id: "workspace-confirmation".to_owned(),
+                window_id: "codex-window".to_owned(),
+                scope_id: Some("workspace-a".to_owned()),
+                amount: 18,
+                unit: "percent".to_owned(),
+                observed_at: 2_500,
+                source: UsageSource::LocalMeasured,
+                confidence: Confidence::Observed,
+                reservation_id: None,
+            })
+            .unwrap();
+        let event = CodexHookEvent {
+            session_id: "session-desktop-confirmation".to_owned(),
+            turn_id: Some("turn-desktop-confirmation".to_owned()),
+            cwd: canonical_path,
+            hook_event_name: "UserPromptSubmit".to_owned(),
+        };
+
+        let outcome = handle_event(&mut service, &event, 3_000, || Some(detection(28))).unwrap();
+
+        assert!(matches!(
+            outcome,
+            CodexHookOutcome::ObservationStarted {
+                scope_id: Some(ref scope_id),
+                ..
+            } if scope_id == "workspace-a"
+        ));
+        assert!(service
+            .provider_turn_observation(GetProviderTurnObservation {
+                session_id: "session-desktop-confirmation".to_owned(),
+                turn_id: "turn-desktop-confirmation".to_owned(),
+            })
+            .unwrap()
+            .is_some());
 
         std::fs::remove_dir(folder).unwrap();
     }
