@@ -16,6 +16,91 @@ against one constrained Codex subscription. Team governance may become a paid
 product later, but cloud workspaces, RBAC, billing, and organization policy are
 not current requirements.
 
+## Immediate execution queue
+
+This queue is the source of truth for what maintainers intend to ship next.
+Items are ordered by user risk and vertical product value. A later item must not
+delay a correctness or false-block fix above it.
+
+### P0 — Make Desktop confirmation semantics honest — next
+
+Problem: the managed CLI can explicitly accept a confirmation-required
+decision, but a Codex Desktop hook has no interactive confirmation channel.
+Treating `RequireConfirmation` as `Blocked` therefore makes the confirmation
+threshold behave like an undocumented early stop.
+
+- Keep `Warn` advisory for Codex Desktop.
+- Do not block a Desktop prompt at `Confirm` until AQM provides a real approval
+  interaction.
+- Keep `Stop` as the actual blocking boundary.
+- Default new Codex Desktop policies to `Warn 80%`, `Confirm off`, and
+  `Stop 100%` while confirmation is unavailable.
+- Explain capability-specific behavior in Settings and policy help text.
+- Preserve managed CLI confirmation and its audited `--yes` override.
+
+Done when: regression tests prove that Desktop allows work across the confirm
+boundary, blocks at stop, and the managed CLI still requires explicit
+confirmation. Existing customized policies must migrate without silent data
+loss.
+
+### P1 — Add real temporary approval for Codex Desktop
+
+- Present `Allow once`, `Allow this session`, and `Cancel` in AQM when a mapped
+  workspace reaches its confirmation boundary.
+- Give every approval a narrow workspace, quota-window, and expiry scope.
+- Persist an audit record without storing prompts or source code.
+- Fail open on AQM infrastructure errors, but never represent a failed
+  integration as active protection.
+- Restore `Confirm` as an available default only after this flow works end to
+  end in Codex Desktop.
+
+Done when: a real Desktop prompt pauses at confirm, one-time approval admits
+exactly one prompt, session approval expires predictably, cancel blocks, and
+restart/reset tests cannot reuse a stale approval.
+
+### P2 — Attribution confidence and recovery hardening
+
+- Make scoped usage, unattributed usage, contention, and provider corrections
+  visibly distinct in the dashboard.
+- Continue reconciling aggregate quota percentage points; do not invent token
+  counts for a Codex subscription.
+- Add diagnostics for missing lifecycle events, helper working directories,
+  disabled hooks, and stale observations.
+- Keep reset rollover and provider correction scenarios as release-blocking
+  regression tests.
+
+Done when: a beta user can tell why folder usage did or did not move, and the
+recovery matrix passes without false blocks or usage leaking across windows.
+
+### P3 — Installable macOS beta without paid notarization
+
+- Publish universal ad-hoc-signed DMG artifacts and checksums.
+- Document the explicit Gatekeeper first-open steps and the security tradeoff.
+- Keep notarization optional until an Apple Developer account is configured.
+- Add signed/notarized release and updater work only after credentials and an
+  update trust model are available.
+
+Done when: another macOS user can verify a checksum, install the beta using the
+documented first-open flow, and understand why Gatekeeper warns.
+
+### P4 — Codex beta exit criteria
+
+- Validate the complete setup, sync, allocation, attribution, confirmation,
+  stop, reset, disable, uninstall, and recovery journey with external testers.
+- Resolve correctness and false-block reports before adding another provider.
+- Decide whether the daily entry point remains Desktop hooks, the managed CLI,
+  or a smaller combined workflow based on observed use.
+
+Done when: the Codex vertical slice is reliable enough for daily use and its
+precision/capability limits are visible at the point of action.
+
+### After the Codex vertical slice
+
+Only then evaluate Claude Code or another provider. The first multi-provider
+work should define a capability matrix and preserve unlike units rather than
+pretending subscription percentages, credits, USD spend, and concurrency are
+interchangeable.
+
 ## Current implementation
 
 The repository currently has:
