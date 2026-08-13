@@ -83,7 +83,7 @@ to that folder without presenting aggregate percentage points as token counts.
 Done when: another macOS user can verify a checksum, install the beta using the
 documented first-open flow, and understand why Gatekeeper warns.
 
-### P4 — Codex beta exit criteria — in progress
+### P4 — Codex beta exit criteria — deferred
 
 - Validate the complete setup, sync, allocation, attribution, warning,
   stop, reset, disable, uninstall, and recovery journey with external testers.
@@ -94,16 +94,21 @@ documented first-open flow, and understand why Gatekeeper warns.
 Done when: the Codex vertical slice is reliable enough for daily use and its
 precision/capability limits are visible at the point of action.
 
-The executable gate and installed-app procedures are tracked in the
-[Codex beta exit checklist](beta-exit-checklist.md). P4 is not complete until
-all manual rows have dated evidence in the recovery matrix.
+The automated and live smoke gates have passed, but the complete installed-app
+matrix was explicitly deferred on 13 August 2026. This is not a Pass: the beta
+must continue to describe protection as best-effort, and production-readiness
+claims remain blocked until the manual rows have dated evidence. The executable
+procedures remain in the
+[Codex beta exit checklist](beta-exit-checklist.md) for a future release gate.
 
 ### After the Codex vertical slice
 
-Only then evaluate Claude Code or another provider. The first multi-provider
-work should define a capability matrix and preserve unlike units rather than
-pretending subscription percentages, credits, USD spend, and concurrency are
-interchangeable.
+The project may now evaluate Claude Code or another provider without claiming
+that the Codex beta gate passed. The first multi-provider work should define a
+capability matrix and preserve unlike units rather than pretending subscription
+percentages, credits, USD spend, and concurrency are interchangeable. It must
+not weaken Codex correctness or reuse provider-specific assumptions as shared
+domain rules.
 
 ## Current implementation
 

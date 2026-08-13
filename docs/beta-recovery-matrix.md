@@ -37,7 +37,7 @@ payloads, prompts, responses, or workspace contents.
 
 ## P4 installed-app gate
 
-Status: **Pending a fresh run from merged main.**
+Status: **Deferred by maintainer on 13 August 2026. Not passed.**
 
 | Journey | Result | Evidence/date |
 | --- | --- | --- |
@@ -55,8 +55,10 @@ Status: **Pending a fresh run from merged main.**
 | Allocation removal preserves history | Pending | — |
 | Provider correction avoids false exhaustion | Pending | — |
 
-Update this table during the live run. Use `Pass`, `Fail (#issue)`, or
-`Blocked (reason)`; never infer a pass from automated coverage.
+The beta may continue with these rows deferred, but it must not be described as
+production-ready or fully validated. When the gate resumes, update this table
+with `Pass`, `Fail (#issue)`, or `Blocked (reason)`; never infer a pass from
+automated coverage.
 
 ## Live smoke check — 13 August 2026
 
