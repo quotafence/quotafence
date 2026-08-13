@@ -110,6 +110,10 @@ percentages, credits, USD spend, and concurrency are interchangeable. It must
 not weaken Codex correctness or reuse provider-specific assumptions as shared
 domain rules.
 
+The initial comparison and the bounded Claude Code discovery slice are defined
+in the [provider capability matrix](provider-capability-matrix.md). No Claude
+adapter implementation should exceed that slice without new evidence.
+
 ## Current implementation
 
 The repository currently has:
