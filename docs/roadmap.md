@@ -54,7 +54,7 @@ Done when: Desktop and managed CLI never pause at a confirmation threshold,
 warning remains advisory, stop remains blocking, and existing databases open
 without user action.
 
-### P2 — Attribution confidence and recovery hardening — awaiting merge
+### P2 — Attribution confidence and recovery hardening — complete
 
 - Make scoped usage, unattributed usage, contention, and provider corrections
   visibly distinct in the dashboard.
@@ -67,6 +67,10 @@ without user action.
 
 Done when: a beta user can tell why folder usage did or did not move, and the
 recovery matrix passes without false blocks or usage leaking across windows.
+
+The Overview now separates folder-tracked usage, unassigned provider usage,
+and open observations. Allocation rows also show the amount safely attributed
+to that folder without presenting aggregate percentage points as token counts.
 
 ### P3 — Installable macOS beta without paid notarization — skipped for now
 

@@ -57,3 +57,27 @@ Status: **Pending a fresh run from merged main.**
 
 Update this table during the live run. Use `Pass`, `Fail (#issue)`, or
 `Blocked (reason)`; never infer a pass from automated coverage.
+
+## Live smoke check — 13 August 2026
+
+- The full production build, Rust formatting, locked check, clippy, 139 library
+  tests, and 12 CLI tests passed from merged `main` at `c16334d`.
+- `aqm context --json` resolved the repository root to the expected active
+  allocation and returned an `allow` decision.
+- A direct official App Server `account/rateLimits/read` request returned the
+  active Codex weekly window without reading credentials, prompts, responses,
+  transcripts, or workspace contents.
+- `aqm admit codex --json` refreshed that window, returned `synced`, preserved
+  the window identity, and allowed the mapped workspace with exit code `0`.
+- The allocation and provider remaining values moved together during current
+  single-workspace activity. This is supporting evidence only; the isolated
+  folder-attribution checklist row remains Pending until a timestamped test
+  turn is compared before and after Sync.
+- `aqm hooks status codex` confirmed that AQM hook entries were configured.
+  Verified trust and enablement still require the Codex Desktop check.
+
+The first sandboxed refresh could not initialize Codex's local runtime because
+the test shell denied writes under the Codex home directory. Repeating the same
+official App Server request with normal local permissions succeeded, so this
+was classified as a test-environment restriction rather than a provider or AQM
+sync regression.
