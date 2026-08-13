@@ -41,7 +41,7 @@ boundary, blocks at stop, and the managed CLI still requires explicit
 confirmation. Existing customized policies must migrate without silent data
 loss.
 
-### P1 — Simplify policy to Warn → Stop — in progress
+### P1 — Simplify policy to Warn → Stop — complete
 
 - Remove confirmation controls and dialogs from the product workflow.
 - Keep warning advisory and stop as the only blocking boundary.
@@ -54,7 +54,7 @@ Done when: Desktop and managed CLI never pause at a confirmation threshold,
 warning remains advisory, stop remains blocking, and existing databases open
 without user action.
 
-### P2 — Attribution confidence and recovery hardening
+### P2 — Attribution confidence and recovery hardening — awaiting merge
 
 - Make scoped usage, unattributed usage, contention, and provider corrections
   visibly distinct in the dashboard.
@@ -68,7 +68,7 @@ without user action.
 Done when: a beta user can tell why folder usage did or did not move, and the
 recovery matrix passes without false blocks or usage leaking across windows.
 
-### P3 — Installable macOS beta without paid notarization
+### P3 — Installable macOS beta without paid notarization — skipped for now
 
 - Publish universal ad-hoc-signed DMG artifacts and checksums.
 - Document the explicit Gatekeeper first-open steps and the security tradeoff.
@@ -79,7 +79,7 @@ recovery matrix passes without false blocks or usage leaking across windows.
 Done when: another macOS user can verify a checksum, install the beta using the
 documented first-open flow, and understand why Gatekeeper warns.
 
-### P4 — Codex beta exit criteria
+### P4 — Codex beta exit criteria — in progress
 
 - Validate the complete setup, sync, allocation, attribution, warning,
   stop, reset, disable, uninstall, and recovery journey with external testers.
@@ -89,6 +89,10 @@ documented first-open flow, and understand why Gatekeeper warns.
 
 Done when: the Codex vertical slice is reliable enough for daily use and its
 precision/capability limits are visible at the point of action.
+
+The executable gate and installed-app procedures are tracked in the
+[Codex beta exit checklist](beta-exit-checklist.md). P4 is not complete until
+all manual rows have dated evidence in the recovery matrix.
 
 ### After the Codex vertical slice
 
@@ -118,8 +122,8 @@ The repository currently has:
 - passive Codex Desktop attribution from local thread metadata at refresh, plus
   optional trusted lifecycle hooks for pre-prompt admission and
   higher-frequency observation;
-- persisted workspace policy overrides shared by dashboard, CLI admission, and
-  managed launch, with audited confirmation acceptance; and
+- persisted Warn -> Stop workspace policy overrides shared by dashboard, CLI
+  admission, and managed launch; and
 - an evidence-gated managed burn rate and depletion signal for the active
   provider window.
 
@@ -138,7 +142,7 @@ recovery, or exact token accounting.
 | Attribution | Managed deltas are observed and scoped only without visible contention | Richer provider signals when available |
 | Reconciliation | Implemented for exact delta, zero, ambiguity, rollover, and failure | Retry/recovery improvements from real usage |
 | Policy | Persisted workspace override, then application default | Add provider-specific policy only with evidence |
-| Enforcement | Warn, confirm, or refuse an AQM-managed launch | Live termination only with a timely signal |
+| Enforcement | Warn or refuse a new prompt/managed launch at Stop | Live termination only with a timely signal |
 | Forecasting | Managed-session burn rate with evidence gate | Refine from real history and stronger provider signals |
 | Routing | None | Deferred until one provider loop is reliable |
 
@@ -266,25 +270,23 @@ the same work is not counted again as an experimental desktop turn.
 ### M5 — Enforced policy in the daily workflow — complete
 
 - Persist policy at the appropriate allocation or scope boundary.
-- Surface warn and confirmation outcomes in the CLI without hiding provider
-  output.
+- Surface advisory warnings in the CLI without hiding provider output.
 - Define stop as refusal to launch an over-budget AQM-managed session.
 - Only add in-flight termination when the adapter provides a sufficiently
   timely usage signal and AQM owns the process.
 - Make `aqm run codex` fast enough that bypassing it is less convenient than
   using it.
 
-Verification: policy precedence tests, interactive/non-interactive confirmation
-tests, override audit records, and proof that unmanaged Codex sessions are
-never described as hard-enforced.
+Verification: policy precedence tests, warning and stop boundary tests, and
+proof that unmanaged Codex sessions are never described as hard-enforced.
 
 Implemented with workspace-scope policy rows using integer basis points.
 `aqm policy show/set/reset` and the desktop allocation form share the same
 application service. `aqm admit codex` remains a side-effect-free assessment;
-`aqm run codex --yes` records an override only when it actually crosses a
-confirmation boundary and starts the managed session. Stop refuses launch.
-Live termination remains intentionally unsupported because the aggregate Codex
-checkpoint is not a timely in-flight signal.
+warning remains advisory and Stop refuses launch. Legacy confirmation data is
+kept readable but is not part of the active policy workflow. Live termination
+remains intentionally unsupported because the aggregate Codex checkpoint is
+not a timely in-flight signal.
 
 ### M6 — Burn rate and depletion signal — complete
 
@@ -399,13 +401,10 @@ not the long-term concurrency product.
 Separate policy decision from adapter capability:
 
 - warn is always advisory;
-- confirmation is an AQM admission gate;
 - stop initially means refusing to launch through AQM;
 - live termination requires both process ownership and a timely, trustworthy
   usage signal; and
 - unmanaged sessions remain outside hard enforcement.
-
-An override should be explicit and auditable.
 
 Persist the v0.1 policy on the workspace scope so it survives provider-window
 rollover. Resolve the effective policy as workspace override, then application
