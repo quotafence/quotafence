@@ -18,7 +18,7 @@ use crate::{
     },
     domain::EnforcementDecision,
     paths,
-    storage::{CodexHookReceipt, CodexHookReceiptStatus, Database, NewCodexDesktopConfirmation},
+    storage::{CodexHookReceipt, CodexHookReceiptStatus, Database},
     workspace::canonicalize_workspace_path,
 };
 
@@ -31,7 +31,6 @@ const INSTALLED_EVENTS: [(&str, u64, &str); 2] = [
     ("Stop", 90, "reconciling workspace usage"),
 ];
 const OWNED_EVENT_NAMES: [&str; 3] = ["UserPromptSubmit", "Stop", "SessionEnd"];
-const DESKTOP_CONFIRMATION_TTL_MILLIS: i64 = 10 * 60 * 1_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodexHookEventKind {
@@ -655,42 +654,12 @@ where
                     reason: exhausted_allocation_reason(scope_display_name, assessment.limit),
                 });
             }
-            // Codex Desktop hooks cannot render an AQM approval UI themselves.
-            // Persist a short-lived request, block the original prompt, and let
-            // one matching retry consume an approval from the desktop app.
-            EnforcementDecision::RequireConfirmation => {
-                let scope_id = scope_id.as_deref().ok_or_else(|| {
-                    "confirmation-bound workspace has no resolved scope".to_owned()
-                })?;
-                if !service
-                    .consume_codex_desktop_approval(
-                        &event.session_id,
-                        scope_id,
-                        &window_id,
-                        observed_at,
-                    )
-                    .map_err(|error| error.to_string())?
-                {
-                    service
-                        .request_codex_desktop_confirmation(NewCodexDesktopConfirmation {
-                            id: format!("{}:{scope_id}:{window_id}", event.session_id),
-                            session_id: event.session_id.clone(),
-                            turn_id: turn_id.to_owned(),
-                            scope_id: scope_id.to_owned(),
-                            window_id: window_id.clone(),
-                            canonical_path: canonical_path.clone(),
-                            requested_at: observed_at,
-                            expires_at: observed_at + DESKTOP_CONFIRMATION_TTL_MILLIS,
-                        })
-                        .map_err(|error| error.to_string())?;
-                    return Ok(CodexHookOutcome::Blocked {
-                        reason: format!(
-                            "AQM needs confirmation to continue in {scope_display_name}. Open Agent Quota Manager, choose Allow once or Cancel, then retry this prompt."
-                        ),
-                    });
-                }
-            }
-            EnforcementDecision::Allow | EnforcementDecision::Warn => {}
+            // Confirmation is retained only as a legacy storage/API value.
+            // Effective AQM policy is Warn -> Stop, so a legacy confirmation
+            // decision must never interrupt a Codex Desktop prompt.
+            EnforcementDecision::Allow
+            | EnforcementDecision::Warn
+            | EnforcementDecision::RequireConfirmation => {}
         }
     }
 
@@ -1019,7 +988,7 @@ mod tests {
     use crate::{
         application::{
             CreateAllocatedWorkspace, CreateQuotaSource, GetPendingCodexConfirmations,
-            GetQuotaDashboard, ProviderQuotaSnapshotInput, RecordUsage, ResolveCodexConfirmation,
+            GetQuotaDashboard, ProviderQuotaSnapshotInput, RecordUsage,
         },
         domain::{Confidence, UsageSource},
         providers::codex::{DetectedQuotaWindow, DetectionStatus},
@@ -1529,7 +1498,7 @@ mod tests {
     }
 
     #[test]
-    fn desktop_confirmation_allows_exactly_one_retried_prompt() {
+    fn legacy_desktop_confirmation_threshold_never_blocks_or_prompts() {
         let folder = temporary_folder("desktop-confirmation");
         let canonical_path = canonicalize_workspace_path(&folder).unwrap();
         let mut service = protected_service(&folder);
@@ -1553,53 +1522,16 @@ mod tests {
             hook_event_name: "UserPromptSubmit".to_owned(),
         };
 
-        let first = handle_event(&mut service, &event, 3_000, || Some(detection(28))).unwrap();
+        let outcome = handle_event(&mut service, &event, 3_000, || Some(detection(28))).unwrap();
 
         assert!(matches!(
-            first,
-            CodexHookOutcome::Blocked { ref reason }
-                if reason.contains("choose Allow once or Cancel")
+            outcome,
+            CodexHookOutcome::ObservationStarted { .. }
         ));
         let pending = service
             .pending_codex_confirmations(GetPendingCodexConfirmations { at: 3_050 })
             .unwrap();
-        assert_eq!(pending.len(), 1);
-        assert!(service
-            .resolve_codex_confirmation(ResolveCodexConfirmation {
-                id: pending[0].id.clone(),
-                approved: true,
-                resolved_at: 3_100,
-            })
-            .unwrap());
-
-        let outcome = handle_event(&mut service, &event, 3_200, || Some(detection(28))).unwrap();
-
-        assert!(matches!(
-            outcome,
-            CodexHookOutcome::ObservationStarted {
-                scope_id: Some(ref scope_id),
-                ..
-            } if scope_id == "workspace-a"
-        ));
-        assert!(service
-            .provider_turn_observation(GetProviderTurnObservation {
-                session_id: "session-desktop-confirmation".to_owned(),
-                turn_id: "turn-desktop-confirmation".to_owned(),
-            })
-            .unwrap()
-            .is_some());
-
-        let third = handle_event(
-            &mut service,
-            &CodexHookEvent {
-                turn_id: Some("turn-desktop-confirmation-2".to_owned()),
-                ..event
-            },
-            3_300,
-            || Some(detection(28)),
-        )
-        .unwrap();
-        assert!(matches!(third, CodexHookOutcome::Blocked { .. }));
+        assert!(pending.is_empty());
 
         std::fs::remove_dir(folder).unwrap();
     }

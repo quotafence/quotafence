@@ -32,9 +32,6 @@ export function AllocationForm({
   const [warnAt, setWarnAt] = useState(
     formatBasisPoints(currentPolicy.warnAtBasisPoints),
   );
-  const [confirmAt, setConfirmAt] = useState(
-    formatBasisPoints(currentPolicy.confirmAtBasisPoints),
-  );
   const [stopAt, setStopAt] = useState(
     formatBasisPoints(currentPolicy.stopAtBasisPoints),
   );
@@ -44,12 +41,11 @@ export function AllocationForm({
     event.preventDefault();
     const policy = {
       warnAtBasisPoints: parsePercent(warnAt),
-      confirmAtBasisPoints: parsePercent(confirmAt),
+      confirmAtBasisPoints: null,
       stopAtBasisPoints: parsePercent(stopAt),
     };
     const thresholds = [
       policy.warnAtBasisPoints,
-      policy.confirmAtBasisPoints,
       policy.stopAtBasisPoints,
     ].filter((value): value is number => value !== null);
     if (
@@ -57,7 +53,7 @@ export function AllocationForm({
       thresholds.some((value, index) => index > 0 && thresholds[index - 1] > value)
     ) {
       setValidation(
-        "Thresholds must be between 0.01% and 100%, ordered warn ≤ confirm ≤ stop.",
+        "Thresholds must be between 0.01% and 100%, ordered warn ≤ stop.",
       );
       return;
     }
@@ -105,17 +101,13 @@ export function AllocationForm({
       <fieldset className="policy-fields">
         <legend>Managed session policy</legend>
         <p className="form-help">
-          Warn continues with a notice. Confirm requires approval: managed CLI
-          uses --yes, while Codex Desktop asks through AQM and requires you to
-          retry the blocked prompt. Stop always refuses the next managed launch
-          or protected prompt. Clear a threshold to disable it.
+          Warn continues with a notice. Stop refuses the next managed launch or
+          protected prompt. Clear a threshold to disable it.
         </p>
         <PolicyThresholdControl
           warnAt={warnAt}
-          confirmAt={confirmAt}
           stopAt={stopAt}
           onWarnChange={setWarnAt}
-          onConfirmChange={setConfirmAt}
           onStopChange={setStopAt}
         />
       </fieldset>

@@ -13,13 +13,11 @@ import {
   createQuotaSource,
   getErrorMessage,
   getCodexProtectionEvents,
-  getPendingCodexConfirmations,
   getCodexProtectionStatus,
   getLocalState,
   installCodexProtection,
   removeWorkspaceAllocation,
   resetWorkspacePolicy,
-  resolveCodexConfirmation,
   setAllocation,
   setAllocationPriorityOrder,
   setWorkspacePolicy,
@@ -29,7 +27,6 @@ import {
 import type {
   LocalState,
   CodexProtectionEvent,
-  CodexDesktopConfirmation,
   CodexProtectionStatus,
   CodexSyncResult,
   QuotaSourceInput,
@@ -175,9 +172,6 @@ function App() {
   const [codexProtectionEvents, setCodexProtectionEvents] = useState<
     CodexProtectionEvent[]
   >([]);
-  const [codexConfirmations, setCodexConfirmations] = useState<
-    CodexDesktopConfirmation[]
-  >([]);
   const [protectionBusy, setProtectionBusy] = useState(false);
   const [codexSyncResult, setCodexSyncResult] =
     useState<CodexSyncResult | null>(null);
@@ -282,22 +276,6 @@ function App() {
     return () => window.removeEventListener("focus", refreshProtection);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const refreshConfirmations = () => {
-      getPendingCodexConfirmations()
-        .then((confirmations) => {
-          if (!cancelled) setCodexConfirmations(confirmations);
-        })
-        .catch(() => undefined);
-    };
-    refreshConfirmations();
-    const intervalId = window.setInterval(refreshConfirmations, 1_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, []);
 
   const selectedSource = useMemo(
     () =>
@@ -622,34 +600,6 @@ function App() {
           (allocation) => allocation.scopeId === modal.scope.id,
         )
       : undefined;
-  const pendingConfirmation = codexConfirmations[0] ?? null;
-
-  async function handleCodexConfirmation(approved: boolean) {
-    if (!pendingConfirmation) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const resolved = await resolveCodexConfirmation(
-        pendingConfirmation.id,
-        approved,
-      );
-      if (!resolved) {
-        throw new Error("This confirmation expired. Retry the Codex prompt.");
-      }
-      setCodexConfirmations((current) =>
-        current.filter((item) => item.id !== pendingConfirmation.id),
-      );
-      setNotice(
-        approved
-          ? "Approved once. Retry the blocked prompt in Codex now."
-          : "Codex prompt cancelled.",
-      );
-    } catch (reason) {
-      setError(getErrorMessage(reason));
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   return (
     <>
@@ -703,44 +653,6 @@ function App() {
             <Icon name="x" size={17} />
           </button>
         </div>
-      )}
-
-      {pendingConfirmation && (
-        <Modal
-          eyebrow="Codex Desktop confirmation"
-          title="Use reserved quota?"
-          onClose={() => void handleCodexConfirmation(false)}
-        >
-          <div className="confirmation-dialog">
-            <p>
-              <strong>{pendingConfirmation.workspaceName}</strong> reached its
-              confirmation boundary. The original prompt was not sent.
-            </p>
-            <p className="form-help">{pendingConfirmation.canonicalPath}</p>
-            <p className="form-help">
-              Allow once, then retry the prompt in Codex. The approval expires
-              in 10 minutes and can be consumed only once.
-            </p>
-            <div className="modal-actions">
-              <button
-                className="button outline"
-                type="button"
-                disabled={submitting}
-                onClick={() => void handleCodexConfirmation(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="button primary"
-                type="button"
-                disabled={submitting}
-                onClick={() => void handleCodexConfirmation(true)}
-              >
-                {submitting ? "Saving…" : "Allow once"}
-              </button>
-            </div>
-          </div>
-        </Modal>
       )}
 
       {modal?.type === "source" && (
@@ -876,7 +788,7 @@ function App() {
             currentPolicy={
               editingAllocation?.policy ?? {
                 warnAtBasisPoints: 8_000,
-                confirmAtBasisPoints: 9_000,
+                confirmAtBasisPoints: null,
                 stopAtBasisPoints: 10_000,
                 customized: false,
                 updatedAt: null,

@@ -50,7 +50,7 @@ For the selected quota window, the UI can:
 - prevent duplicate active bindings to the same detected provider limit;
 - archive a quota source without deleting its ledger history;
 - show folder-level reservations and policy decisions;
-- configure per-folder warn, confirmation, and stop thresholds;
+- configure per-folder warn and stop thresholds;
 - show a depletion warning only after at least five managed sessions; and
 - install and report the configuration status of Codex Desktop workspace
   protection from Settings, turn it on or off without changing unrelated hooks,

@@ -41,25 +41,18 @@ boundary, blocks at stop, and the managed CLI still requires explicit
 confirmation. Existing customized policies must migrate without silent data
 loss.
 
-### P1 — Add real temporary approval for Codex Desktop — in progress
+### P1 — Simplify policy to Warn → Stop — in progress
 
-- Present `Allow once`, `Allow this session`, and `Cancel` in AQM when a mapped
-  workspace reaches its confirmation boundary.
-- Give every approval a narrow workspace, quota-window, and expiry scope.
-- Persist an audit record without storing prompts or source code.
-- Fail open on AQM infrastructure errors, but never represent a failed
-  integration as active protection.
-- Restore `Confirm` as an available default only after this flow works end to
-  end in Codex Desktop.
+- Remove confirmation controls and dialogs from the product workflow.
+- Keep warning advisory and stop as the only blocking boundary.
+- Treat persisted confirmation thresholds as legacy no-op data so existing
+  beta databases remain readable without a destructive migration.
+- Keep historical confirmation tables for migration compatibility, but do not
+  create new approval requests or audits.
 
-The first vertical slice uses `Allow once` and `Cancel`. Codex blocks the
-original prompt, AQM presents the pending request, and the user retries after
-approval. `Allow this session` remains follow-up work so its lifecycle and
-expiry semantics can be verified independently.
-
-Done when: a real Desktop prompt pauses at confirm, one-time approval admits
-exactly one prompt, session approval expires predictably, cancel blocks, and
-restart/reset tests cannot reuse a stale approval.
+Done when: Desktop and managed CLI never pause at a confirmation threshold,
+warning remains advisory, stop remains blocking, and existing databases open
+without user action.
 
 ### P2 — Attribution confidence and recovery hardening
 
@@ -88,7 +81,7 @@ documented first-open flow, and understand why Gatekeeper warns.
 
 ### P4 — Codex beta exit criteria
 
-- Validate the complete setup, sync, allocation, attribution, confirmation,
+- Validate the complete setup, sync, allocation, attribution, warning,
   stop, reset, disable, uninstall, and recovery journey with external testers.
 - Resolve correctness and false-block reports before adding another provider.
 - Decide whether the daily entry point remains Desktop hooks, the managed CLI,

@@ -170,7 +170,7 @@ mistaken for confirmed provider data.
 
 ## Enforcement
 
-Policies may define warning, confirmation, and stop thresholds. A hard stop is
+Policies define warning and stop thresholds. A hard stop is
 only valid for a session controlled by an adapter with the required capability.
 External sessions can consume quota outside local enforcement, so no adapter
 should promise an absolute account-wide limit unless the provider itself offers

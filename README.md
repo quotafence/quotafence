@@ -44,7 +44,7 @@ That workflow now:
 
 - resolves the current folder to a workspace allocation;
 - reserves capacity for the requested work;
-- warns, requires confirmation, or refuses admission at a policy boundary;
+- warns or refuses admission at a policy boundary;
 - runs a Codex process under AQM management; and
 - refreshes the provider checkpoint after exit and attributes an unambiguous
   observed delta to the workspace.
@@ -52,7 +52,7 @@ That workflow now:
 On Unix, the next managed invocation also recovers sessions orphaned by a
 crashed supervisor. When AQM observes concurrent Codex work in the same quota
 window, the aggregate delta remains unattributed. Each folder can persist its
-own warn, confirmation, and stop thresholds; both the desktop and CLI resolve
+own warn and stop thresholds; both the desktop and CLI resolve
 that override before falling back to the application defaults.
 
 The dashboard derives a conservative managed burn rate from reconciled sessions
