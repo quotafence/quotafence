@@ -1,8 +1,8 @@
 # v0.1 Beta Guide
 
-Agent Quota Manager `v0.1.0-beta.1` is a source-distributed macOS beta for solo
-Codex power users. Treat it as a safety aid with explicit health states, not as
-an account-level guarantee.
+Agent Quota Manager `v0.1.0-beta.1` is an ad-hoc-signed macOS beta for solo
+Codex power users. It can also be built from source. Treat it as a safety aid
+with explicit health states, not as an account-level guarantee.
 
 ## Before relying on protection
 
@@ -63,8 +63,9 @@ before posting it because local paths may reveal usernames or project names.
 
 - Codex only; no Claude Code or provider routing yet.
 - macOS is the live-tested platform for this beta.
-- Source build only; no signed installer, automatic update, or checksum release
-  flow yet.
+- The beta DMG is not notarized, so macOS displays a Gatekeeper warning and the
+  user must explicitly allow the first launch. There is no automatic update or
+  production signing flow yet.
 - Percentage checkpoints are integer and aggregate, so small or concurrent
   changes may be delayed or remain unassigned.
 - Cross-platform managed-process orphan recovery is incomplete.
@@ -78,5 +79,7 @@ health state, window/reset context, and reproducible steps. Redact usernames and
 project names from paths. Never attach credentials, prompts, responses,
 transcripts, source code, or the entire Codex/AQM database.
 
-The exercised recovery scenarios are recorded in the
+The release gate is defined in the
+[Codex beta exit checklist](beta-exit-checklist.md), with exercised recovery
+evidence recorded in the
 [Codex Desktop beta recovery matrix](beta-recovery-matrix.md).
