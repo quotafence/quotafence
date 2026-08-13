@@ -54,16 +54,29 @@ struct ClaudeStatusLineHeartbeat {
     last_quota_observed_at: Option<i64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ClaudeCredentialsFile {
     claude_ai_oauth: ClaudeOAuthCredential,
+    #[serde(flatten)]
+    extra: serde_json::Map<String, Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ClaudeOAuthCredential {
     access_token: String,
+    refresh_token: Option<String>,
+    expires_at: Option<f64>,
+    #[serde(flatten)]
+    extra: serde_json::Map<String, Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeTokenRefreshResponse {
+    access_token: String,
+    refresh_token: Option<String>,
+    expires_in: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -493,7 +506,7 @@ impl TryFrom<StatusLineRateLimitWindow> for ClaudeRateLimitWindow {
     }
 }
 
-fn read_claude_code_oauth_token() -> Result<String, String> {
+fn read_claude_code_credentials() -> Result<(String, ClaudeCredentialsFile), String> {
     let account = env::var("USER").map_err(|_| "cannot resolve the macOS account name")?;
     let output = Command::new("/usr/bin/security")
         .args([
@@ -518,7 +531,90 @@ fn read_claude_code_oauth_token() -> Result<String, String> {
     if token.is_empty() {
         return Err("Claude Code login does not contain an access token".to_owned());
     }
-    Ok(token.to_owned())
+    Ok((account, credentials))
+}
+
+fn write_claude_code_credentials(
+    account: &str,
+    credentials: &ClaudeCredentialsFile,
+) -> Result<(), String> {
+    let encoded = serde_json::to_string(credentials)
+        .map_err(|_| "could not preserve the refreshed Claude login")?;
+    let output = Command::new("/usr/bin/security")
+        .args([
+            "add-generic-password",
+            "-U",
+            "-s",
+            CLAUDE_KEYCHAIN_SERVICE,
+            "-a",
+            account,
+            "-w",
+            encoded.as_str(),
+        ])
+        .output()
+        .map_err(|_| "could not update the refreshed Claude login in macOS Keychain")?;
+    if !output.status.success() {
+        return Err("macOS Keychain could not save the refreshed Claude login".to_owned());
+    }
+    Ok(())
+}
+
+fn refresh_claude_access_token(
+    client: &reqwest::blocking::Client,
+    account: &str,
+    credentials: &mut ClaudeCredentialsFile,
+) -> Result<(), String> {
+    const REFRESH_URL: &str = "https://platform.claude.com/v1/oauth/token";
+    const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+    const SCOPES: &str =
+        "user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload";
+
+    let refresh_token = credentials
+        .claude_ai_oauth
+        .refresh_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .ok_or_else(|| "Claude login expired and does not contain a refresh token".to_owned())?;
+    let response = client
+        .post(REFRESH_URL)
+        .json(&json!({
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": CLIENT_ID,
+            "scope": SCOPES,
+        }))
+        .send()
+        .map_err(|_| "could not refresh the Claude login")?;
+    if !response.status().is_success() {
+        return Err(
+            if response.status() == reqwest::StatusCode::BAD_REQUEST
+                || response.status() == reqwest::StatusCode::UNAUTHORIZED
+            {
+                "Claude session has expired. Sign in to Claude Code again, then refresh.".to_owned()
+            } else {
+                format!(
+                    "Claude login refresh failed with status {}",
+                    response.status().as_u16()
+                )
+            },
+        );
+    }
+    let refreshed: ClaudeTokenRefreshResponse = response
+        .json()
+        .map_err(|_| "Claude returned an unsupported login refresh response")?;
+    if refreshed.access_token.trim().is_empty() {
+        return Err("Claude returned an empty refreshed access token".to_owned());
+    }
+    credentials.claude_ai_oauth.access_token = refreshed.access_token;
+    if let Some(refresh_token) = refreshed.refresh_token {
+        credentials.claude_ai_oauth.refresh_token = Some(refresh_token);
+    }
+    if let Some(expires_in) = refreshed.expires_in {
+        credentials.claude_ai_oauth.expires_at =
+            Some(current_time_millis() as f64 + expires_in * 1_000.0);
+    }
+    write_claude_code_credentials(account, credentials)
 }
 
 fn map_usage_window(window: ClaudeUsageWindow) -> Result<ClaudeRateLimitWindow, String> {
@@ -538,13 +634,21 @@ fn map_usage_window(window: ClaudeUsageWindow) -> Result<ClaudeRateLimitWindow, 
 }
 
 pub fn fetch_subscription_usage() -> Result<ClaudeStatusLineObservation, String> {
-    let token = read_claude_code_oauth_token()?;
-    let response = reqwest::blocking::Client::builder()
+    let (account, mut credentials) = read_claude_code_credentials()?;
+    let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
-        .map_err(|_| "could not initialize Claude usage refresh")?
+        .map_err(|_| "could not initialize Claude usage refresh")?;
+    let expires_soon = credentials
+        .claude_ai_oauth
+        .expires_at
+        .is_some_and(|expires_at| expires_at <= current_time_millis() as f64 + 5.0 * 60_000.0);
+    if expires_soon {
+        refresh_claude_access_token(&client, &account, &mut credentials)?;
+    }
+    let mut response = client
         .get(CLAUDE_USAGE_URL)
-        .bearer_auth(token)
+        .bearer_auth(credentials.claude_ai_oauth.access_token.trim())
         .header("Accept", "application/json")
         .header("Content-Type", "application/json")
         .header("anthropic-beta", "oauth-2025-04-20")
@@ -554,9 +658,16 @@ pub fn fetch_subscription_usage() -> Result<ClaudeStatusLineObservation, String>
     if response.status() == reqwest::StatusCode::UNAUTHORIZED
         || response.status() == reqwest::StatusCode::FORBIDDEN
     {
-        return Err(
-            "Claude login cannot read subscription usage. Sign in to Claude Code again.".to_owned(),
-        );
+        refresh_claude_access_token(&client, &account, &mut credentials)?;
+        response = client
+            .get(CLAUDE_USAGE_URL)
+            .bearer_auth(credentials.claude_ai_oauth.access_token.trim())
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .header("anthropic-beta", "oauth-2025-04-20")
+            .header("User-Agent", "claude-code/2.1.69")
+            .send()
+            .map_err(|_| "could not reach Claude subscription usage after login refresh")?;
     }
     if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
         return Err("Claude usage refresh is rate limited. Wait before trying again.".to_owned());
