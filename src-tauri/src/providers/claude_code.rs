@@ -5,9 +5,14 @@ use std::{
     process::Command,
 };
 
+use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
 use chrono::DateTime;
+use pbkdf2::pbkdf2_hmac;
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha1::Sha1;
+use sha2::{Digest, Sha256};
 
 use crate::{
     application::{
@@ -26,6 +31,9 @@ const FIVE_HOURS_MILLIS: i64 = 5 * 60 * 60 * 1_000;
 const SEVEN_DAYS_MILLIS: i64 = 7 * 24 * 60 * 60 * 1_000;
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const CLAUDE_KEYCHAIN_SERVICE: &str = "Claude Code-credentials";
+const CLAUDE_SAFE_STORAGE_SERVICE: &str = "Claude Safe Storage";
+const CLAUDE_SAFE_STORAGE_ACCOUNT: &str = "Claude Key";
+const CLAUDE_DESKTOP_CONFIG: &str = "Library/Application Support/Claude/config.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -617,6 +625,167 @@ fn refresh_claude_access_token(
     write_claude_code_credentials(account, credentials)
 }
 
+fn read_keychain_password(service: &str, account: &str) -> Result<Vec<u8>, String> {
+    let mut output = Command::new("/usr/bin/security")
+        .args(["find-generic-password", "-w", "-s", service, "-a", account])
+        .output()
+        .map_err(|_| "could not ask macOS Keychain for Claude Desktop access")?;
+    if !output.status.success() || output.stdout.is_empty() {
+        return Err("Claude Desktop Keychain access was denied or unavailable".to_owned());
+    }
+    while output
+        .stdout
+        .last()
+        .is_some_and(|byte| byte.is_ascii_whitespace())
+    {
+        output.stdout.pop();
+    }
+    Ok(output.stdout)
+}
+
+fn decrypt_desktop_value(encrypted: &[u8], key: &[u8; 16]) -> Result<Vec<u8>, String> {
+    if encrypted.len() <= 3 || &encrypted[..3] != b"v10" {
+        return Err("Claude Desktop returned unsupported encrypted data".to_owned());
+    }
+    let mut payload = encrypted[3..].to_vec();
+    let decrypted = cbc::Decryptor::<aes::Aes128>::new(key.into(), (&[0x20_u8; 16]).into())
+        .decrypt_padded_mut::<Pkcs7>(&mut payload)
+        .map_err(|_| "could not decrypt Claude Desktop login data")?;
+    Ok(decrypted.to_vec())
+}
+
+fn desktop_safe_storage_key() -> Result<[u8; 16], String> {
+    let password =
+        read_keychain_password(CLAUDE_SAFE_STORAGE_SERVICE, CLAUDE_SAFE_STORAGE_ACCOUNT)?;
+    let mut key = [0_u8; 16];
+    pbkdf2_hmac::<Sha1>(&password, b"saltysalt", 1003, &mut key);
+    Ok(key)
+}
+
+fn read_desktop_active_organization(key: &[u8; 16]) -> Result<String, String> {
+    let home = dirs::home_dir().ok_or_else(|| "cannot resolve the home directory".to_owned())?;
+    for relative in [
+        "Library/Application Support/Claude/Cookies",
+        "Library/Application Support/Claude/Network/Cookies",
+    ] {
+        let path = home.join(relative);
+        if !path.exists() {
+            continue;
+        }
+        let connection = match Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        ) {
+            Ok(connection) => connection,
+            Err(_) => continue,
+        };
+        for host in [".claude.ai", "claude.ai"] {
+            let row: Option<(String, Vec<u8>)> = connection
+                .query_row(
+                    "SELECT value, encrypted_value FROM cookies WHERE name = 'lastActiveOrg' AND host_key = ?1 ORDER BY last_update_utc DESC LIMIT 1",
+                    [host],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()
+                .map_err(|_| "could not inspect Claude Desktop organization metadata")?;
+            let Some((plain, encrypted)) = row else {
+                continue;
+            };
+            let value = if !plain.is_empty() {
+                plain.into_bytes()
+            } else {
+                let decrypted = decrypt_desktop_value(&encrypted, key)?;
+                let host_hash = Sha256::digest(host.as_bytes());
+                if !decrypted.starts_with(host_hash.as_slice()) {
+                    continue;
+                }
+                decrypted[host_hash.len()..].to_vec()
+            };
+            let organization = String::from_utf8(value)
+                .map_err(|_| "Claude Desktop returned invalid organization metadata")?;
+            if organization.parse::<uuid::Uuid>().is_ok() {
+                return Ok(organization.to_lowercase());
+            }
+        }
+    }
+    Err("Claude Desktop active organization was not found".to_owned())
+}
+
+fn read_desktop_access_token() -> Result<String, String> {
+    use base64::Engine;
+
+    let key = desktop_safe_storage_key()?;
+    let organization = read_desktop_active_organization(&key)?;
+    let config_path = dirs::home_dir()
+        .ok_or_else(|| "cannot resolve the home directory".to_owned())?
+        .join(CLAUDE_DESKTOP_CONFIG);
+    let root: Value = serde_json::from_slice(
+        &fs::read(config_path).map_err(|_| "Claude Desktop login cache was not found")?,
+    )
+    .map_err(|_| "Claude Desktop returned an unsupported login cache")?;
+    let now_with_margin = current_time_millis() as f64 + 2.0 * 60_000.0;
+    let mut candidates: Vec<(i32, usize, f64, String)> = Vec::new();
+    for cache_name in ["oauth:tokenCacheV2", "oauth:tokenCache"] {
+        let Some(encoded) = root.get(cache_name).and_then(Value::as_str) else {
+            continue;
+        };
+        let encrypted = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .map_err(|_| "Claude Desktop returned an invalid login cache")?;
+        let cache: Value = serde_json::from_slice(&decrypt_desktop_value(&encrypted, &key)?)
+            .map_err(|_| "Claude Desktop returned an unsupported login cache")?;
+        let Some(entries) = cache.as_object() else {
+            continue;
+        };
+        for (cache_key, entry) in entries {
+            let marker = ":https://api.anthropic.com:";
+            let Some((prefix, scopes_text)) = cache_key.split_once(marker) else {
+                continue;
+            };
+            let Some((client_id, entry_org)) = prefix.split_once(':') else {
+                continue;
+            };
+            if !entry_org.eq_ignore_ascii_case(&organization) {
+                continue;
+            }
+            let scopes: Vec<&str> = scopes_text.split_whitespace().collect();
+            if !scopes.contains(&"user:profile") {
+                continue;
+            }
+            let Some(token) = entry.get("token").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(expires_at) = entry.get("expiresAt").and_then(Value::as_f64) else {
+                continue;
+            };
+            if token.trim().is_empty() || expires_at <= now_with_margin {
+                continue;
+            }
+            let full_scope = scopes.contains(&"user:inference") as i32;
+            let production_client = (client_id == "9d1c250a-e61b-44d9-88ed-5944d1962f5e") as i32;
+            candidates.push((
+                production_client * 2 + full_scope,
+                scopes.len(),
+                expires_at,
+                token.to_owned(),
+            ));
+        }
+    }
+    candidates
+        .into_iter()
+        .max_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then(left.1.cmp(&right.1))
+                .then(left.2.total_cmp(&right.2))
+        })
+        .map(|candidate| candidate.3)
+        .ok_or_else(|| {
+            "Claude Desktop has no current usage-capable login. Reopen Claude Desktop and try again."
+                .to_owned()
+        })
+}
+
 fn map_usage_window(window: ClaudeUsageWindow) -> Result<ClaudeRateLimitWindow, String> {
     if !window.utilization.is_finite() || !(0.0..=100.0).contains(&window.utilization) {
         return Err("Claude returned an invalid subscription utilization".to_owned());
@@ -643,8 +812,12 @@ pub fn fetch_subscription_usage() -> Result<ClaudeStatusLineObservation, String>
         .claude_ai_oauth
         .expires_at
         .is_some_and(|expires_at| expires_at <= current_time_millis() as f64 + 5.0 * 60_000.0);
+    let mut using_desktop = false;
     if expires_soon {
-        refresh_claude_access_token(&client, &account, &mut credentials)?;
+        if refresh_claude_access_token(&client, &account, &mut credentials).is_err() {
+            credentials.claude_ai_oauth.access_token = read_desktop_access_token()?;
+            using_desktop = true;
+        }
     }
     let mut response = client
         .get(CLAUDE_USAGE_URL)
@@ -658,7 +831,15 @@ pub fn fetch_subscription_usage() -> Result<ClaudeStatusLineObservation, String>
     if response.status() == reqwest::StatusCode::UNAUTHORIZED
         || response.status() == reqwest::StatusCode::FORBIDDEN
     {
-        refresh_claude_access_token(&client, &account, &mut credentials)?;
+        if using_desktop {
+            return Err(
+                "Claude Desktop login cannot read subscription usage. Reopen Claude Desktop and try again."
+                    .to_owned(),
+            );
+        }
+        if refresh_claude_access_token(&client, &account, &mut credentials).is_err() {
+            credentials.claude_ai_oauth.access_token = read_desktop_access_token()?;
+        }
         response = client
             .get(CLAUDE_USAGE_URL)
             .bearer_auth(credentials.claude_ai_oauth.access_token.trim())
