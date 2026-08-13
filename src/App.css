@@ -1247,6 +1247,16 @@ h3,
   background: var(--panel-raised);
 }
 
+.source-item-pending {
+  border-style: dashed;
+  border-color: var(--line);
+}
+
+.source-item-pending i {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 16%, transparent);
+}
+
 .source-avatar {
   width: 36px;
   height: 36px;
@@ -1556,6 +1566,39 @@ h3,
 
 .settings-topbar {
   margin-bottom: 28px;
+}
+
+.settings-tabs {
+  margin: -10px 0 22px;
+  padding: 4px;
+  display: inline-flex;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel);
+}
+
+.settings-tabs button {
+  min-width: 86px;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-tabs button:hover {
+  color: var(--ink);
+}
+
+.settings-tabs button.active {
+  background: var(--panel-raised);
+  color: var(--ink);
+  box-shadow: var(--action-shadow);
 }
 
 .settings-card {

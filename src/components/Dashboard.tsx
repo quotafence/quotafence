@@ -838,6 +838,28 @@ export function Dashboard({
                 {item.isActive && <i />}
               </button>
             ))}
+            {claudeIntegration?.installed &&
+              !state.sources.some(
+                (item) =>
+                  item.providerDisplayName.toLowerCase() === "claude code",
+              ) && (
+                <button
+                  className="source-item source-item-pending"
+                  type="button"
+                  title="Claude has not reported subscription quota yet."
+                  onClick={() => onViewChange("settings")}
+                >
+                  <ProviderLogo
+                    className="source-avatar"
+                    providerName="Claude Code"
+                  />
+                  <span>
+                    <strong>Claude Code</strong>
+                    <small>Waiting for first response</small>
+                  </span>
+                  <i />
+                </button>
+              )}
           </div>
         </section>
       </aside>

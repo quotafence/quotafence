@@ -104,7 +104,7 @@ function SourcePicker({
       status: claudeBusy
         ? "Installing…"
         : claudeIntegration?.installed
-          ? "Installed"
+          ? "Waiting for response"
           : claudeIntegration?.state === "conflict"
             ? "Conflict"
             : "Connect",
@@ -833,7 +833,14 @@ function App() {
             claudeIntegration={claudeIntegration}
             claudeBusy={claudeBusy}
             onChooseForm={(mode) => setModal({ type: "source-form", mode })}
-            onClaude={() => void handleClaudeIntegration(true)}
+            onClaude={() => {
+              if (claudeIntegration?.installed) {
+                setModal(null);
+                setView("settings");
+              } else {
+                void handleClaudeIntegration(true);
+              }
+            }}
           />
         </Modal>
       )}

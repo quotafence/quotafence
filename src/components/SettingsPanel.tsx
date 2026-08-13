@@ -14,6 +14,7 @@ import { Icon } from "./Icon";
 
 export type ThemePreference = "system" | "light" | "dark";
 type DecisionRange = "hour" | "day" | "week";
+type SettingsTab = "general" | "codex" | "claude" | "activity";
 
 const DECISION_RANGES: Array<{
   value: DecisionRange;
@@ -103,6 +104,14 @@ export function SettingsPanel({
   onCheck,
 }: SettingsPanelProps) {
   const [decisionRange, setDecisionRange] = useState<DecisionRange>("day");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>(() =>
+    claudeIntegration?.installed &&
+    !sources.some(
+      (candidate) => candidate.providerDisplayName.toLowerCase() === "claude code",
+    )
+      ? "claude"
+      : "general",
+  );
   const verifiedAt = verifiedCodexProtectionAt(protection, events);
   const observedAt = observedCodexHookAt(protection);
   const desktopTracking = syncResult?.desktopTracking ?? null;
@@ -159,7 +168,28 @@ export function SettingsPanel({
         </div>
       </header>
 
-      <section className="settings-card">
+      <nav className="settings-tabs" aria-label="Settings sections">
+        {(
+          [
+            ["general", "General"],
+            ["codex", "Codex"],
+            ["claude", "Claude"],
+            ["activity", "Activity"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            className={settingsTab === value ? "active" : ""}
+            aria-current={settingsTab === value ? "page" : undefined}
+            onClick={() => setSettingsTab(value)}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      <section className="settings-card" hidden={settingsTab !== "general"}>
         <header className="settings-card-header">
           <span className="settings-card-icon">
             <Icon name="sun" size={20} />
@@ -198,7 +228,7 @@ export function SettingsPanel({
         </div>
       </section>
 
-      <section className="settings-card">
+      <section className="settings-card" hidden={settingsTab !== "claude"}>
         <header className="settings-card-header">
           <span className="settings-card-icon">
             <Icon name="activity" size={20} />
@@ -283,7 +313,10 @@ export function SettingsPanel({
         )}
       </section>
 
-      <section className="settings-card integration-health-card">
+      <section
+        className="settings-card integration-health-card"
+        hidden={settingsTab !== "codex"}
+      >
         <header className="settings-card-header">
           <span className="settings-card-icon">
             <Icon name="activity" size={20} />
@@ -389,7 +422,7 @@ export function SettingsPanel({
         </div>
       </section>
 
-      <section className="settings-card">
+      <section className="settings-card" hidden={settingsTab !== "codex"}>
         <header className="settings-card-header">
           <span className="settings-card-icon">
             <Icon name="shield" size={20} />
@@ -537,7 +570,10 @@ export function SettingsPanel({
         )}
       </section>
 
-      <section className="settings-decisions-section">
+      <section
+        className="settings-decisions-section"
+        hidden={settingsTab !== "activity"}
+      >
         <header className="settings-decisions-header">
           <div>
             <h2>Recent protection decisions</h2>
@@ -591,7 +627,10 @@ export function SettingsPanel({
         )}
       </section>
 
-      <footer className="settings-privacy-note">
+      <footer
+        className="settings-privacy-note"
+        hidden={settingsTab !== "general"}
+      >
         <Icon name="database" size={17} />
         <p>
           <strong>Local-first.</strong> Quota state and up to 100 recent decisions
