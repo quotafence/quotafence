@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Beta guide and known limitations
-    url: https://github.com/buisonanh/agent-quota-manager/blob/main/docs/beta.md
+    url: https://github.com/quotafence/quotafence/blob/main/docs/beta.md
     about: Check setup, capability boundaries, privacy, and known limitations first.

@@ -23,9 +23,9 @@ they do not replace the checklist.
 ## Live check — 12 August 2026
 
 - Full production build and test suite passed from merged `main`.
-- `aqm context --json` resolved the current folder to its generated Codex source
+- `quotafence context --json` resolved the current folder to its generated Codex source
   and an active allocation.
-- `aqm admit codex --json` refreshed the real provider checkpoint and returned
+- `quotafence admit codex --json` refreshed the real provider checkpoint and returned
   `allow` with exit code `0` after resolving the UI-generated provider ID.
 - Codex protection hooks were configured, and recent local receipts included
   successful `UserPromptSubmit` and `Stop` decisions.
@@ -50,7 +50,7 @@ Status: **Deferred by maintainer on 13 August 2026. Not passed.**
 | Provider reset restores carried allocations | Pending | — |
 | Missing `Stop` recovery | Pending | — |
 | Helper CWD keeps session mapping | Pending | — |
-| AQM restart rehydrates diagnostics | Pending | — |
+| QuotaFence restart rehydrates diagnostics | Pending | — |
 | Disable and uninstall are honest | Pending | — |
 | Allocation removal preserves history | Pending | — |
 | Provider correction avoids false exhaustion | Pending | — |
@@ -64,22 +64,22 @@ automated coverage.
 
 - The full production build, Rust formatting, locked check, clippy, 139 library
   tests, and 12 CLI tests passed from merged `main` at `c16334d`.
-- `aqm context --json` resolved the repository root to the expected active
+- `quotafence context --json` resolved the repository root to the expected active
   allocation and returned an `allow` decision.
 - A direct official App Server `account/rateLimits/read` request returned the
   active Codex weekly window without reading credentials, prompts, responses,
   transcripts, or workspace contents.
-- `aqm admit codex --json` refreshed that window, returned `synced`, preserved
+- `quotafence admit codex --json` refreshed that window, returned `synced`, preserved
   the window identity, and allowed the mapped workspace with exit code `0`.
 - The allocation and provider remaining values moved together during current
   single-workspace activity. This is supporting evidence only; the isolated
   folder-attribution checklist row remains Pending until a timestamped test
   turn is compared before and after Sync.
-- `aqm hooks status codex` confirmed that AQM hook entries were configured.
+- `quotafence hooks status codex` confirmed that QuotaFence hook entries were configured.
   Verified trust and enablement still require the Codex Desktop check.
 
 The first sandboxed refresh could not initialize Codex's local runtime because
 the test shell denied writes under the Codex home directory. Repeating the same
 official App Server request with normal local permissions succeeded, so this
-was classified as a test-environment restriction rather than a provider or AQM
+was classified as a test-environment restriction rather than a provider or QuotaFence
 sync regression.

@@ -9,7 +9,7 @@ At startup, Tauri:
 
 1. resolves the operating system's application-data directory;
 2. creates that directory when it does not exist;
-3. opens `agent-quota-manager.sqlite3` inside it;
+3. opens `quotafence.sqlite3` inside it;
 4. applies pending storage migrations; and
 5. manages one `QuotaService` behind a mutex.
 
@@ -119,7 +119,7 @@ webview and returns sanitized detection states instead of raw process errors.
 `claude --version`. It does not authenticate, start a Claude session, read
 credentials, or claim that subscription quota is available. The explicit
 `install_claude_integration`, `get_claude_integration_status`, and
-`uninstall_claude_integration` commands manage only AQM's single user-level
+`uninstall_claude_integration` commands manage only QuotaFence's single user-level
 `statusLine` entry. Installation refuses to replace an existing custom command,
 backs up the settings file, and preserves unrelated settings. During an active
 Claude session, the non-GUI observer reads only the session ID, current folder,
@@ -141,19 +141,19 @@ is derived locally from reconciled managed sessions, carries its evidence and
 confidence, and omits a precise rate or timestamp when the minimum evidence
 gate is not met.
 
-The Codex protection commands manage only AQM's entries in the user-level
+The Codex protection commands manage only QuotaFence's entries in the user-level
 Codex hooks file. Installation is an explicit user action and points the hook
 at the current desktop executable's non-GUI `hook codex` entrypoint. Codex
 remains the source of truth for review and trust. Status distinguishes
-`disabled`, `configured`, and `misconfigured`; `configured` means every AQM
+`disabled`, `configured`, and `misconfigured`; `configured` means every QuotaFence
 handler points at the current executable, not that Codex has trusted its current
 hash or enabled the hook. The frontend must direct Desktop users to
-**Settings → Hooks → User config** to trust and enable both AQM entries,
+**Settings → Hooks → User config** to trust and enable both QuotaFence entries,
 then tell them to restart Codex. `verificationRequiredAfter` is the latest
 modification time of the hook file or current executable; only a protection
 event at or after that timestamp may mark the current setup active. CLI users
 can review the same entries with `/hooks`.
-Uninstall removes only AQM-owned handlers.
+Uninstall removes only QuotaFence-owned handlers.
 
 `get_codex_protection_events` returns at most 20 recent prompt admission
 decisions from the local ledger. Entries contain the canonical folder, optional

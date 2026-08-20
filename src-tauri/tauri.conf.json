@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Agent Quota Manager",
+  "productName": "QuotaFence",
   "version": "0.1.0-beta.1",
-  "identifier": "com.buisonanh.agentquotamanager",
+  "identifier": "com.buisonanh.quotafence",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Agent Quota Manager",
+        "title": "QuotaFence",
         "width": 1180,
         "height": 760,
         "minWidth": 760,

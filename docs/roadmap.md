@@ -1,12 +1,12 @@
 # Codex-First Roadmap
 
-This roadmap turns AQM from a local quota dashboard into a budget guard in the
+This roadmap turns QuotaFence from a local quota dashboard into a budget guard in the
 execution path of an AI coding agent. It favors small, testable vertical
 progress over broad provider coverage or speculative domain rewrites.
 
 ## Product direction
 
-AQM protects capacity for important folder-based workspace work. A managed launch
+QuotaFence protects capacity for important folder-based workspace work. A managed launch
 resolves work to a budget, admits or rejects it under policy, supervises the
 provider process, and reconciles usage afterward. Routing across providers is a
 later extension of this control loop, not part of v0.1.
@@ -30,7 +30,7 @@ Treating `RequireConfirmation` as `Blocked` therefore makes the confirmation
 threshold behave like an undocumented early stop.
 
 - Keep `Warn` advisory for Codex Desktop.
-- Do not block a Desktop prompt at `Confirm` until AQM provides a real approval
+- Do not block a Desktop prompt at `Confirm` until QuotaFence provides a real approval
   interaction.
 - Keep `Stop` as the actual blocking boundary.
 - Explain capability-specific behavior in Settings and policy help text.
@@ -133,13 +133,13 @@ The repository currently has:
 - automatic Codex checkpoint refresh on startup and explicit refresh;
 - absolute snapshots that do not double-count repeated reads;
 - reset-window rollover that carries allocations without carrying old usage;
-- canonical folder workspace bindings and a read-only `aqm context` CLI;
-- a provider-refreshing `aqm admit codex` dry run with stable policy outcomes;
-- a persisted `aqm run codex` managed-session lifecycle with atomic reservation,
+- canonical folder workspace bindings and a read-only `quotafence context` CLI;
+- a provider-refreshing `quotafence admit codex` dry run with stable policy outcomes;
+- a persisted `quotafence run codex` managed-session lifecycle with atomic reservation,
   direct process supervision, pre/post checkpoint reconciliation, terminal
   cleanup, and Unix orphan recovery;
 - a Claude beta lifecycle covering both provider windows, folder hooks, and
-  `aqm run claude --window <weekly|5h>` without inventing token totals;
+  `quotafence run claude --window <weekly|5h>` without inventing token totals;
 - passive Codex Desktop attribution from local thread metadata at refresh, plus
   optional trusted lifecycle hooks for pre-prompt admission and
   higher-frequency observation;
@@ -158,7 +158,7 @@ recovery, or exact token accounting.
 | Provider checkpoint | Implemented | Reused before and after managed work |
 | Window rollover | Implemented | Covered during session reconciliation |
 | Workspace context | Implemented | Reused for admission and managed launch |
-| Managed launch | Implemented in `aqm run codex` | Harden from real daily use |
+| Managed launch | Implemented in `quotafence run codex` | Harden from real daily use |
 | Reservation | Reserved before spawn, then consumed or released atomically | Add a smaller session cap only with evidence |
 | Attribution | Managed deltas are observed and scoped only without visible contention | Richer provider signals when available |
 | Reconciliation | Implemented for exact delta, zero, ambiguity, rollover, and failure | Retry/recovery improvements from real usage |
@@ -185,7 +185,7 @@ tests, rollover tests, and manual QA against the installed Codex client.
 - Add a workspace binding from any canonical local folder to a workspace scope;
   keep the binding separate from the scope itself.
 - Resolve nested working directories to the nearest ancestor binding.
-- Add a read-only command such as `aqm context` that reports the resolved scope,
+- Add a read-only command such as `quotafence context` that reports the resolved scope,
   allocation, window, and remaining capacity.
 - Provide an explicit bind command; do not silently create budgets.
 
@@ -205,7 +205,7 @@ bindings, deleted paths, and no source-file reads.
 Verification: deterministic application-service tests with a fake clock and
 fake provider adapter; CLI contract tests for output and exit codes.
 
-Implemented as `aqm admit codex`. The application boundary receives an explicit
+Implemented as `quotafence admit codex`. The application boundary receives an explicit
 timestamp, the Codex checkpoint application accepts fabricated detection data
 in tests, and the CLI reserves exit codes `0`, `10`, `20`, and `30` for policy
 outcomes. `--yes` accepts confirmation but never overrides stop.
@@ -241,7 +241,7 @@ rollover tests, and an end-to-end fake-checkpoint test proving that a 4%
 provider delta reduces the mapped folder allocation by 4%.
 
 This milestone makes ordinary Codex app usage observable and optionally gates
-new prompts, but does not make the process AQM-managed. Passive scans require
+new prompts, but does not make the process QuotaFence-managed. Passive scans require
 no hook trust. Optional hooks remain user-controlled; explicit policy decisions
 block, while integration failures fail open. The gate cannot terminate a turn
 already in progress. Aggregate integer percentage checkpoints cannot expose
@@ -249,7 +249,7 @@ exact workspace token consumption.
 
 ### M3 — One managed Codex session — complete
 
-- Implement `aqm run codex -- [args]`.
+- Implement `quotafence run codex -- [args]`.
 - Persist a minimal session record before spawning the process.
 - Run Codex in the resolved workspace, inherit the user's terminal, forward
   termination signals, and preserve the provider exit code.
@@ -261,7 +261,7 @@ exact workspace token consumption.
 Verification: process tests using a fake executable for successful, failed,
 interrupted, and crash-recovery paths. No real Codex call is required in CI.
 
-Implemented as `aqm run codex`. The wrapper owns the child process, inherits
+Implemented as `quotafence run codex`. The wrapper owns the child process, inherits
 the terminal, forwards Unix termination signals, preserves the provider exit
 code, and atomically pairs a persisted starting session with its reservation.
 Terminal transitions release that reservation, and the next invocation
@@ -280,30 +280,30 @@ recovers active records whose supervisor process no longer exists on Unix.
 Verification: fake-adapter tests for zero delta, exact delta, window rollover,
 external usage ambiguity, provider failure, and duplicate reconciliation.
 
-Implemented in the managed `aqm run codex` exit path. The baseline is persisted
+Implemented in the managed `quotafence run codex` exit path. The baseline is persisted
 before spawn. A final checkpoint is reconciled in the same transaction as the
 terminal session state and reservation transition. Exact non-contended deltas
 become immutable workspace usage at `observed` confidence; visible concurrent
 work becomes unattributed usage; zero, rollover, and unavailable checkpoints do
-not fabricate scoped consumption. Managed child hooks inherit an AQM marker so
+not fabricate scoped consumption. Managed child hooks inherit a QuotaFence marker so
 the same work is not counted again as an experimental desktop turn.
 
 ### M5 — Enforced policy in the daily workflow — complete
 
 - Persist policy at the appropriate allocation or scope boundary.
 - Surface advisory warnings in the CLI without hiding provider output.
-- Define stop as refusal to launch an over-budget AQM-managed session.
+- Define stop as refusal to launch an over-budget QuotaFence-managed session.
 - Only add in-flight termination when the adapter provides a sufficiently
-  timely usage signal and AQM owns the process.
-- Make `aqm run codex` fast enough that bypassing it is less convenient than
+  timely usage signal and QuotaFence owns the process.
+- Make `quotafence run codex` fast enough that bypassing it is less convenient than
   using it.
 
 Verification: policy precedence tests, warning and stop boundary tests, and
 proof that unmanaged Codex sessions are never described as hard-enforced.
 
 Implemented with workspace-scope policy rows using integer basis points.
-`aqm policy show/set/reset` and the desktop allocation form share the same
-application service. `aqm admit codex` remains a side-effect-free assessment;
+`quotafence policy show/set/reset` and the desktop allocation form share the same
+application service. `quotafence admit codex` remains a side-effect-free assessment;
 warning remains advisory and Stop refuses launch. Legacy confirmation data is
 kept readable but is not part of the active policy workflow. Live termination
 remains intentionally unsupported because the aggregate Codex checkpoint is
@@ -373,7 +373,7 @@ the source-distributed beta.
 
 ### Later — Capability-aware routing
 
-Only after M1–M6 work end to end should AQM evaluate another provider. Routing
+Only after M1–M6 work end to end should QuotaFence evaluate another provider. Routing
 will need workload priority/deadline plus comparable provider capabilities,
 quota, credits, cost, and concurrency. It must not sum unlike units into one
 fictional balance.
@@ -408,7 +408,7 @@ added only when path moves become a demonstrated problem.
 ### Attribution
 
 Treat an aggregate provider delta as an observation, not proof of causality.
-When exactly one managed session is active for a pool, AQM may associate the
+When exactly one managed session is active for a pool, QuotaFence may associate the
 delta with that session at `observed` confidence. If concurrent or external
 usage makes the split ambiguous, retain the ambiguity as unattributed usage.
 Never rewrite immutable usage history during reconciliation.
@@ -422,7 +422,7 @@ not the long-term concurrency product.
 Separate policy decision from adapter capability:
 
 - warn is always advisory;
-- stop initially means refusing to launch through AQM;
+- stop initially means refusing to launch through QuotaFence;
 - live termination requires both process ownership and a timely, trustworthy
   usage signal; and
 - unmanaged sessions remain outside hard enforcement.
@@ -459,13 +459,13 @@ second behavior, not in anticipation of one.
 
 | Decision | v0.1 default | Revisit when |
 | --- | --- | --- |
-| Daily entry point | `aqm run codex` CLI wrapper | Desktop launch proves materially simpler |
+| Daily entry point | `quotafence run codex` CLI wrapper | Desktop launch proves materially simpler |
 | Long-running owner | CLI child process; no daemon | Multiple clients need shared background ownership |
 | Workspace identity | Explicit canonical folder binding | Path moves create real user pain |
 | Session concurrency | One attributable session per quota pool | Adapter exposes session-level usage |
 | Attribution confidence | `observed` for aggregate pre/post delta | Provider exposes causal session usage |
 | Policy ownership | Workspace override, then app default | Provider-specific policy is required |
-| Stop semantics | Refuse an AQM-managed launch | Timely live signal supports safe termination |
+| Stop semantics | Refuse a QuotaFence-managed launch | Timely live signal supports safe termination |
 | Default reservation | Current scope spendable capacity | Reliable session-size estimates exist |
 | Domain expansion | Keep existing quota model | A second resource behavior is implemented |
 

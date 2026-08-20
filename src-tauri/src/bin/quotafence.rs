@@ -10,7 +10,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use agent_quota_manager_lib::{
+use quotafence_lib::{
     application::{
         AdmissionAssessment, BindWorkspace, EvaluateWorkspaceAdmission, FinishManagedSession,
         GetWorkspaceContext, GetWorkspacePolicy, ManagedSessionOutcome,
@@ -35,7 +35,7 @@ const EXIT_WARN: u8 = 10;
 const EXIT_CONFIRM: u8 = 20;
 const EXIT_STOP: u8 = 30;
 const SESSION_RESERVATION_MILLIS: i64 = 24 * 60 * 60 * 1_000;
-const MANAGED_SESSION_ENV: &str = "AQM_MANAGED_SESSION_ID";
+const MANAGED_SESSION_ENV: &str = "QUOTAFENCE_MANAGED_SESSION_ID";
 static FORWARDED_SIGNAL: AtomicI32 = AtomicI32::new(0);
 static SIGNAL_HANDLER_LOCK: Mutex<()> = Mutex::new(());
 
@@ -118,7 +118,7 @@ fn main() -> ExitCode {
     match run(env::args().skip(1).collect()) {
         Ok(code) => ExitCode::from(code),
         Err(message) => {
-            eprintln!("aqm: {message}");
+            eprintln!("quotafence: {message}");
             ExitCode::from(EXIT_ERROR)
         }
     }
@@ -238,8 +238,8 @@ fn run(args: Vec<String>) -> Result<u8, String> {
             let output = match run_codex_hook(&options) {
                 Ok(output) => output,
                 Err(error) => {
-                    if env::var_os("AQM_HOOK_DEBUG").is_some() {
-                        eprintln!("aqm hook: {error}");
+                    if env::var_os("QUOTAFENCE_HOOK_DEBUG").is_some() {
+                        eprintln!("quotafence hook: {error}");
                     }
                     serde_json::json!({})
                 }
@@ -256,8 +256,9 @@ fn run(args: Vec<String>) -> Result<u8, String> {
             if provider == HookProvider::Claude {
                 let status = match action {
                     HooksAction::Install => {
-                        let executable = env::current_exe()
-                            .map_err(|error| format!("cannot resolve aqm executable: {error}"))?;
+                        let executable = env::current_exe().map_err(|error| {
+                            format!("cannot resolve quotafence executable: {error}")
+                        })?;
                         claude_hooks::install_protection(&executable)?
                     }
                     HooksAction::Status => claude_hooks::protection_status()?,
@@ -276,8 +277,9 @@ fn run(args: Vec<String>) -> Result<u8, String> {
             let config_path = codex_hooks::default_user_hooks_path()?;
             match action {
                 HooksAction::Install => {
-                    let executable = env::current_exe()
-                        .map_err(|error| format!("cannot resolve aqm executable: {error}"))?;
+                    let executable = env::current_exe().map_err(|error| {
+                        format!("cannot resolve quotafence executable: {error}")
+                    })?;
                     let changed = codex_hooks::install_user_hooks(&config_path, &executable)?;
                     if changed {
                         println!(
@@ -472,14 +474,14 @@ fn run_managed_agent(
         .map_err(|error| error.to_string())?;
 
     println!(
-        "AQM: launching {agent_name} for {} with {} {} reserved ({})",
+        "QuotaFence: launching {agent_name} for {} with {} {} reserved ({})",
         launch.assessment.scope_display_name,
         launch.reserved_amount,
         launch.assessment.unit,
         allocation.pool_display_name
     );
     if launch.assessment.decision == EnforcementDecision::Warn {
-        println!("AQM warning: this workspace is approaching its policy boundary.");
+        println!("QuotaFence warning: this workspace is approaching its policy boundary.");
     }
 
     let mut child = match Command::new(&executable)
@@ -594,7 +596,7 @@ fn refresh_managed_checkpoint(
                 .map(|window| window.window_id),
             Err(error) => {
                 eprintln!(
-                    "AQM: Claude exited, but its final quota checkpoint is unavailable: {error}"
+                    "QuotaFence: Claude exited, but its final quota checkpoint is unavailable: {error}"
                 );
                 None
             }
@@ -610,7 +612,7 @@ fn refresh_managed_checkpoint(
         return checkpoint.window_id;
     }
     eprintln!(
-        "AQM: Codex exited, but its final quota checkpoint is unavailable: {}",
+        "QuotaFence: Codex exited, but its final quota checkpoint is unavailable: {}",
         checkpoint
             .message
             .as_deref()
@@ -622,23 +624,23 @@ fn refresh_managed_checkpoint(
 fn print_managed_reconciliation(reconciliation: &ManagedSessionReconciliation, unit: &str) {
     match reconciliation.status {
         ManagedSessionReconciliationStatus::Attributed => println!(
-            "AQM: attributed {} {} to this workspace",
+            "QuotaFence: attributed {} {} to this workspace",
             reconciliation.amount.unwrap_or(0),
             unit
         ),
         ManagedSessionReconciliationStatus::NoUsage => {
-            println!("AQM: provider checkpoint did not change during this session")
+            println!("QuotaFence: provider checkpoint did not change during this session")
         }
         ManagedSessionReconciliationStatus::Ambiguous => println!(
-            "AQM: kept {} {} unattributed because concurrent usage was observed",
+            "QuotaFence: kept {} {} unattributed because concurrent usage was observed",
             reconciliation.amount.unwrap_or(0),
             unit
         ),
         ManagedSessionReconciliationStatus::WindowRolledOver => {
-            println!("AQM: quota window rolled over; no cross-window usage was attributed")
+            println!("QuotaFence: quota window rolled over; no cross-window usage was attributed")
         }
         ManagedSessionReconciliationStatus::SnapshotUnavailable => {
-            println!("AQM: session ended without a reconcilable provider checkpoint")
+            println!("QuotaFence: session ended without a reconcilable provider checkpoint")
         }
     }
 }
@@ -847,10 +849,10 @@ fn run_codex_hook(options: &CommonOptions) -> Result<serde_json::Value, String> 
 fn provider_allocation<'a>(
     context: &'a WorkspaceContext,
     provider_id: &str,
-) -> Result<&'a agent_quota_manager_lib::application::WorkspaceAllocationContext, String> {
+) -> Result<&'a quotafence_lib::application::WorkspaceAllocationContext, String> {
     let binding = context.binding.as_ref().ok_or_else(|| {
         format!(
-            "workspace {} is not bound; run `aqm bind --scope <name-or-id>` first",
+            "workspace {} is not bound; run `quotafence bind --scope <name-or-id>` first",
             context.canonical_path
         )
     })?;
@@ -880,7 +882,7 @@ fn managed_allocation(
     context: &WorkspaceContext,
     agent: ManagedAgent,
     claude_window: ClaudeManagedWindow,
-) -> Result<&agent_quota_manager_lib::application::WorkspaceAllocationContext, String> {
+) -> Result<&quotafence_lib::application::WorkspaceAllocationContext, String> {
     if agent == ManagedAgent::Codex {
         return provider_allocation(context, "codex");
     }
@@ -945,7 +947,7 @@ fn database_path(options: &CommonOptions) -> Result<PathBuf, String> {
     if let Some(path) = options.database.as_ref() {
         return Ok(path.clone());
     }
-    if let Some(path) = env::var_os("AQM_DATABASE_PATH") {
+    if let Some(path) = env::var_os("QUOTAFENCE_DATABASE_PATH") {
         return Ok(PathBuf::from(path));
     }
     paths::default_database_path().map_err(|error| error.to_string())
@@ -971,7 +973,9 @@ fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
         return parse_policy_command(&args);
     }
     if !matches!(command, "context" | "bind" | "admit") {
-        return Err(format!("unknown command {command:?}; run `aqm --help`"));
+        return Err(format!(
+            "unknown command {command:?}; run `quotafence --help`"
+        ));
     }
 
     let mut options = CommonOptions::default();
@@ -982,7 +986,9 @@ fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
             args.get(1)
                 .filter(|value| !value.starts_with('-'))
                 .cloned()
-                .ok_or_else(|| "`aqm admit` requires a provider, for example `codex`".to_owned())?,
+                .ok_or_else(|| {
+                    "`quotafence admit` requires a provider, for example `codex`".to_owned()
+                })?,
         )
     } else {
         None
@@ -1016,7 +1022,7 @@ fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
         "bind" => Ok(CliCommand::Bind {
             options,
             scope_reference: scope_reference
-                .ok_or_else(|| "`aqm bind` requires `--scope <name-or-id>`".to_owned())?,
+                .ok_or_else(|| "`quotafence bind` requires `--scope <name-or-id>`".to_owned())?,
         }),
         "admit" => Ok(CliCommand::Admit {
             options,
@@ -1031,7 +1037,7 @@ fn parse_run_command(args: &[String]) -> Result<CliCommand, String> {
     let agent = match args.get(1).map(String::as_str) {
         Some("codex") => ManagedAgent::Codex,
         Some("claude") => ManagedAgent::Claude,
-        _ => return Err("usage: aqm run <codex|claude> [--path <directory>] [--window <weekly|5h>] [--yes] -- [agent args]".to_owned()),
+        _ => return Err("usage: quotafence run <codex|claude> [--path <directory>] [--window <weekly|5h>] [--yes] -- [agent args]".to_owned()),
     };
     let mut options = CommonOptions::default();
     let mut assume_yes = false;
@@ -1070,7 +1076,7 @@ fn parse_run_command(args: &[String]) -> Result<CliCommand, String> {
             "-h" | "--help" => return Ok(CliCommand::Help),
             option => {
                 return Err(format!(
-                    "unknown aqm run option {option:?}; place agent arguments after --"
+                    "unknown quotafence run option {option:?}; place agent arguments after --"
                 ))
             }
         }
@@ -1088,12 +1094,12 @@ fn parse_run_command(args: &[String]) -> Result<CliCommand, String> {
 fn parse_hook_command(args: &[String]) -> Result<CliCommand, String> {
     if args.get(1).map(String::as_str) == Some("claude") {
         if args.len() != 2 {
-            return Err("usage: aqm hook claude".to_owned());
+            return Err("usage: quotafence hook claude".to_owned());
         }
         return Ok(CliCommand::HookClaude);
     }
     if args.get(1).map(String::as_str) != Some("codex") {
-        return Err("usage: aqm hook <codex|claude> [--database <path>]".to_owned());
+        return Err("usage: quotafence hook <codex|claude> [--database <path>]".to_owned());
     }
     let mut options = CommonOptions::default();
     let mut index = 2;
@@ -1116,15 +1122,23 @@ fn parse_hooks_command(args: &[String]) -> Result<CliCommand, String> {
         Some("install") => HooksAction::Install,
         Some("status") => HooksAction::Status,
         Some("uninstall") => HooksAction::Uninstall,
-        _ => return Err("usage: aqm hooks <install|status|uninstall> <codex|claude>".to_owned()),
+        _ => {
+            return Err(
+                "usage: quotafence hooks <install|status|uninstall> <codex|claude>".to_owned(),
+            )
+        }
     };
     let provider = match args.get(2).map(String::as_str) {
         Some("codex") => HookProvider::Codex,
         Some("claude") => HookProvider::Claude,
-        _ => return Err("usage: aqm hooks <install|status|uninstall> <codex|claude>".to_owned()),
+        _ => {
+            return Err(
+                "usage: quotafence hooks <install|status|uninstall> <codex|claude>".to_owned(),
+            )
+        }
     };
     if args.len() != 3 {
-        return Err("usage: aqm hooks <install|status|uninstall> <codex|claude>".to_owned());
+        return Err("usage: quotafence hooks <install|status|uninstall> <codex|claude>".to_owned());
     }
     Ok(CliCommand::Hooks { action, provider })
 }
@@ -1133,9 +1147,9 @@ fn parse_policy_command(args: &[String]) -> Result<CliCommand, String> {
     let action = args
         .get(1)
         .map(String::as_str)
-        .ok_or_else(|| "usage: aqm policy <show|set|reset> [options]".to_owned())?;
+        .ok_or_else(|| "usage: quotafence policy <show|set|reset> [options]".to_owned())?;
     if !matches!(action, "show" | "set" | "reset") {
-        return Err("usage: aqm policy <show|set|reset> [options]".to_owned());
+        return Err("usage: quotafence policy <show|set|reset> [options]".to_owned());
     }
 
     let mut options = CommonOptions::default();
@@ -1184,12 +1198,15 @@ fn parse_policy_command(args: &[String]) -> Result<CliCommand, String> {
         "show" => PolicyAction::Show(options),
         "set" => PolicyAction::Set {
             options,
-            warn_at_basis_points: warn
-                .ok_or_else(|| "`aqm policy set` requires `--warn <percent|off>`".to_owned())?,
-            confirm_at_basis_points: confirm
-                .ok_or_else(|| "`aqm policy set` requires `--confirm <percent|off>`".to_owned())?,
-            stop_at_basis_points: stop
-                .ok_or_else(|| "`aqm policy set` requires `--stop <percent|off>`".to_owned())?,
+            warn_at_basis_points: warn.ok_or_else(|| {
+                "`quotafence policy set` requires `--warn <percent|off>`".to_owned()
+            })?,
+            confirm_at_basis_points: confirm.ok_or_else(|| {
+                "`quotafence policy set` requires `--confirm <percent|off>`".to_owned()
+            })?,
+            stop_at_basis_points: stop.ok_or_else(|| {
+                "`quotafence policy set` requires `--stop <percent|off>`".to_owned()
+            })?,
         },
         "reset" => PolicyAction::Reset(options),
         _ => unreachable!("policy action was validated"),
@@ -1281,7 +1298,7 @@ fn print_context(context: &WorkspaceContext, json: bool) -> Result<(), String> {
                 for scope in &context.available_workspace_scopes {
                     println!("  {} ({})", scope.display_name, scope.id);
                 }
-                println!("Bind with: aqm bind --scope <name-or-id>");
+                println!("Bind with: quotafence bind --scope <name-or-id>");
             }
         }
     }
@@ -1404,7 +1421,7 @@ fn print_admission(
         println!("Re-run with --yes to explicitly accept this admission boundary.");
     }
     if assessment.decision == EnforcementDecision::Stop {
-        println!("AQM would refuse a managed launch at this policy boundary.");
+        println!("QuotaFence would refuse a managed launch at this policy boundary.");
     }
     println!("Exit code: {exit_code}");
     Ok(())
@@ -1430,24 +1447,24 @@ fn now_millis() -> Result<i64, String> {
 
 fn print_help() {
     println!(
-        "Agent Quota Manager CLI
+        "QuotaFence CLI
 
 Usage:
-  aqm context [--path <directory>] [--json]
-  aqm bind --scope <name-or-id> [--path <directory>] [--json]
-  aqm admit codex [--path <directory>] [--yes] [--json]
-  aqm run codex [--path <directory>] [--yes] -- [codex args]
-  aqm run claude [--path <directory>] [--window <weekly|5h>] [--yes] -- [claude args]
-  aqm policy show [--path <directory>] [--json]
-  aqm policy set --warn <percent|off> --confirm <percent|off> --stop <percent|off>
-  aqm policy reset [--path <directory>] [--json]
-  aqm hook codex [--database <path>]
-  aqm hook claude
-  aqm hooks <install|status|uninstall> <codex|claude>
+  quotafence context [--path <directory>] [--json]
+  quotafence bind --scope <name-or-id> [--path <directory>] [--json]
+  quotafence admit codex [--path <directory>] [--yes] [--json]
+  quotafence run codex [--path <directory>] [--yes] -- [codex args]
+  quotafence run claude [--path <directory>] [--window <weekly|5h>] [--yes] -- [claude args]
+  quotafence policy show [--path <directory>] [--json]
+  quotafence policy set --warn <percent|off> --confirm <percent|off> --stop <percent|off>
+  quotafence policy reset [--path <directory>] [--json]
+  quotafence hook codex [--database <path>]
+  quotafence hook claude
+  quotafence hooks <install|status|uninstall> <codex|claude>
 
 Options:
   --path <directory>   Resolve a workspace from this directory instead of cwd
-  --database <path>    Override the local database (or set AQM_DATABASE_PATH)
+  --database <path>    Override the local database (or set QUOTAFENCE_DATABASE_PATH)
   --yes                Explicitly accept a confirmation-required admission
   percent|off          Percentage of a workspace allocation consumed, or disabled
   --json               Print machine-readable output"
@@ -1473,7 +1490,7 @@ mod tests {
             "--path".to_owned(),
             "/code/project".to_owned(),
             "--database".to_owned(),
-            "/tmp/aqm.sqlite3".to_owned(),
+            "/tmp/quotafence.sqlite3".to_owned(),
             "--json".to_owned(),
         ])
         .unwrap();
@@ -1483,7 +1500,7 @@ mod tests {
         assert_eq!(options.path.as_deref(), Some(Path::new("/code/project")));
         assert_eq!(
             options.database.as_deref(),
-            Some(Path::new("/tmp/aqm.sqlite3"))
+            Some(Path::new("/tmp/quotafence.sqlite3"))
         );
         assert!(options.json);
     }
@@ -1554,7 +1571,7 @@ mod tests {
     }
 
     #[test]
-    fn managed_run_parses_aqm_options_and_preserves_codex_arguments() {
+    fn managed_run_parses_quotafence_options_and_preserves_codex_arguments() {
         let command = parse_args(vec![
             "run".to_owned(),
             "codex".to_owned(),
@@ -1672,7 +1689,7 @@ mod tests {
             "hook".to_owned(),
             "codex".to_owned(),
             "--database".to_owned(),
-            "/tmp/aqm.sqlite3".to_owned(),
+            "/tmp/quotafence.sqlite3".to_owned(),
         ])
         .unwrap();
         let CliCommand::HookCodex(options) = command else {
@@ -1680,7 +1697,7 @@ mod tests {
         };
         assert_eq!(
             options.database.as_deref(),
-            Some(Path::new("/tmp/aqm.sqlite3"))
+            Some(Path::new("/tmp/quotafence.sqlite3"))
         );
 
         assert!(matches!(

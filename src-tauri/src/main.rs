@@ -4,43 +4,39 @@
 fn main() {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
     if arguments == ["hook", "codex"] {
-        let output = agent_quota_manager_lib::providers::codex_hooks::run_installed_hook(
-            std::io::stdin().lock(),
-        )
-        .unwrap_or_else(|error| {
-            if std::env::var_os("AQM_HOOK_DEBUG").is_some() {
-                eprintln!("aqm hook: {error}");
-            }
-            serde_json::json!({})
-        });
+        let output =
+            quotafence_lib::providers::codex_hooks::run_installed_hook(std::io::stdin().lock())
+                .unwrap_or_else(|error| {
+                    if std::env::var_os("QUOTAFENCE_HOOK_DEBUG").is_some() {
+                        eprintln!("quotafence hook: {error}");
+                    }
+                    serde_json::json!({})
+                });
         println!("{output}");
         return;
     }
     if arguments == ["hook", "claude"] {
-        let output = agent_quota_manager_lib::providers::claude_hooks::run_installed_hook(
-            std::io::stdin().lock(),
-        )
-        .unwrap_or_else(|error| {
-            if std::env::var_os("AQM_HOOK_DEBUG").is_some() {
-                eprintln!("aqm Claude hook: {error}");
-            }
-            serde_json::json!({})
-        });
+        let output =
+            quotafence_lib::providers::claude_hooks::run_installed_hook(std::io::stdin().lock())
+                .unwrap_or_else(|error| {
+                    if std::env::var_os("QUOTAFENCE_HOOK_DEBUG").is_some() {
+                        eprintln!("quotafence Claude hook: {error}");
+                    }
+                    serde_json::json!({})
+                });
         println!("{output}");
         return;
     }
     if arguments == ["observe", "claude-statusline"] {
-        match agent_quota_manager_lib::providers::claude_code::run_status_line(
-            std::io::stdin().lock(),
-        ) {
+        match quotafence_lib::providers::claude_code::run_status_line(std::io::stdin().lock()) {
             Ok(status) => println!("{status}"),
             Err(error) => {
-                if std::env::var_os("AQM_HOOK_DEBUG").is_some() {
-                    eprintln!("aqm Claude status line: {error}");
+                if std::env::var_os("QUOTAFENCE_HOOK_DEBUG").is_some() {
+                    eprintln!("quotafence Claude status line: {error}");
                 }
             }
         }
         return;
     }
-    agent_quota_manager_lib::run()
+    quotafence_lib::run()
 }

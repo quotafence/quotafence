@@ -59,7 +59,7 @@ or issue reports.
    ```bash
    git switch main
    git pull --ff-only
-   git tag -a v0.1.0-beta.1 -m "Agent Quota Manager v0.1.0-beta.1"
+   git tag -a v0.1.0-beta.1 -m "QuotaFence v0.1.0-beta.1"
    git push origin v0.1.0-beta.1
    ```
 

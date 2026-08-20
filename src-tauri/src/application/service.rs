@@ -815,7 +815,7 @@ impl QuotaService {
             .binding
             .ok_or_else(|| ApplicationError::InvalidRequest {
                 message: format!(
-                    "workspace {} is not bound; run `aqm bind --scope <name-or-id>` first",
+                    "workspace {} is not bound; run `quotafence bind --scope <name-or-id>` first",
                     context.canonical_path
                 ),
             })?;
@@ -894,7 +894,7 @@ impl QuotaService {
             crate::domain::EnforcementDecision::Stop => {
                 return Err(ApplicationError::InvalidRequest {
                     message: format!(
-                        "AQM refused to launch {} because the workspace or provider budget is exhausted",
+                        "QuotaFence refused to launch {} because the workspace or provider budget is exhausted",
                         assessment.provider_display_name
                     ),
                 });

@@ -1,5 +1,5 @@
 {
-  "name": "agent-quota-manager",
+  "name": "quotafence",
   "private": true,
   "version": "0.1.0-beta.1",
   "type": "module",
@@ -13,7 +13,7 @@
     "check": "npm run check:release-version && npm run build && npm run check:rust",
     "check:release-version": "node scripts/check-release-version.mjs",
     "check:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo check --locked --manifest-path src-tauri/Cargo.toml && cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --locked --manifest-path src-tauri/Cargo.toml",
-    "aqm": "cargo run --quiet --manifest-path src-tauri/Cargo.toml --bin aqm --",
+    "quotafence": "cargo run --quiet --manifest-path src-tauri/Cargo.toml --bin quotafence --",
     "preview": "vite preview",
     "tauri": "tauri"
   },

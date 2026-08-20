@@ -283,7 +283,7 @@ function SetupDisclosure({
         <header>
           <strong>Finish Codex setup</strong>
           <span>
-            Agent Quota Manager verifies each step locally.
+            QuotaFence verifies each step locally.
           </span>
         </header>
         <ol>
@@ -990,7 +990,7 @@ export function Dashboard({
                     <span>
                       {codexProtection?.installed
                         ? hookObservedAt !== null
-                          ? `${codexProtection.lastHookIssue ?? "The latest prompt did not produce an enforceable quota decision."} Agent Quota Manager will retry automatically. `
+                          ? `${codexProtection.lastHookIssue ?? "The latest prompt did not produce an enforceable quota decision."} QuotaFence will retry automatically. `
                           : "Trust and enable UserPromptSubmit and Stop in Codex, then keep chatting in this task. "
                         : ""}
                       {unassignedBufferNow > 0
@@ -1027,7 +1027,7 @@ export function Dashboard({
                     <strong>Claude allocations are not protected yet</strong>
                     <span>
                       {claudeProtection?.installed
-                        ? "Restart Claude and send a test prompt from an allocated folder. Until AQM observes the lifecycle hook, these allocations are a priority plan only."
+                        ? "Restart Claude and send a test prompt from an allocated folder. Until QuotaFence observes the lifecycle hook, these allocations are a priority plan only."
                         : "Enable Workspace protection in Claude Settings. Without the prompt gate, Claude usage can consume unassigned capacity and lower priorities."}
                     </span>
                   </div>

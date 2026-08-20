@@ -1,7 +1,7 @@
 # Quota Model
 
 Providers expose percentages, rolling limits, credits, spend, concurrency, or
-opaque capacity signals. AQM therefore models current Codex quota without
+opaque capacity signals. QuotaFence therefore models current Codex quota without
 assuming tokens, while keeping unlike resource behaviors explicit.
 
 ## Core concepts
@@ -47,13 +47,13 @@ resource behavior. The following distinction guides future extensions:
 | Deadline | Time constraint on proposed work | Workload and routing input |
 
 Priority and deadline are not quota units. Concurrency should not be forced into
-a cumulative percentage model. AQM will introduce a resource-kind abstraction
+a cumulative percentage model. QuotaFence will introduce a resource-kind abstraction
 only when implementing behavior that needs it; the Codex slice does not require
 a domain rewrite.
 
 ## Folder allocations
 
-A pool is divided directly into independent folder allocations. AQM does not
+A pool is divided directly into independent folder allocations. QuotaFence does not
 ask users to create a second project or task hierarchy inside a folder.
 
 ```text
@@ -155,7 +155,7 @@ exhaust a workspace after a provider correction or reset.
 
 A window reset creates a new window identity. It does not rewrite historical
 usage. When a provider exposes only an aggregate total, a before/after delta is
-an observation rather than proof of causality. AQM associates a lone
+an observation rather than proof of causality. QuotaFence associates a lone
 non-contended managed Codex session with that delta at observed confidence.
 Visible overlapping work keeps the delta unattributed. The Codex hook
 experiment associates a lone observed turn at inferred confidence because
@@ -176,6 +176,6 @@ External sessions can consume quota outside local enforcement, so no adapter
 should promise an absolute account-wide limit unless the provider itself offers
 that guarantee.
 
-In v0.1, `stop` may refuse admission to an AQM-managed launch. Stopping an
+In v0.1, `stop` may refuse admission to a QuotaFence-managed launch. Stopping an
 already-running process is a distinct capability and requires a timely,
 trustworthy consumption signal.

@@ -23,7 +23,7 @@ use crate::{
     storage::Database,
 };
 
-const AQM_STATUS_LINE_MARKER: &str = " observe claude-statusline";
+const QUOTAFENCE_STATUS_LINE_MARKER: &str = " observe claude-statusline";
 pub const CLAUDE_ADAPTER: &str = "claude_statusline";
 const CLAUDE_PROVIDER_ID: &str = "claude-code";
 const CLAUDE_HEARTBEAT_FILENAME: &str = "claude-statusline-heartbeat.json";
@@ -213,7 +213,7 @@ pub fn default_user_settings_path() -> Result<PathBuf, String> {
 pub fn integration_status() -> Result<ClaudeStatusLineStatus, String> {
     let config_path = default_user_settings_path()?;
     let executable = env::current_exe()
-        .map_err(|error| format!("cannot resolve the Agent Quota Manager executable: {error}"))?;
+        .map_err(|error| format!("cannot resolve the QuotaFence executable: {error}"))?;
     Ok(status_line_status(&config_path, &executable))
 }
 
@@ -227,7 +227,7 @@ pub fn uninstall_integration() -> Result<ClaudeStatusLineStatus, String> {
     let config_path = default_user_settings_path()?;
     uninstall_status_line(&config_path)?;
     let executable = env::current_exe()
-        .map_err(|error| format!("cannot resolve the Agent Quota Manager executable: {error}"))?;
+        .map_err(|error| format!("cannot resolve the QuotaFence executable: {error}"))?;
     Ok(status_line_status(&config_path, &executable))
 }
 
@@ -257,13 +257,13 @@ pub fn status_line_status(config_path: &Path, executable: &Path) -> ClaudeStatus
             last_quota_observed_at: heartbeat.last_quota_observed_at,
         };
     };
-    if !is_aqm_status_line(status_line) {
+    if !is_quotafence_status_line(status_line) {
         return ClaudeStatusLineStatus {
             installed: false,
             config_path: config_path_text,
             state: ClaudeStatusLineState::Conflict,
             issue: Some(
-                "Claude Code already has a custom status line. AQM left it unchanged because Claude supports only one statusLine command."
+                "Claude Code already has a custom status line. QuotaFence left it unchanged because Claude supports only one statusLine command."
                     .to_owned(),
             ),
             last_observed_at: heartbeat.last_observed_at,
@@ -282,7 +282,7 @@ pub fn status_line_status(config_path: &Path, executable: &Path) -> ClaudeStatus
             ClaudeStatusLineState::Misconfigured
         },
         issue: (!configured).then(|| {
-            "AQM found an outdated Claude status-line entry. Repair the integration to point it to the current application executable."
+            "QuotaFence found an outdated Claude status-line entry. Repair the integration to point it to the current application executable."
                 .to_owned()
         }),
         last_observed_at: heartbeat.last_observed_at,
@@ -330,10 +330,10 @@ pub fn install_status_line(config_path: &Path, executable: &Path) -> Result<bool
     let original = read_settings(config_path)?;
     if original
         .get("statusLine")
-        .is_some_and(|entry| !is_aqm_status_line(entry))
+        .is_some_and(|entry| !is_quotafence_status_line(entry))
     {
         return Err(
-            "Claude Code already has a custom status line. Remove it explicitly before installing AQM; the existing command was not changed."
+            "Claude Code already has a custom status line. Remove it explicitly before installing QuotaFence; the existing command was not changed."
                 .to_owned(),
         );
     }
@@ -357,7 +357,10 @@ pub fn install_status_line(config_path: &Path, executable: &Path) -> Result<bool
 
 pub fn uninstall_status_line(config_path: &Path) -> Result<bool, String> {
     let original = read_settings(config_path)?;
-    if !original.get("statusLine").is_some_and(is_aqm_status_line) {
+    if !original
+        .get("statusLine")
+        .is_some_and(is_quotafence_status_line)
+    {
         return Ok(false);
     }
     let mut updated = original.clone();
@@ -396,7 +399,7 @@ fn write_settings(config_path: &Path, config: &Value) -> Result<(), String> {
     fs::create_dir_all(parent)
         .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
     if config_path.exists() {
-        let backup = config_path.with_extension("json.aqm.bak");
+        let backup = config_path.with_extension("json.quotafence.bak");
         if !backup.exists() {
             fs::copy(config_path, &backup).map_err(|error| {
                 format!(
@@ -409,7 +412,7 @@ fn write_settings(config_path: &Path, config: &Value) -> Result<(), String> {
     }
     let contents = serde_json::to_string_pretty(config)
         .map_err(|error| format!("cannot serialize Claude settings: {error}"))?;
-    let temporary = config_path.with_extension("json.aqm.tmp");
+    let temporary = config_path.with_extension("json.quotafence.tmp");
     fs::write(&temporary, format!("{contents}\n"))
         .map_err(|error| format!("cannot write {}: {error}", temporary.display()))?;
     fs::rename(&temporary, config_path).map_err(|error| {
@@ -421,23 +424,26 @@ fn write_settings(config_path: &Path, config: &Value) -> Result<(), String> {
     })
 }
 
-fn is_aqm_status_line(value: &Value) -> bool {
+fn is_quotafence_status_line(value: &Value) -> bool {
     value.get("type").and_then(Value::as_str) == Some("command")
         && value
             .get("command")
             .and_then(Value::as_str)
-            .is_some_and(|command| command.ends_with(AQM_STATUS_LINE_MARKER))
+            .is_some_and(|command| command.ends_with(QUOTAFENCE_STATUS_LINE_MARKER))
 }
 
 fn status_line_command(executable: &Path) -> String {
     #[cfg(windows)]
     {
-        format!("\"{}\"{AQM_STATUS_LINE_MARKER}", executable.display())
+        format!(
+            "\"{}\"{QUOTAFENCE_STATUS_LINE_MARKER}",
+            executable.display()
+        )
     }
     #[cfg(not(windows))]
     {
         let path = executable.to_string_lossy().replace('\'', "'\\''");
-        format!("'{path}'{AQM_STATUS_LINE_MARKER}")
+        format!("'{path}'{QUOTAFENCE_STATUS_LINE_MARKER}")
     }
 }
 
@@ -896,7 +902,7 @@ pub fn run_status_line(reader: impl Read) -> Result<String, String> {
         observation.five_hour.is_some() || observation.seven_day.is_some(),
     )?;
     let database_path = paths::default_database_path()
-        .map_err(|error| format!("cannot resolve the AQM database: {error}"))?;
+        .map_err(|error| format!("cannot resolve the QuotaFence database: {error}"))?;
     if let Some(parent) = database_path.parent() {
         fs::create_dir_all(parent)
             .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
@@ -910,8 +916,8 @@ pub fn run_status_line(reader: impl Read) -> Result<String, String> {
         .or(observation.five_hour.as_ref())
         .map(|window| 100.0 - window.used_percentage);
     Ok(summary.map_or_else(
-        || "AQM · waiting for Claude subscription quota".to_owned(),
-        |remaining| format!("AQM · Claude {remaining:.0}% left"),
+        || "QuotaFence · waiting for Claude subscription quota".to_owned(),
+        |remaining| format!("QuotaFence · Claude {remaining:.0}% left"),
     ))
 }
 
@@ -1093,7 +1099,7 @@ mod tests {
 
     fn temp_settings(name: &str) -> PathBuf {
         let directory = std::env::temp_dir().join(format!(
-            "aqm-claude-statusline-{name}-{}",
+            "quotafence-claude-statusline-{name}-{}",
             std::process::id()
         ));
         fs::create_dir_all(&directory).unwrap();
@@ -1108,7 +1114,7 @@ mod tests {
             r#"{"theme":"dark","permissions":{"allow":["Bash"]}}"#,
         )
         .unwrap();
-        let executable = path.parent().unwrap().join("Agent Quota Manager");
+        let executable = path.parent().unwrap().join("QuotaFence");
         fs::write(&executable, "binary").unwrap();
 
         assert!(install_status_line(&path, &executable).unwrap());
@@ -1116,12 +1122,12 @@ mod tests {
         let settings = read_settings(&path).unwrap();
         assert_eq!(settings["theme"], "dark");
         assert_eq!(settings["permissions"]["allow"][0], "Bash");
-        assert!(is_aqm_status_line(&settings["statusLine"]));
+        assert!(is_quotafence_status_line(&settings["statusLine"]));
         assert_eq!(
             status_line_status(&path, &executable).state,
             ClaudeStatusLineState::Configured
         );
-        assert!(path.with_extension("json.aqm.bak").exists());
+        assert!(path.with_extension("json.quotafence.bak").exists());
     }
 
     #[test]
@@ -1129,7 +1135,7 @@ mod tests {
         let path = temp_settings("conflict");
         let original = r#"{"statusLine":{"type":"command","command":"my-status.sh"}}"#;
         fs::write(&path, original).unwrap();
-        let executable = path.parent().unwrap().join("aqm");
+        let executable = path.parent().unwrap().join("quotafence");
 
         let error = install_status_line(&path, &executable).unwrap_err();
 
@@ -1142,10 +1148,10 @@ mod tests {
     }
 
     #[test]
-    fn uninstall_removes_only_an_aqm_owned_status_line() {
+    fn uninstall_removes_only_an_quotafence_owned_status_line() {
         let path = temp_settings("uninstall");
         fs::write(&path, r#"{"theme":"light"}"#).unwrap();
-        let executable = path.parent().unwrap().join("aqm");
+        let executable = path.parent().unwrap().join("quotafence");
         install_status_line(&path, &executable).unwrap();
 
         assert!(uninstall_status_line(&path).unwrap());
