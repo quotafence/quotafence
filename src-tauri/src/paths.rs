@@ -11,9 +11,10 @@ const LEGACY_APP_IDENTIFIER: &str = "com.buisonanh.agentquotamanager";
 const LEGACY_DATABASE_FILENAME: &str = "agent-quota-manager.sqlite3";
 
 pub fn default_database_path() -> io::Result<PathBuf> {
-    dirs::data_dir()
-        .map(|directory| directory.join(APP_IDENTIFIER).join(DATABASE_FILENAME))
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "app data directory is unavailable"))
+    let data_dir = dirs::data_dir().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::NotFound, "app data directory is unavailable")
+    })?;
+    database_path_in(&data_dir)
 }
 
 pub fn migrate_legacy_database(target: &Path) -> io::Result<bool> {
@@ -49,6 +50,15 @@ fn migrate_database_from(legacy: &Path, target: &Path) -> io::Result<bool> {
     Ok(true)
 }
 
+fn database_path_in(data_dir: &Path) -> io::Result<PathBuf> {
+    let target = data_dir.join(APP_IDENTIFIER).join(DATABASE_FILENAME);
+    let legacy = data_dir
+        .join(LEGACY_APP_IDENTIFIER)
+        .join(LEGACY_DATABASE_FILENAME);
+    migrate_database_from(&legacy, &target)?;
+    Ok(target)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,6 +89,29 @@ mod tests {
         fs::write(&target, b"new-ledger").unwrap();
         assert!(!migrate_database_from(&legacy, &target).unwrap());
         assert_eq!(fs::read(&target).unwrap(), b"new-ledger");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn every_default_path_consumer_triggers_the_legacy_migration() {
+        let root = std::env::temp_dir().join(format!(
+            "quotafence-default-path-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let legacy = root
+            .join(LEGACY_APP_IDENTIFIER)
+            .join(LEGACY_DATABASE_FILENAME);
+        fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        fs::write(&legacy, b"shared-ledger").unwrap();
+
+        let target = database_path_in(&root).unwrap();
+        assert_eq!(target, root.join(APP_IDENTIFIER).join(DATABASE_FILENAME));
+        assert_eq!(fs::read(target).unwrap(), b"shared-ledger");
 
         fs::remove_dir_all(root).unwrap();
     }

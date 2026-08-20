@@ -295,7 +295,8 @@ fn run(args: Vec<String>) -> Result<u8, String> {
                     println!("Review and trust the new hooks with `/hooks` in Codex.");
                 }
                 HooksAction::Status => {
-                    if codex_hooks::user_hooks_installed(&config_path)? {
+                    let status = codex_hooks::protection_status()?;
+                    if status.installed {
                         println!(
                             "Codex workspace protection hooks are configured in {}",
                             config_path.display()
@@ -305,6 +306,9 @@ fn run(args: Vec<String>) -> Result<u8, String> {
                             "Codex workspace protection hooks are not configured in {}",
                             config_path.display()
                         );
+                    }
+                    if let Some(issue) = status.issue {
+                        println!("Issue: {issue}");
                     }
                 }
                 HooksAction::Uninstall => {
