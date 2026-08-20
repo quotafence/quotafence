@@ -306,11 +306,11 @@ function SetupDisclosure({
           <li className={trustReady ? "complete" : ""}>
             <Icon name={trustReady ? "check" : "shield"} size={16} />
             <div>
-              <strong>Hooks trusted and enabled in Codex</strong>
+              <strong>Protection verified in a new Codex task</strong>
               <span>
                 {trustReady
                   ? `Delivered ${formatLastSync(observedAt)}`
-                  : "Trust both hooks in Codex, then submit one prompt"}
+                  : "Trust both hooks, then create a new task and submit one prompt"}
               </span>
             </div>
           </li>
@@ -984,14 +984,14 @@ export function Dashboard({
                       {codexProtection?.installed
                         ? hookObservedAt !== null
                           ? "Hook connected, but enforcement is degraded"
-                          : "This Codex task has not delivered the protection hook"
+                          : "Current Codex tasks are tracking-only"
                         : "Allocations are a priority plan—not enforced yet"}
                     </strong>
                     <span>
                       {codexProtection?.installed
                         ? hookObservedAt !== null
                           ? `${codexProtection.lastHookIssue ?? "The latest prompt did not produce an enforceable quota decision."} QuotaFence will retry automatically. `
-                          : "Trust and enable UserPromptSubmit and Stop in Codex, then keep chatting in this task. "
+                          : "QuotaFence still tracks usage in existing tasks, but it cannot block their prompts. Trust and enable UserPromptSubmit and Stop, then create a new Codex task inside an allocated folder to activate hard protection. "
                         : ""}
                       {unassignedBufferNow > 0
                         ? `Unmanaged Codex usage consumes the ${formatAmount(
@@ -1013,7 +1013,7 @@ export function Dashboard({
                     type="button"
                     onClick={() => onViewChange("settings")}
                   >
-                    {hookObservedAt !== null ? "View status" : "Finish protection"}
+                    {hookObservedAt !== null ? "View status" : "View setup"}
                   </button>
                 </section>
               )}
