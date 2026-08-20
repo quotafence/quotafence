@@ -40,7 +40,7 @@ type DashboardProps = {
   onEditAllocation: (scope: ScopeSummary) => void;
   onRemoveAllocation: (scope: ScopeSummary) => void;
   onRefresh: () => void;
-  onRemoveSource: (source: QuotaSourceSummary) => void;
+  onRemoveSource: (sources: QuotaSourceSummary[]) => void;
   removingSource: boolean;
   codexProtection: CodexProtectionStatus | null;
   codexProtectionEvents: CodexProtectionEvent[];
@@ -71,23 +71,10 @@ function formatAmount(value: number, unit: string): string {
   return `${Math.round(value).toLocaleString()} ${labelUnit(unit)}`;
 }
 
-function daysRemaining(endsAt: number): number {
-  return Math.max(0, Math.ceil((endsAt - Date.now()) / 86_400_000));
-}
-
 function formatDate(timestamp: number): string {
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
-  }).format(timestamp);
-}
-
-function formatTrendTimestamp(timestamp: number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
   }).format(timestamp);
 }
 
@@ -111,118 +98,104 @@ function formatLastSync(timestamp: number | null): string {
   return `Synced ${Math.floor(hours / 24)}d ago`;
 }
 
-function UsageTrendChart({
+function startOfLocalDay(timestamp: number): number {
+  const date = new Date(timestamp);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+function UsageHeatmap({
   history,
-  startsAt,
-  endsAt,
   capacity,
   unit,
 }: {
   history: QuotaHistoryPoint[];
-  startsAt: number;
-  endsAt: number;
   capacity: number;
   unit: string;
 }) {
-  const width = 640;
-  const height = 122;
-  const chartBottom = 108;
+  const lastDay = startOfLocalDay(Date.now());
+  const firstDayDate = new Date(lastDay);
+  firstDayDate.setMonth(firstDayDate.getMonth() - 6);
+  const firstDay = firstDayDate.getTime();
   const visibleHistory = history
     .filter(
-      (point) => point.observedAt >= startsAt && point.observedAt <= endsAt,
+      (point) => point.observedAt >= firstDay && point.observedAt < lastDay + 86_400_000,
     )
     .sort((a, b) => a.observedAt - b.observedAt);
-  const firstObservedAt = visibleHistory[0]?.observedAt ?? startsAt;
-  const lastObservedAt =
-    visibleHistory[visibleHistory.length - 1]?.observedAt ?? endsAt;
-  const observedDuration = Math.max(1, lastObservedAt - firstObservedAt);
-  const points = visibleHistory.map((point) => {
-    const used = Math.max(0, capacity - point.remaining);
-    return {
-      x: Math.max(
-        0,
-        Math.min(
-          width,
-          visibleHistory.length === 1
-            ? 0
-            : ((point.observedAt - firstObservedAt) / observedDuration) * width,
-        ),
-      ),
-      y:
-        chartBottom -
-        Math.max(0, Math.min(1, used / Math.max(1, capacity))) *
-          (chartBottom - 8),
-      used,
-      ...point,
-    };
-  });
-  const linePath = points
-    .map((point, index) => `${index === 0 ? "M" : "L"}${point.x},${point.y}`)
-    .join(" ");
-  const areaPath =
-    points.length > 1
-      ? `${linePath} L${points[points.length - 1]?.x ?? width},${chartBottom} L${
-          points[0].x
-        },${chartBottom} Z`
-      : "";
-  const latest = points[points.length - 1];
+  const usageByDay = new Map<number, number>();
+  let previousRemaining = capacity;
+  for (const point of visibleHistory) {
+    const usageSinceLastCheckpoint = Math.max(
+      0,
+      previousRemaining - point.remaining,
+    );
+    const day = startOfLocalDay(point.observedAt);
+    usageByDay.set(day, (usageByDay.get(day) ?? 0) + usageSinceLastCheckpoint);
+    previousRemaining = point.remaining;
+  }
+
+  const days: Array<{ timestamp: number; usage: number } | null> = Array.from(
+    { length: new Date(firstDay).getDay() },
+    () => null,
+  );
+  for (let day = firstDay; day <= lastDay; ) {
+    days.push({ timestamp: day, usage: usageByDay.get(day) ?? 0 });
+    const next = new Date(day);
+    next.setDate(next.getDate() + 1);
+    day = next.getTime();
+  }
+  while (days.length % 7 !== 0) {
+    days.push(null);
+  }
+  const weekCount = Math.max(1, days.length / 7);
+  const activeDayCount = [...usageByDay.values()].filter(
+    (usage) => usage > 0,
+  ).length;
+  const usageLevel = (usage: number) => {
+    const ratio = usage / Math.max(1, capacity);
+    if (usage <= 0) return 0;
+    if (ratio <= 0.05) return 1;
+    if (ratio <= 0.15) return 2;
+    if (ratio <= 0.3) return 3;
+    return 4;
+  };
 
   return (
     <div className="quota-trend">
       <div className="quota-trend-heading">
-        <span>Usage over time</span>
+        <span>Daily usage</span>
         <small>
-          {visibleHistory.length > 1
-            ? `${visibleHistory.length} sync checkpoints`
-            : "Trend starts with the next sync"}
+          Last 6 months · {activeDayCount}{" "}
+          {activeDayCount === 1 ? "active day" : "active days"}
         </small>
       </div>
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
+      <div
+        className="quota-heatmap"
         role="img"
-        aria-label={
-          latest
-            ? `Usage trend ending at ${formatAmount(latest.used, unit)} used`
-            : "Usage trend has no sync checkpoints yet"
-        }
-        preserveAspectRatio="none"
+        aria-label="Daily quota usage heatmap"
+        style={{ gridTemplateColumns: `repeat(${weekCount}, minmax(0, 1fr))` }}
       >
-        <defs>
-          <linearGradient id="usage-trend-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--muted)" stopOpacity="0.32" />
-            <stop offset="100%" stopColor="var(--muted)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <line className="quota-trend-grid" x1="0" y1="8" x2={width} y2="8" />
-        <line
-          className="quota-trend-grid"
-          x1="0"
-          y1={chartBottom}
-          x2={width}
-          y2={chartBottom}
-        />
-        {areaPath && <path className="quota-trend-area" d={areaPath} />}
-        {linePath && <path className="quota-trend-line" d={linePath} />}
-        {points.length === 1 && (
-          <circle
-            className="quota-trend-dot"
-            cx={points[0].x}
-            cy={points[0].y}
-            r="4"
-          />
+        {days.map((day, index) =>
+          day ? (
+            <span
+              className={`quota-heatmap-day level-${usageLevel(day.usage)}`}
+              key={day.timestamp}
+              title={`${formatDate(day.timestamp)} · ${formatAmount(day.usage, unit)} used`}
+            />
+          ) : (
+            <span className="quota-heatmap-day empty" key={`empty-${index}`} />
+          ),
         )}
-      </svg>
+      </div>
       <div className="quota-trend-axis">
-        <span>
-          {visibleHistory.length > 1
-            ? formatTrendTimestamp(firstObservedAt)
-            : formatDate(startsAt)}
+        <span>{formatDate(firstDay)}</span>
+        <span className="quota-heatmap-legend" aria-hidden="true">
+          Less
+          {[0, 1, 2, 3, 4].map((level) => (
+            <i className={`level-${level}`} key={level} />
+          ))}
+          More
         </span>
-        <span>
-          {visibleHistory.length > 1
-            ? formatTrendTimestamp(lastObservedAt)
-            : formatDate(endsAt)}
-        </span>
+        <span>{formatDate(lastDay)}</span>
       </div>
     </div>
   );
@@ -306,11 +279,11 @@ function SetupDisclosure({
           <li className={trustReady ? "complete" : ""}>
             <Icon name={trustReady ? "check" : "shield"} size={16} />
             <div>
-              <strong>Hooks trusted and enabled in Codex</strong>
+              <strong>Protection verified in a new Codex task</strong>
               <span>
                 {trustReady
                   ? `Delivered ${formatLastSync(observedAt)}`
-                  : "Trust both hooks in Codex, then submit one prompt"}
+                  : "Trust both hooks, then create a new task and submit one prompt"}
               </span>
             </div>
           </li>
@@ -509,7 +482,7 @@ export function Dashboard({
   onPriorityOrder,
 }: DashboardProps) {
   const [sourceMenu, setSourceMenu] = useState<{
-    source: QuotaSourceSummary;
+    sources: QuotaSourceSummary[];
     x: number;
     y: number;
   } | null>(null);
@@ -572,12 +545,38 @@ export function Dashboard({
       candidate.providerDisplayName.toLowerCase() ===
       source.providerDisplayName.toLowerCase(),
   );
+  const sidebarSources = state.sources.reduce<
+    Array<{ key: string; sources: QuotaSourceSummary[] }>
+  >((groups, candidate) => {
+    const isClaude =
+      candidate.providerDisplayName.toLowerCase() === "claude code";
+    if (!isClaude) {
+      groups.push({ key: candidate.windowId, sources: [candidate] });
+      return groups;
+    }
+
+    const claudeGroup = groups.find((group) => group.key === "claude-code");
+    if (claudeGroup) {
+      claudeGroup.sources.push(candidate);
+    } else {
+      groups.push({ key: "claude-code", sources: [candidate] });
+    }
+    return groups;
+  }, []);
 
   const { window: quotaWindow } = dashboard;
-  const remainingDays = daysRemaining(quotaWindow.endsAt);
-  const dailyBudget =
-    remainingDays > 0
-      ? Math.floor(quotaWindow.providerSpendable / remainingDays)
+  const shortWindow =
+    quotaWindow.endsAt - quotaWindow.startsAt < 86_400_000;
+  const pacingUnit = shortWindow ? "hour" : "day";
+  const pacingArticle = shortWindow ? "an" : "a";
+  const pacingUnitMillis = shortWindow ? 3_600_000 : 86_400_000;
+  const remainingPacingUnits = Math.max(
+    0,
+    Math.ceil((quotaWindow.endsAt - Date.now()) / pacingUnitMillis),
+  );
+  const pacingBudget =
+    remainingPacingUnits > 0
+      ? Math.floor(quotaWindow.providerSpendable / remainingPacingUnits)
       : 0;
   const availablePercent = quotaWindow.capacity
     ? Math.min(
@@ -664,29 +663,37 @@ export function Dashboard({
     forecast.sampleCount >= 5 &&
     forecast.status === "depletes_before_reset" &&
     forecast.projectedDepletionAt !== null;
-  const projectedDays =
+  const projectedPacingUnits =
     showForecast && forecast.projectedDepletionAt !== null
       ? Math.max(
           0,
-          Math.ceil((forecast.projectedDepletionAt - Date.now()) / 86_400_000),
+          Math.ceil(
+            (forecast.projectedDepletionAt - Date.now()) / pacingUnitMillis,
+          ),
         )
       : 0;
   const statusTone =
-    availablePercent < 10 ? "danger" : showForecast ? "warning" : "neutral";
+    source.isActive && availablePercent < 10
+      ? "danger"
+      : source.isActive && showForecast
+        ? "warning"
+        : "neutral";
   const statusMessage =
-    availablePercent < 10
+    !source.isActive
+      ? "This allowance window is inactive. Sync to check for a newer window."
+      : availablePercent < 10
       ? `Only ${formatAmount(
           quotaWindow.providerSpendable,
           quotaWindow.unit,
         )} left. Reserve it for priority work.`
       : showForecast
-        ? `At your current pace you run out in ${projectedDays} ${
-            projectedDays === 1 ? "day" : "days"
+        ? `At your current pace you run out in ${projectedPacingUnits} ${
+            projectedPacingUnits === 1 ? pacingUnit : `${pacingUnit}s`
           }.`
         : `About ${formatAmount(
-            dailyBudget,
+            pacingBudget,
             quotaWindow.unit,
-          )} a day keeps you safe.`;
+          )} ${pacingArticle} ${pacingUnit} keeps you safe.`;
   const clearPriorityDrag = () => {
     draggedScopeIdRef.current = null;
     dragOverScopeIdRef.current = null;
@@ -823,40 +830,63 @@ export function Dashboard({
             </button>
           </div>
           <div className="source-list">
-            {state.sources.map((item) => (
-              <button
-                className={`source-item ${
-                  item.windowId === source.windowId ? "active" : ""
-                }`}
-                type="button"
-                key={item.windowId}
-                title={`${formatLastSync(
-                  item.lastSyncedAt,
-                )}. Right-click for source actions.`}
-                onClick={() => {
-                  onViewChange("overview");
-                  onSelectSource(item.windowId);
-                }}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  setSourceMenu({
-                    source: item,
-                    x: Math.min(event.clientX, window.innerWidth - 180),
-                    y: Math.min(event.clientY, window.innerHeight - 64),
-                  });
-                }}
-              >
-                <ProviderLogo
-                  className="source-avatar"
-                  providerName={item.providerDisplayName}
-                />
-                <span>
-                  <strong>{item.providerDisplayName}</strong>
-                  <small>{item.poolDisplayName}</small>
-                </span>
-                {item.isActive && <i />}
-              </button>
-            ))}
+            {sidebarSources.map((group) => {
+              const selectedGroupSource = group.sources.find(
+                (candidate) => candidate.windowId === source.windowId,
+              );
+              const item =
+                selectedGroupSource ??
+                group.sources.find((candidate) => candidate.isActive) ??
+                group.sources.find((candidate) =>
+                  candidate.poolDisplayName.toLowerCase().includes("weekly"),
+                ) ??
+                group.sources[0];
+              const latestSync = group.sources.reduce<number | null>(
+                (latest, candidate) =>
+                  candidate.lastSyncedAt !== null &&
+                  (latest === null || candidate.lastSyncedAt > latest)
+                    ? candidate.lastSyncedAt
+                    : latest,
+                null,
+              );
+              const groupedClaude = group.key === "claude-code";
+              return (
+                <button
+                  className={`source-item ${selectedGroupSource ? "active" : ""}`}
+                  type="button"
+                  key={group.key}
+                  title={`${formatLastSync(
+                    latestSync,
+                  )}. Right-click for source actions.`}
+                  onClick={() => {
+                    onViewChange("overview");
+                    onSelectSource(item.windowId);
+                  }}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setSourceMenu({
+                      sources: group.sources,
+                      x: Math.min(event.clientX, window.innerWidth - 180),
+                      y: Math.min(event.clientY, window.innerHeight - 64),
+                    });
+                  }}
+                >
+                  <ProviderLogo
+                    className="source-avatar"
+                    providerName={item.providerDisplayName}
+                  />
+                  <span>
+                    <strong>{item.providerDisplayName}</strong>
+                    <small>
+                      {groupedClaude && group.sources.length > 1
+                        ? "5-hour + weekly"
+                        : item.poolDisplayName}
+                    </small>
+                  </span>
+                  {group.sources.some((candidate) => candidate.isActive) && <i />}
+                </button>
+              );
+            })}
             {claudeIntegration?.installed &&
               !state.sources.some(
                 (item) =>
@@ -984,14 +1014,14 @@ export function Dashboard({
                       {codexProtection?.installed
                         ? hookObservedAt !== null
                           ? "Hook connected, but enforcement is degraded"
-                          : "This Codex task has not delivered the protection hook"
+                          : "Current Codex tasks are tracking-only"
                         : "Allocations are a priority plan—not enforced yet"}
                     </strong>
                     <span>
                       {codexProtection?.installed
                         ? hookObservedAt !== null
                           ? `${codexProtection.lastHookIssue ?? "The latest prompt did not produce an enforceable quota decision."} QuotaFence will retry automatically. `
-                          : "Trust and enable UserPromptSubmit and Stop in Codex, then keep chatting in this task. "
+                          : "QuotaFence still tracks usage in existing tasks, but it cannot block their prompts. Trust and enable UserPromptSubmit and Stop, then create a new Codex task inside an allocated folder to activate hard protection. "
                         : ""}
                       {unassignedBufferNow > 0
                         ? `Unmanaged Codex usage consumes the ${formatAmount(
@@ -1013,7 +1043,7 @@ export function Dashboard({
                     type="button"
                     onClick={() => onViewChange("settings")}
                   >
-                    {hookObservedAt !== null ? "View status" : "Finish protection"}
+                    {hookObservedAt !== null ? "View status" : "View setup"}
                   </button>
                 </section>
               )}
@@ -1075,10 +1105,8 @@ export function Dashboard({
                       <span>{formatDate(quotaWindow.endsAt)}</span>
                     </div>
                   </div>
-                  <UsageTrendChart
+                  <UsageHeatmap
                     history={dashboard.quotaHistory}
-                    startsAt={quotaWindow.startsAt}
-                    endsAt={quotaWindow.endsAt}
                     capacity={quotaWindow.capacity}
                     unit={quotaWindow.unit}
                   />
@@ -1086,9 +1114,15 @@ export function Dashboard({
 
                 <article className="dashboard-block allocation-summary-block">
                   <div className="reset-summary">
-                    <span>Resets</span>
+                    <span>{source.isActive ? "Resets" : "Window"}</span>
                     <strong>
-                      {remainingDays} {remainingDays === 1 ? "day" : "days"}
+                      {source.isActive
+                        ? `${remainingPacingUnits} ${
+                            remainingPacingUnits === 1
+                              ? pacingUnit
+                              : `${pacingUnit}s`
+                          }`
+                        : "Ended"}
                     </strong>
                     <small>{formatDate(quotaWindow.endsAt)}</small>
                   </div>
@@ -1271,7 +1305,7 @@ export function Dashboard({
         <div
           className="source-context-menu"
           role="menu"
-          aria-label={`${sourceMenu.source.providerDisplayName} source actions`}
+          aria-label={`${sourceMenu.sources[0].providerDisplayName} source actions`}
           style={{ left: sourceMenu.x, top: sourceMenu.y }}
           onPointerDown={(event) => event.stopPropagation()}
         >
@@ -1280,7 +1314,7 @@ export function Dashboard({
             role="menuitem"
             disabled={removingSource}
             onClick={() => {
-              onRemoveSource(sourceMenu.source);
+              onRemoveSource(sourceMenu.sources);
               setSourceMenu(null);
             }}
           >

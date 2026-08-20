@@ -52,7 +52,7 @@ type ModalState =
   | { type: "scope" }
   | { type: "allocation"; scope: ScopeSummary }
   | { type: "remove-allocation"; scope: ScopeSummary }
-  | { type: "remove-source"; source: QuotaSourceSummary }
+  | { type: "remove-source"; sources: QuotaSourceSummary[] }
   | null;
 
 const THEME_STORAGE_KEY = "quotafence-theme";
@@ -670,11 +670,12 @@ function App() {
     }
   }
 
-  async function handleRemoveSource(source: QuotaSourceSummary) {
+  async function handleRemoveSource(sources: QuotaSourceSummary[]) {
     setSubmitting(true);
     setError(null);
     try {
-      await archiveQuotaSource(source.poolId);
+      const poolIds = [...new Set(sources.map((source) => source.poolId))];
+      await Promise.all(poolIds.map((poolId) => archiveQuotaSource(poolId)));
       await loadState();
       setModal(null);
     } catch (reason) {
@@ -896,7 +897,7 @@ function App() {
           setModal({ type: "remove-allocation", scope })
         }
         onRefresh={handleRefresh}
-        onRemoveSource={(source) => setModal({ type: "remove-source", source })}
+        onRemoveSource={(sources) => setModal({ type: "remove-source", sources })}
         removingSource={submitting}
         codexProtection={codexProtection}
         codexProtectionEvents={codexProtectionEvents}
@@ -990,8 +991,12 @@ function App() {
         >
           <div className="delete-source-confirmation">
             <p>
-              <strong>{modal.source.providerDisplayName}</strong>
-              <span>{modal.source.poolDisplayName}</span>
+              <strong>{modal.sources[0].providerDisplayName}</strong>
+              <span>
+                {modal.sources.length > 1
+                  ? `${modal.sources.length} allowance windows`
+                  : modal.sources[0].poolDisplayName}
+              </span>
             </p>
             <p>
               This removes the source from the active list. Its existing usage
@@ -1010,7 +1015,7 @@ function App() {
                 className="button danger-action"
                 type="button"
                 disabled={submitting}
-                onClick={() => void handleRemoveSource(modal.source)}
+                onClick={() => void handleRemoveSource(modal.sources)}
               >
                 <Icon name="trash" size={17} />
                 {submitting ? "Deleting…" : "Delete source"}

@@ -82,7 +82,7 @@ function statusLabel(
   }
   switch (protection.state) {
     case "configured":
-      return "Verify in Codex";
+      return "New task required";
     case "misconfigured":
       return "Needs attention";
     case "disabled":
@@ -407,7 +407,7 @@ export function SettingsPanel({
                 ? "Ready"
                 : integrationNeedsAttention
                   ? "Needs attention"
-                  : "Passive only"}
+                  : "Tracking only"}
             </span>
             <button
               className="button primary small"
@@ -495,7 +495,9 @@ export function SettingsPanel({
           </span>
           <div>
             <h2>Codex Desktop protection</h2>
-            <p>Check every new Codex prompt against workspace capacity.</p>
+            <p>
+              Block prompts in Codex tasks started after protection was installed.
+            </p>
           </div>
           {protection && (
             <span
@@ -523,7 +525,7 @@ export function SettingsPanel({
                         ? `Codex delivered a prompt hook ${formatRelativeTime(
                             observedAt,
                           )}, but the latest check did not produce an enforceable quota decision.`
-                        : "QuotaFence is installed, but Codex has not delivered a prompt hook yet."
+                        : "Usage tracking is active. Hard protection starts only in a new Codex task created after the hooks were enabled."
                     : protection.state === "misconfigured"
                       ? protection.issue
                       : "Passive usage tracking stays available, but prompts are not blocked."}
@@ -578,15 +580,22 @@ export function SettingsPanel({
               <div className="settings-callout warning" role="alert">
                 <Icon name="activity" size={18} />
                 <div>
-                  <strong>Finish protection</strong>
-                  <p>Keep using this task.</p>
+                  <strong>Start a new Codex task to activate protection</strong>
+                  <p>
+                    Your current task is still tracked, but Codex cannot attach newly
+                    installed hooks to a task that is already open. QuotaFence cannot
+                    block prompts in this task.
+                  </p>
                   <ol>
                     <li>
                       In <b>Codex Settings → Hooks</b>, trust and enable{" "}
                       <code>UserPromptSubmit</code> and <code>Stop</code>.
                     </li>
                     <li>
-                      Send the next prompt here, then refresh QuotaFence.
+                      Create a new Codex task inside a folder with an allocation.
+                    </li>
+                    <li>
+                      Send its first prompt, then click <b>Check now</b> in QuotaFence.
                     </li>
                   </ol>
                 </div>
@@ -773,7 +782,7 @@ function promptGateHealthLabel(
     return "Connected · latest hook was not enforceable";
   }
   if (protection.installed) {
-    return "Installed · trust hooks and send a test prompt";
+    return "Tracking active · new Codex task required for blocking";
   }
   return "Off · passive tracking only";
 }

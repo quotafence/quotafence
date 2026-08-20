@@ -3823,42 +3823,72 @@ h3,
   font-size: 12px;
 }
 
-.quota-trend svg {
+.quota-heatmap {
   width: 100%;
-  height: 112px;
-  margin-top: 8px;
-  display: block;
-  overflow: visible;
+  margin-top: 12px;
+  display: grid;
+  grid-template-rows: repeat(7, auto);
+  grid-auto-flow: column;
+  gap: 3px;
+  align-items: stretch;
+  overflow: hidden;
 }
 
-.quota-trend-grid {
-  stroke: var(--line);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
+.quota-heatmap-day,
+.quota-heatmap-legend i {
+  border: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
+  border-radius: 3px;
+  background: var(--panel-soft);
 }
 
-.quota-trend-area {
-  fill: url("#usage-trend-fill");
+.quota-heatmap-day {
+  width: 100%;
+  min-width: 0;
+  aspect-ratio: 1;
 }
 
-.quota-trend-line {
-  fill: none;
-  stroke: var(--muted);
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
+.quota-heatmap-day:not(.empty) {
+  cursor: help;
 }
 
-.quota-trend-dot {
-  fill: var(--muted);
-  stroke: var(--panel);
-  stroke-width: 3;
-  vector-effect: non-scaling-stroke;
+.quota-heatmap-day.empty {
+  visibility: hidden;
+}
+
+.quota-heatmap-day.level-1,
+.quota-heatmap-legend .level-1 {
+  background: color-mix(in srgb, var(--progress-fill) 28%, var(--panel-soft));
+}
+
+.quota-heatmap-day.level-2,
+.quota-heatmap-legend .level-2 {
+  background: color-mix(in srgb, var(--progress-fill) 48%, var(--panel-soft));
+}
+
+.quota-heatmap-day.level-3,
+.quota-heatmap-legend .level-3 {
+  background: color-mix(in srgb, var(--progress-fill) 72%, var(--panel-soft));
+}
+
+.quota-heatmap-day.level-4,
+.quota-heatmap-legend .level-4 {
+  background: var(--progress-fill);
 }
 
 .quota-trend-axis {
-  margin-top: -3px;
+  margin-top: 3px;
+}
+
+.quota-heatmap-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.quota-heatmap-legend i {
+  width: 13px;
+  height: 13px;
+  display: inline-block;
 }
 
 .quota-dashboard-block .used-progress-section {
