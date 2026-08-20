@@ -305,3 +305,15 @@ confirmation boundary. They reconcile their own provider delta at `observed`
 confidence, but do not terminate a running process because the provider does
 not expose a sufficiently timely live quota signal. Unmanaged work remains
 outside hard enforcement. Hook attribution remains experimental and `inferred`.
+Claude's managed beta uses the same folder binding and policy boundary:
+
+```bash
+aqm run claude --path /path/to/project
+aqm run claude --window 5h -- --model sonnet
+```
+
+The default managed Claude budget is the weekly allocation. `--window 5h`
+selects the separate 5-hour allocation explicitly; AQM does not merge or
+multiply the two provider-native windows. Desktop/IDE attribution instead uses
+the reversible Claude lifecycle hooks installed from Settings and reconciles
+both windows after a turn.

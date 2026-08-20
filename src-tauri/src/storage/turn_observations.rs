@@ -285,6 +285,28 @@ impl<'connection> TurnObservationRepository<'connection> {
             .map(Option::flatten)
     }
 
+    pub fn list_for_session(
+        &self,
+        session_id: &str,
+    ) -> StorageResult<Vec<ProviderTurnObservation>> {
+        let mut statement = self.connection.prepare(
+            "SELECT turn_id FROM provider_turn_observations
+             WHERE session_id = ?1 ORDER BY started_at ASC, turn_id ASC",
+        )?;
+        let turn_ids = statement
+            .query_map([session_id], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        turn_ids
+            .into_iter()
+            .map(|turn_id| get_with_connection(self.connection, session_id, &turn_id))
+            .filter_map(|result| match result {
+                Ok(Some(value)) => Some(Ok(value)),
+                Ok(None) => None,
+                Err(error) => Some(Err(error)),
+            })
+            .collect()
+    }
+
     pub fn abandon(&mut self, session_id: &str, turn_id: &str) -> StorageResult<bool> {
         Ok(self.connection.execute(
             "DELETE FROM provider_turn_observations
@@ -609,6 +631,34 @@ mod tests {
                 .baseline_used(),
             10
         );
+    }
+
+    #[test]
+    fn session_listing_returns_each_native_window_observation() {
+        let mut database = seeded_database();
+        set_snapshot(&mut database, 10);
+        database
+            .turn_observations()
+            .begin(
+                &observation("claude-session", "claude:1:seven_day", Some("project-a")),
+                UnixMillis::new(0),
+            )
+            .unwrap();
+        let mut second = observation("claude-session", "claude:1:five_hour", Some("project-a"));
+        second.adapter = "claude_statusline".to_owned();
+        second.started_at = UnixMillis::new(2_001);
+        database
+            .turn_observations()
+            .begin(&second, UnixMillis::new(0))
+            .unwrap();
+
+        let pending = database
+            .turn_observations()
+            .list_for_session("claude-session")
+            .unwrap();
+        assert_eq!(pending.len(), 2);
+        assert_eq!(pending[0].turn_id(), "claude:1:seven_day");
+        assert_eq!(pending[1].turn_id(), "claude:1:five_hour");
     }
 
     #[test]

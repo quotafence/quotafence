@@ -92,6 +92,24 @@ export type ClaudeStatusLineStatus = {
   lastQuotaObservedAt: number | null;
 };
 
+export type ClaudeProtectionStatus = {
+  installed: boolean;
+  configPath: string;
+  state: "disabled" | "configured" | "misconfigured";
+  issue: string | null;
+  lastHookObservedAt: number | null;
+  lastDecision: "allowed" | "warned" | "blocked" | "skipped" | null;
+};
+
+export type ClaudeSyncResult = {
+  windows: Array<{
+    kind: "five_hour" | "seven_day";
+    displayName: string;
+    windowId: string;
+    rolledOver: boolean;
+  }>;
+};
+
 export type CodexProtectionEvent = {
   canonicalPath: string;
   scopeId: string | null;
@@ -119,6 +137,7 @@ export type QuotaSourceSummary = {
   windowId: string;
   startsAt: number;
   endsAt: number;
+  providerUsed: number | null;
   capacity: number;
   unit: string;
   isActive: boolean;

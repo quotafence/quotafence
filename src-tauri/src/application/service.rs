@@ -392,6 +392,27 @@ impl QuotaService {
             }))
     }
 
+    pub fn provider_turn_observations_for_session(
+        &mut self,
+        session_id: &str,
+    ) -> ApplicationResult<Vec<ProviderTurnObservationSummary>> {
+        let session_id = required_request_text(session_id.to_owned(), "session ID")?;
+        self.database
+            .turn_observations()
+            .list_for_session(&session_id)?
+            .into_iter()
+            .map(|observation| {
+                Ok(ProviderTurnObservationSummary {
+                    turn_id: observation.turn_id().to_owned(),
+                    canonical_path: observation.canonical_path().to_owned(),
+                    window_id: observation.window_id().to_string(),
+                    scope_id: observation.scope_id().map(ToString::to_string),
+                    contended: observation.contended(),
+                })
+            })
+            .collect()
+    }
+
     pub fn reconcile_provider_turn_observation(
         &mut self,
         command: ReconcileProviderTurnObservation,
@@ -399,7 +420,13 @@ impl QuotaService {
         let session_id = required_request_text(command.session_id, "session ID")?;
         let turn_id = required_request_text(command.turn_id, "turn ID")?;
         let current_window_id = WindowId::new(command.current_window_id)?;
-        let usage_event_id = UsageEventId::new(format!("codex-hook:{session_id}:{turn_id}"))?;
+        let adapter = self
+            .database
+            .turn_observations()
+            .get(&session_id, &turn_id)?
+            .map(|observation| observation.adapter().to_owned())
+            .unwrap_or_else(|| "provider-hook".to_owned());
+        let usage_event_id = UsageEventId::new(format!("{adapter}:{session_id}:{turn_id}"))?;
         let result = self.database.turn_observations().reconcile(
             &session_id,
             &turn_id,
@@ -1592,6 +1619,7 @@ impl QuotaService {
                 starts_at: window.starts_at().value(),
                 ends_at: window.ends_at().value(),
                 capacity: window.capacity().value(),
+                provider_used: snapshot.as_ref().map(|snapshot| snapshot.used()),
                 unit: window.capacity().unit().to_string(),
                 is_active: window.contains(at),
                 provider_managed: snapshot.is_some(),

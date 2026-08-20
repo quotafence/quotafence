@@ -24,6 +24,7 @@ pub struct QuotaSourceSummary {
     pub starts_at: i64,
     pub ends_at: i64,
     pub capacity: u64,
+    pub provider_used: Option<u64>,
     pub unit: String,
     pub is_active: bool,
     pub provider_managed: bool,

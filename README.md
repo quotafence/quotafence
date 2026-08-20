@@ -9,7 +9,8 @@ Local-first budget guard and routing layer for AI coding agents.
 > locally. Folder-based workspace mapping plus `aqm context` and the provider-refreshing
 > `aqm admit codex` dry run are implemented. `aqm run codex` now admits,
 > reserves, launches, supervises, reconciles, and recovers one managed Codex
-> session.
+> session. Claude's shared 5-hour and weekly subscription windows, reversible
+> folder lifecycle hooks, and `aqm run claude` are available as a beta adapter.
 > Desktop refresh can also read Codex's local thread usage metadata and infer
 > a workspace's aggregate quota change without requiring the CLI wrapper or
 > parsing prompts and transcripts. Aggregate percentage checkpoints still
@@ -38,6 +39,8 @@ lightweight daily workflow starts with:
 
 ```bash
 aqm run codex
+# or, for the Claude weekly allocation
+aqm run claude
 ```
 
 That workflow now:

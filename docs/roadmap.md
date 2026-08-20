@@ -110,11 +110,12 @@ percentages, credits, USD spend, and concurrency are interchangeable. It must
 not weaken Codex correctness or reuse provider-specific assumptions as shared
 domain rules.
 
-The initial comparison and bounded Claude Code observation slice are defined in
-the [provider capability matrix](provider-capability-matrix.md). Discovery,
-reversible status-line setup, 5-hour/7-day checkpoint ingestion, and rollover
-are implemented. Claude folder attribution, admission, enforcement, managed
-launch, and routing remain evidence-gated follow-up work.
+The initial comparison and Claude Code beta slice are defined in the
+[provider capability matrix](provider-capability-matrix.md). Discovery,
+reversible status-line setup, 5-hour/7-day checkpoint ingestion, rollover,
+lifecycle attribution, new-prompt Warn/Stop protection, and an explicit-window
+managed CLI launch are implemented. Cross-provider routing remains
+evidence-gated because the native windows are not interchangeable.
 
 ## Current implementation
 
@@ -137,6 +138,8 @@ The repository currently has:
 - a persisted `aqm run codex` managed-session lifecycle with atomic reservation,
   direct process supervision, pre/post checkpoint reconciliation, terminal
   cleanup, and Unix orphan recovery;
+- a Claude beta lifecycle covering both provider windows, folder hooks, and
+  `aqm run claude --window <weekly|5h>` without inventing token totals;
 - passive Codex Desktop attribution from local thread metadata at refresh, plus
   optional trusted lifecycle hooks for pre-prompt admission and
   higher-frequency observation;

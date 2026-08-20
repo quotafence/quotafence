@@ -9,7 +9,10 @@ use std::{
 
 use tauri::{Manager, Runtime, State};
 
-use crate::providers::claude_code::{self, ClaudeCodeProbe, ClaudeStatusLineStatus};
+use crate::providers::claude_code::{
+    self, ClaudeCodeProbe, ClaudeStatusLineStatus, ClaudeSyncResult,
+};
+use crate::providers::claude_hooks::{self, ClaudeProtectionStatus};
 use crate::providers::codex::{self, CodexDetection, CodexSyncResult, CodexSyncStatus};
 use crate::providers::codex_hooks::{self, CodexProtectionStatus};
 use crate::{
@@ -201,7 +204,27 @@ pub(crate) fn uninstall_claude_integration() -> IpcResult<ClaudeStatusLineStatus
 }
 
 #[tauri::command]
-pub(crate) async fn sync_claude_quota(state: State<'_, AppState>) -> IpcResult<()> {
+pub(crate) fn get_claude_protection_status() -> IpcResult<ClaudeProtectionStatus> {
+    claude_hooks::protection_status().map_err(IpcError::integration_error)
+}
+
+#[tauri::command]
+pub(crate) fn install_claude_protection() -> IpcResult<ClaudeProtectionStatus> {
+    let executable = std::env::current_exe().map_err(|error| {
+        IpcError::integration_error(format!(
+            "Could not resolve the Agent Quota Manager executable: {error}"
+        ))
+    })?;
+    claude_hooks::install_protection(&executable).map_err(IpcError::integration_error)
+}
+
+#[tauri::command]
+pub(crate) fn uninstall_claude_protection() -> IpcResult<ClaudeProtectionStatus> {
+    claude_hooks::uninstall_protection().map_err(IpcError::integration_error)
+}
+
+#[tauri::command]
+pub(crate) async fn sync_claude_quota(state: State<'_, AppState>) -> IpcResult<ClaudeSyncResult> {
     let observation = tauri::async_runtime::spawn_blocking(claude_code::fetch_subscription_usage)
         .await
         .map_err(|_| IpcError::integration_error("Claude usage refresh stopped unexpectedly"))?

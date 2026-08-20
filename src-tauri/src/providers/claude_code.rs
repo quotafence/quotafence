@@ -24,7 +24,7 @@ use crate::{
 };
 
 const AQM_STATUS_LINE_MARKER: &str = " observe claude-statusline";
-const CLAUDE_ADAPTER: &str = "claude_statusline";
+pub const CLAUDE_ADAPTER: &str = "claude_statusline";
 const CLAUDE_PROVIDER_ID: &str = "claude-code";
 const CLAUDE_HEARTBEAT_FILENAME: &str = "claude-statusline-heartbeat.json";
 const FIVE_HOURS_MILLIS: i64 = 5 * 60 * 60 * 1_000;
@@ -114,6 +114,21 @@ pub struct ClaudeCodeProbe {
     pub executable: Option<PathBuf>,
     pub version: Option<String>,
     pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeSyncedWindow {
+    pub kind: String,
+    pub display_name: String,
+    pub window_id: String,
+    pub rolled_over: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeSyncResult {
+    pub windows: Vec<ClaudeSyncedWindow>,
 }
 
 pub fn probe() -> ClaudeCodeProbe {
@@ -904,28 +919,29 @@ pub fn ingest_observation(
     service: &mut QuotaService,
     observation: &ClaudeStatusLineObservation,
     observed_at: i64,
-) -> Result<(), String> {
+) -> Result<ClaudeSyncResult, String> {
+    let mut windows = Vec::new();
     if let Some(window) = observation.five_hour.as_ref() {
-        ingest_window(
+        windows.push(ingest_window(
             service,
             "five_hour",
             "5-hour allowance",
             FIVE_HOURS_MILLIS,
             window,
             observed_at,
-        )?;
+        )?);
     }
     if let Some(window) = observation.seven_day.as_ref() {
-        ingest_window(
+        windows.push(ingest_window(
             service,
             "seven_day",
             "Weekly allowance",
             SEVEN_DAYS_MILLIS,
             window,
             observed_at,
-        )?;
+        )?);
     }
-    Ok(())
+    Ok(ClaudeSyncResult { windows })
 }
 
 fn ingest_window(
@@ -935,7 +951,7 @@ fn ingest_window(
     duration_millis: i64,
     window: &ClaudeRateLimitWindow,
     observed_at: i64,
-) -> Result<(), String> {
+) -> Result<ClaudeSyncedWindow, String> {
     let ends_at = window
         .resets_at_seconds
         .checked_mul(1_000)
@@ -958,8 +974,8 @@ fn ingest_window(
             && source.pool_display_name == display_name
             && source.unit == "percent"
     });
-    if let Some(source) = existing {
-        service
+    let (window_id, rolled_over) = if let Some(source) = existing {
+        let result = service
             .sync_provider_quota(SyncProviderQuota {
                 current_window_id: source.window_id,
                 adapter: CLAUDE_ADAPTER.to_owned(),
@@ -974,8 +990,10 @@ fn ingest_window(
                 desktop_observations: None,
             })
             .map_err(|error| error.to_string())?;
+        (result.window_id, result.rolled_over)
     } else {
         let suffix = kind.replace('_', "-");
+        let window_id = format!("claude-code-{suffix}-window-{ends_at}");
         service
             .create_quota_source(CreateQuotaSource {
                 provider_id: format!("claude-code-{suffix}-provider"),
@@ -984,7 +1002,7 @@ fn ingest_window(
                 account_display_name: "Claude subscription".to_owned(),
                 pool_id: format!("claude-code-{suffix}"),
                 pool_display_name: display_name.to_owned(),
-                window_id: format!("claude-code-{suffix}-window-{ends_at}"),
+                window_id: window_id.clone(),
                 starts_at,
                 ends_at,
                 capacity: 100,
@@ -999,8 +1017,14 @@ fn ingest_window(
                 }),
             })
             .map_err(|error| error.to_string())?;
-    }
-    Ok(())
+        (window_id, false)
+    };
+    Ok(ClaudeSyncedWindow {
+        kind: kind.to_owned(),
+        display_name: display_name.to_owned(),
+        window_id,
+        rolled_over,
+    })
 }
 
 fn current_time_millis() -> i64 {

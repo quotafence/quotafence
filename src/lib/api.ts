@@ -6,6 +6,8 @@ import type {
   CodexProtectionStatus,
   CodexSyncResult,
   ClaudeStatusLineStatus,
+  ClaudeProtectionStatus,
+  ClaudeSyncResult,
   IpcError,
   LocalState,
   PolicySummary,
@@ -65,8 +67,20 @@ export async function uninstallClaudeIntegration(): Promise<ClaudeStatusLineStat
   return invoke<ClaudeStatusLineStatus>("uninstall_claude_integration");
 }
 
-export async function syncClaudeQuota(): Promise<void> {
-  return invoke<void>("sync_claude_quota");
+export async function getClaudeProtectionStatus(): Promise<ClaudeProtectionStatus> {
+  return invoke<ClaudeProtectionStatus>("get_claude_protection_status");
+}
+
+export async function installClaudeProtection(): Promise<ClaudeProtectionStatus> {
+  return invoke<ClaudeProtectionStatus>("install_claude_protection");
+}
+
+export async function uninstallClaudeProtection(): Promise<ClaudeProtectionStatus> {
+  return invoke<ClaudeProtectionStatus>("uninstall_claude_protection");
+}
+
+export async function syncClaudeQuota(): Promise<ClaudeSyncResult> {
+  return invoke<ClaudeSyncResult>("sync_claude_quota");
 }
 
 export async function getCodexProtectionEvents(

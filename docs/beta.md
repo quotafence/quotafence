@@ -1,7 +1,7 @@
 # v0.1 Beta Guide
 
 Agent Quota Manager `v0.1.0-beta.1` is an ad-hoc-signed macOS beta for solo
-Codex power users. It can also be built from source. Treat it as a safety aid
+Codex and Claude Code power users. It can also be built from source. Treat it as a safety aid
 with explicit health states, not as an account-level guarantee.
 
 ## Before relying on protection
@@ -20,6 +20,13 @@ with explicit health states, not as an account-level guarantee.
 
 You can disable or uninstall protection from AQM Settings without modifying
 unrelated Codex hook entries.
+
+For Claude, connect the observer, refresh the shared subscription windows, then
+enable **Workspace protection** in the Claude Settings tab. Restart Claude Code
+or Claude Desktop and send a test prompt from an allocated folder. AQM preserves
+unrelated Claude hooks and reports protection as unverified until it receives a
+lifecycle event. For an owned CLI session use `aqm run claude`; add
+`--window 5h` when the 5-hour allocation should be the managed boundary.
 
 ## Capability boundary
 
@@ -61,7 +68,8 @@ before posting it because local paths may reveal usernames or project names.
 
 ## Known beta limitations
 
-- Codex only; no Claude Code or provider routing yet.
+- Claude support is beta; cross-provider routing is not implemented because
+  unlike native quota windows are not safely comparable.
 - macOS is the live-tested platform for this beta.
 - The beta DMG is not notarized, so macOS displays a Gatekeeper warning and the
   user must explicitly allow the first launch. There is no automatic update or

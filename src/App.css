@@ -3708,6 +3708,42 @@ h3,
   gap: 20px;
 }
 
+.provider-window-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 0 0 18px;
+}
+
+.provider-window-strip button {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  color: var(--ink);
+  text-align: left;
+  box-shadow: var(--surface-shadow);
+  cursor: pointer;
+}
+
+.provider-window-strip button.active {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink), var(--surface-shadow);
+}
+
+.provider-window-strip span,
+.provider-window-strip strong {
+  font-size: 0.95rem;
+}
+
+.provider-window-strip small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
 .overview-block-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.65fr) minmax(260px, 0.75fr);
