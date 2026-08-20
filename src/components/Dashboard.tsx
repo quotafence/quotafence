@@ -10,6 +10,7 @@ import type {
   CodexProtectionStatus,
   CodexSyncResult,
   ClaudeStatusLineStatus,
+  ClaudeProtectionStatus,
   LocalState,
   QuotaSourceSummary,
   QuotaHistoryPoint,
@@ -48,8 +49,10 @@ type DashboardProps = {
   protectionBusy: boolean;
   onProtection: (enabled: boolean) => void;
   claudeIntegration: ClaudeStatusLineStatus | null;
+  claudeProtection: ClaudeProtectionStatus | null;
   claudeBusy: boolean;
   onClaudeIntegration: (enabled: boolean) => void;
+  onClaudeProtection: (enabled: boolean) => void;
   onClaudeSync: () => void;
   theme: ThemePreference;
   onThemeChange: (theme: ThemePreference) => void;
@@ -495,8 +498,10 @@ export function Dashboard({
   protectionBusy,
   onProtection,
   claudeIntegration,
+  claudeProtection,
   claudeBusy,
   onClaudeIntegration,
+  onClaudeProtection,
   onClaudeSync,
   theme,
   onThemeChange,
@@ -562,6 +567,11 @@ export function Dashboard({
   if (!dashboard || !source) {
     return null;
   }
+  const providerWindows = state.sources.filter(
+    (candidate) =>
+      candidate.providerDisplayName.toLowerCase() ===
+      source.providerDisplayName.toLowerCase(),
+  );
 
   const { window: quotaWindow } = dashboard;
   const remainingDays = daysRemaining(quotaWindow.endsAt);
@@ -583,13 +593,20 @@ export function Dashboard({
   const scopes = orderedScopes(state.scopes, dashboard.allocations);
   const codexSource =
     source.providerDisplayName.toLowerCase() === "codex";
+  const claudeSource =
+    source.providerDisplayName.toLowerCase() === "claude code";
   const protectionVerifiedAt = codexSource
     ? verifiedCodexProtectionAt(codexProtection, codexProtectionEvents)
     : null;
   const hookObservedAt = codexSource
     ? observedCodexHookAt(codexProtection)
     : null;
-  const protectionActive = codexSource && protectionVerifiedAt !== null;
+  const claudeProtectionActive =
+    claudeSource &&
+    (claudeProtection?.installed ?? false) &&
+    claudeProtection?.lastHookObservedAt !== null;
+  const protectionActive =
+    (codexSource && protectionVerifiedAt !== null) || claudeProtectionActive;
   const plannedCapacityNow = scopes.reduce(
     (total, scope) =>
       total + (allocationByScope.get(scope.id)?.protectedNow ?? 0),
@@ -886,8 +903,10 @@ export function Dashboard({
             onThemeChange={onThemeChange}
             onProtection={onProtection}
             claudeIntegration={claudeIntegration}
+            claudeProtection={claudeProtection}
             claudeBusy={claudeBusy}
             onClaudeIntegration={onClaudeIntegration}
+            onClaudeProtection={onClaudeProtection}
             onClaudeSync={onClaudeSync}
           />
         ) : (
@@ -921,6 +940,37 @@ export function Dashboard({
                 />
               </div>
             </header>
+
+            {providerWindows.length > 1 && (
+              <nav className="provider-window-strip" aria-label="Provider quota windows">
+                {providerWindows.map((candidate) => {
+                  const left =
+                    candidate.providerUsed === null
+                      ? null
+                      : Math.max(0, candidate.capacity - candidate.providerUsed);
+                  return (
+                    <button
+                      key={candidate.windowId}
+                      className={candidate.windowId === source.windowId ? "active" : ""}
+                      type="button"
+                      onClick={() => onSelectSource(candidate.windowId)}
+                    >
+                      <span>{candidate.poolDisplayName}</span>
+                      <strong>
+                        {left === null
+                          ? "Waiting for quota"
+                          : `${formatAmount(left, candidate.unit)} left`}
+                      </strong>
+                      <small>
+                        {candidate.isActive
+                          ? `Resets ${formatDate(candidate.endsAt)}`
+                          : "Inactive window"}
+                      </small>
+                    </button>
+                  );
+                })}
+              </nav>
+            )}
 
             <div className="overview-content block-dashboard-content">
               {codexSource && scopes.length > 0 && !protectionActive && (
@@ -964,6 +1014,29 @@ export function Dashboard({
                     onClick={() => onViewChange("settings")}
                   >
                     {hookObservedAt !== null ? "View status" : "Finish protection"}
+                  </button>
+                </section>
+              )}
+              {claudeSource && scopes.length > 0 && !claudeProtectionActive && (
+                <section
+                  className="dashboard-protection-notice unverified"
+                  role="alert"
+                >
+                  <Icon name="shield" size={20} />
+                  <div>
+                    <strong>Claude allocations are not protected yet</strong>
+                    <span>
+                      {claudeProtection?.installed
+                        ? "Restart Claude and send a test prompt from an allocated folder. Until AQM observes the lifecycle hook, these allocations are a priority plan only."
+                        : "Enable Workspace protection in Claude Settings. Without the prompt gate, Claude usage can consume unassigned capacity and lower priorities."}
+                    </span>
+                  </div>
+                  <button
+                    className="button primary small"
+                    type="button"
+                    onClick={() => onViewChange("settings")}
+                  >
+                    Finish protection
                   </button>
                 </section>
               )}

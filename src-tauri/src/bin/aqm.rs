@@ -21,6 +21,7 @@ use agent_quota_manager_lib::{
     domain::EnforcementDecision,
     paths,
     providers::{
+        claude_code, claude_hooks,
         codex::{self, CodexSyncResult, CodexSyncStatus},
         codex_hooks::{self, CodexHookEvent, CodexHookEventKind},
     },
@@ -50,14 +51,18 @@ enum CliCommand {
         provider_id: String,
         assume_yes: bool,
     },
-    RunCodex {
+    RunAgent {
+        agent: ManagedAgent,
+        claude_window: ClaudeManagedWindow,
         options: CommonOptions,
         assume_yes: bool,
         agent_args: Vec<String>,
     },
     HookCodex(CommonOptions),
+    HookClaude,
     Hooks {
         action: HooksAction,
+        provider: HookProvider,
     },
     Policy {
         action: PolicyAction,
@@ -66,10 +71,28 @@ enum CliCommand {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ManagedAgent {
+    Codex,
+    Claude,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClaudeManagedWindow {
+    Weekly,
+    FiveHour,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HooksAction {
     Install,
     Status,
     Uninstall,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HookProvider {
+    Codex,
+    Claude,
 }
 
 #[derive(Debug)]
@@ -202,11 +225,13 @@ fn run(args: Vec<String>) -> Result<u8, String> {
             )?;
             Ok(exit_code)
         }
-        CliCommand::RunCodex {
+        CliCommand::RunAgent {
+            agent,
+            claude_window,
             options,
             assume_yes,
             agent_args,
-        } => run_managed_codex(options, assume_yes, agent_args),
+        } => run_managed_agent(agent, claude_window, options, assume_yes, agent_args),
         CliCommand::HookCodex(options) => {
             // Infrastructure failures remain fail-open. Explicit policy
             // outcomes may block UserPromptSubmit through the hook contract.
@@ -222,7 +247,32 @@ fn run(args: Vec<String>) -> Result<u8, String> {
             println!("{output}");
             Ok(EXIT_ALLOW)
         }
-        CliCommand::Hooks { action } => {
+        CliCommand::HookClaude => {
+            let output = claude_hooks::run_installed_hook(io::stdin().lock())?;
+            println!("{output}");
+            Ok(EXIT_ALLOW)
+        }
+        CliCommand::Hooks { action, provider } => {
+            if provider == HookProvider::Claude {
+                let status = match action {
+                    HooksAction::Install => {
+                        let executable = env::current_exe()
+                            .map_err(|error| format!("cannot resolve aqm executable: {error}"))?;
+                        claude_hooks::install_protection(&executable)?
+                    }
+                    HooksAction::Status => claude_hooks::protection_status()?,
+                    HooksAction::Uninstall => claude_hooks::uninstall_protection()?,
+                };
+                println!(
+                    "Claude workspace protection: {} ({})",
+                    if status.installed { "installed" } else { "off" },
+                    status.config_path
+                );
+                if let Some(issue) = status.issue {
+                    println!("Issue: {issue}");
+                }
+                return Ok(EXIT_ALLOW);
+            }
             let config_path = codex_hooks::default_user_hooks_path()?;
             match action {
                 HooksAction::Install => {
@@ -339,52 +389,72 @@ fn run_policy_command(action: PolicyAction) -> Result<u8, String> {
     Ok(EXIT_ALLOW)
 }
 
-fn run_managed_codex(
+fn run_managed_agent(
+    agent: ManagedAgent,
+    claude_window: ClaudeManagedWindow,
     options: CommonOptions,
     assume_yes: bool,
     agent_args: Vec<String>,
 ) -> Result<u8, String> {
-    let executable = codex::resolve_executable().ok_or_else(|| {
-        "Codex CLI was not found; install Codex or set AGENT_QUOTA_CODEX_BIN".to_owned()
-    })?;
+    let (agent_name, executable) = match agent {
+        ManagedAgent::Codex => (
+            "Codex",
+            codex::resolve_executable().ok_or_else(|| {
+                "Codex CLI was not found; install Codex or set AGENT_QUOTA_CODEX_BIN".to_owned()
+            })?,
+        ),
+        ManagedAgent::Claude => (
+            "Claude",
+            claude_code::resolve_executable().ok_or_else(|| {
+                "Claude Code CLI was not found; install Claude Code or set AGENT_QUOTA_CLAUDE_BIN"
+                    .to_owned()
+            })?,
+        ),
+    };
     let (mut service, canonical_path) = open_context(&options)?;
     let now = now_millis()?;
     recover_orphaned_sessions(&mut service, now)?;
 
+    if agent == ManagedAgent::Claude {
+        let observation = claude_code::fetch_subscription_usage()?;
+        claude_code::ingest_observation(&mut service, &observation, now)?;
+    }
     let context = service
         .workspace_context(GetWorkspaceContext {
             canonical_path: canonical_path.clone(),
             at: now,
         })
         .map_err(|error| error.to_string())?;
-    let allocation = provider_allocation(&context, "codex")?;
+    let allocation = managed_allocation(&context, agent, claude_window)?;
     let resolved_provider_id = allocation.provider_id.clone();
-    let checkpoint = codex::sync_detection(
-        &mut service,
-        allocation.window_id.clone(),
-        now,
-        codex::detect(),
-    );
-    match checkpoint.status {
-        CodexSyncStatus::Synced => {}
-        CodexSyncStatus::NotApplicable => {
-            return Err(format!(
-                "{} is not a provider-managed Codex percentage source",
-                allocation.pool_display_name
-            ));
-        }
-        CodexSyncStatus::Unavailable => {
-            return Err(format!(
-                "cannot refresh Codex checkpoint: {}",
-                checkpoint
-                    .message
-                    .as_deref()
-                    .unwrap_or("provider temporarily unavailable")
-            ));
+    if agent == ManagedAgent::Codex {
+        let checkpoint = codex::sync_detection(
+            &mut service,
+            allocation.window_id.clone(),
+            now,
+            codex::detect(),
+        );
+        match checkpoint.status {
+            CodexSyncStatus::Synced => {}
+            CodexSyncStatus::NotApplicable => {
+                return Err(format!(
+                    "{} is not a provider-managed Codex percentage source",
+                    allocation.pool_display_name
+                ));
+            }
+            CodexSyncStatus::Unavailable => {
+                return Err(format!(
+                    "cannot refresh Codex checkpoint: {}",
+                    checkpoint
+                        .message
+                        .as_deref()
+                        .unwrap_or("provider temporarily unavailable")
+                ));
+            }
         }
     }
 
-    let identity = managed_session_identity(now);
+    let identity = managed_session_identity(agent_name, now);
     let expires_at = now
         .checked_add(SESSION_RESERVATION_MILLIS)
         .ok_or_else(|| "managed session reservation expiry overflowed".to_owned())?;
@@ -402,8 +472,11 @@ fn run_managed_codex(
         .map_err(|error| error.to_string())?;
 
     println!(
-        "AQM: launching Codex for {} with {} {} reserved",
-        launch.assessment.scope_display_name, launch.reserved_amount, launch.assessment.unit
+        "AQM: launching {agent_name} for {} with {} {} reserved ({})",
+        launch.assessment.scope_display_name,
+        launch.reserved_amount,
+        launch.assessment.unit,
+        allocation.pool_display_name
     );
     if launch.assessment.decision == EnforcementDecision::Warn {
         println!("AQM warning: this workspace is approaching its policy boundary.");
@@ -427,7 +500,7 @@ fn run_managed_codex(
                 None,
             )?;
             return Err(format!(
-                "cannot launch Codex from {}: {error}",
+                "cannot launch {agent_name} from {}: {error}",
                 executable.display()
             ));
         }
@@ -461,7 +534,7 @@ fn run_managed_codex(
             None,
         )?;
         return Err(format!(
-            "cannot mark managed Codex session as running: {error}"
+            "cannot mark managed {agent_name} session as running: {error}"
         ));
     }
 
@@ -480,8 +553,13 @@ fn run_managed_codex(
         }
     };
     let finished_at = now_millis()?;
-    let current_window_id =
-        refresh_managed_checkpoint(&mut service, &launch.assessment.window_id, finished_at);
+    let current_window_id = refresh_managed_checkpoint(
+        &mut service,
+        agent,
+        claude_window,
+        &launch.assessment.window_id,
+        finished_at,
+    );
     let reconciliation = service
         .finish_managed_session(FinishManagedSession {
             id: launch.session_id,
@@ -497,9 +575,31 @@ fn run_managed_codex(
 
 fn refresh_managed_checkpoint(
     service: &mut QuotaService,
+    agent: ManagedAgent,
+    claude_window: ClaudeManagedWindow,
     baseline_window_id: &str,
     observed_at: i64,
 ) -> Option<String> {
+    if agent == ManagedAgent::Claude {
+        return match claude_code::fetch_subscription_usage().and_then(|observation| {
+            claude_code::ingest_observation(service, &observation, observed_at)
+        }) {
+            Ok(sync) => sync
+                .windows
+                .into_iter()
+                .find(|window| match claude_window {
+                    ClaudeManagedWindow::Weekly => window.kind == "seven_day",
+                    ClaudeManagedWindow::FiveHour => window.kind == "five_hour",
+                })
+                .map(|window| window.window_id),
+            Err(error) => {
+                eprintln!(
+                    "AQM: Claude exited, but its final quota checkpoint is unavailable: {error}"
+                );
+                None
+            }
+        };
+    }
     let checkpoint = codex::sync_detection(
         service,
         baseline_window_id.to_owned(),
@@ -718,8 +818,12 @@ fn process_is_running(_pid: u32) -> bool {
     true
 }
 
-fn managed_session_identity(now: i64) -> (String, String) {
-    let session_id = format!("managed-codex-{}-{now}", std::process::id());
+fn managed_session_identity(agent_name: &str, now: i64) -> (String, String) {
+    let session_id = format!(
+        "managed-{}-{}-{now}",
+        agent_name.to_ascii_lowercase(),
+        std::process::id()
+    );
     let reservation_id = format!("{session_id}-reservation");
     (session_id, reservation_id)
 }
@@ -770,6 +874,46 @@ fn provider_allocation<'a>(
         ));
     }
     Ok(allocation)
+}
+
+fn managed_allocation(
+    context: &WorkspaceContext,
+    agent: ManagedAgent,
+    claude_window: ClaudeManagedWindow,
+) -> Result<&agent_quota_manager_lib::application::WorkspaceAllocationContext, String> {
+    if agent == ManagedAgent::Codex {
+        return provider_allocation(context, "codex");
+    }
+    let binding = context
+        .binding
+        .as_ref()
+        .ok_or_else(|| format!("workspace {} is not bound", context.canonical_path))?;
+    context
+        .allocations
+        .iter()
+        .find(|allocation| {
+            allocation
+                .provider_display_name
+                .eq_ignore_ascii_case("Claude Code")
+                && match claude_window {
+                    ClaudeManagedWindow::Weekly => allocation
+                        .pool_display_name
+                        .eq_ignore_ascii_case("Weekly allowance"),
+                    ClaudeManagedWindow::FiveHour => allocation
+                        .pool_display_name
+                        .eq_ignore_ascii_case("5-hour allowance"),
+                }
+        })
+        .ok_or_else(|| {
+            format!(
+                "scope {} has no Claude {} allocation",
+                binding.scope_display_name,
+                match claude_window {
+                    ClaudeManagedWindow::Weekly => "weekly",
+                    ClaudeManagedWindow::FiveHour => "5-hour",
+                }
+            )
+        })
 }
 
 fn provider_matches(provider_id: &str, display_name: &str, reference: &str) -> bool {
@@ -884,16 +1028,21 @@ fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
 }
 
 fn parse_run_command(args: &[String]) -> Result<CliCommand, String> {
-    if args.get(1).map(String::as_str) != Some("codex") {
-        return Err("usage: aqm run codex [--path <directory>] [--yes] -- [codex args]".to_owned());
-    }
+    let agent = match args.get(1).map(String::as_str) {
+        Some("codex") => ManagedAgent::Codex,
+        Some("claude") => ManagedAgent::Claude,
+        _ => return Err("usage: aqm run <codex|claude> [--path <directory>] [--window <weekly|5h>] [--yes] -- [agent args]".to_owned()),
+    };
     let mut options = CommonOptions::default();
     let mut assume_yes = false;
+    let mut claude_window = ClaudeManagedWindow::Weekly;
     let mut index = 2;
     while index < args.len() {
         match args[index].as_str() {
             "--" => {
-                return Ok(CliCommand::RunCodex {
+                return Ok(CliCommand::RunAgent {
+                    agent,
+                    claude_window,
                     options,
                     assume_yes,
                     agent_args: args[index + 1..].to_vec(),
@@ -908,16 +1057,28 @@ fn parse_run_command(args: &[String]) -> Result<CliCommand, String> {
                 options.database = Some(PathBuf::from(required_value(args, index, "--database")?));
             }
             "--yes" => assume_yes = true,
+            "--window" if agent == ManagedAgent::Claude => {
+                index += 1;
+                claude_window = match required_value(args, index, "--window")? {
+                    "weekly" | "week" => ClaudeManagedWindow::Weekly,
+                    "5h" | "five-hour" => ClaudeManagedWindow::FiveHour,
+                    value => {
+                        return Err(format!("unknown Claude window {value:?}; use weekly or 5h"))
+                    }
+                };
+            }
             "-h" | "--help" => return Ok(CliCommand::Help),
             option => {
                 return Err(format!(
-                    "unknown aqm run option {option:?}; place Codex arguments after --"
+                    "unknown aqm run option {option:?}; place agent arguments after --"
                 ))
             }
         }
         index += 1;
     }
-    Ok(CliCommand::RunCodex {
+    Ok(CliCommand::RunAgent {
+        agent,
+        claude_window,
         options,
         assume_yes,
         agent_args: Vec::new(),
@@ -925,8 +1086,14 @@ fn parse_run_command(args: &[String]) -> Result<CliCommand, String> {
 }
 
 fn parse_hook_command(args: &[String]) -> Result<CliCommand, String> {
+    if args.get(1).map(String::as_str) == Some("claude") {
+        if args.len() != 2 {
+            return Err("usage: aqm hook claude".to_owned());
+        }
+        return Ok(CliCommand::HookClaude);
+    }
     if args.get(1).map(String::as_str) != Some("codex") {
-        return Err("usage: aqm hook codex [--database <path>]".to_owned());
+        return Err("usage: aqm hook <codex|claude> [--database <path>]".to_owned());
     }
     let mut options = CommonOptions::default();
     let mut index = 2;
@@ -949,12 +1116,17 @@ fn parse_hooks_command(args: &[String]) -> Result<CliCommand, String> {
         Some("install") => HooksAction::Install,
         Some("status") => HooksAction::Status,
         Some("uninstall") => HooksAction::Uninstall,
-        _ => return Err("usage: aqm hooks <install|status|uninstall> codex".to_owned()),
+        _ => return Err("usage: aqm hooks <install|status|uninstall> <codex|claude>".to_owned()),
     };
-    if args.get(2).map(String::as_str) != Some("codex") || args.len() != 3 {
-        return Err("usage: aqm hooks <install|status|uninstall> codex".to_owned());
+    let provider = match args.get(2).map(String::as_str) {
+        Some("codex") => HookProvider::Codex,
+        Some("claude") => HookProvider::Claude,
+        _ => return Err("usage: aqm hooks <install|status|uninstall> <codex|claude>".to_owned()),
+    };
+    if args.len() != 3 {
+        return Err("usage: aqm hooks <install|status|uninstall> <codex|claude>".to_owned());
     }
-    Ok(CliCommand::Hooks { action })
+    Ok(CliCommand::Hooks { action, provider })
 }
 
 fn parse_policy_command(args: &[String]) -> Result<CliCommand, String> {
@@ -1265,11 +1437,13 @@ Usage:
   aqm bind --scope <name-or-id> [--path <directory>] [--json]
   aqm admit codex [--path <directory>] [--yes] [--json]
   aqm run codex [--path <directory>] [--yes] -- [codex args]
+  aqm run claude [--path <directory>] [--window <weekly|5h>] [--yes] -- [claude args]
   aqm policy show [--path <directory>] [--json]
   aqm policy set --warn <percent|off> --confirm <percent|off> --stop <percent|off>
   aqm policy reset [--path <directory>] [--json]
   aqm hook codex [--database <path>]
-  aqm hooks <install|status|uninstall> codex
+  aqm hook claude
+  aqm hooks <install|status|uninstall> <codex|claude>
 
 Options:
   --path <directory>   Resolve a workspace from this directory instead of cwd
@@ -1393,21 +1567,50 @@ mod tests {
             "fix the tests".to_owned(),
         ])
         .unwrap();
-        let CliCommand::RunCodex {
+        let CliCommand::RunAgent {
+            agent,
             options,
             assume_yes,
             agent_args,
+            ..
         } = command
         else {
             panic!("expected managed Codex run");
         };
 
+        assert_eq!(agent, ManagedAgent::Codex);
         assert_eq!(options.path.as_deref(), Some(Path::new("/code/project")));
         assert!(assume_yes);
         assert_eq!(
             agent_args,
             ["--model", "gpt-5", "fix the tests"].map(str::to_owned)
         );
+    }
+
+    #[test]
+    fn managed_claude_run_selects_a_native_window() {
+        let command = parse_args(vec![
+            "run".to_owned(),
+            "claude".to_owned(),
+            "--window".to_owned(),
+            "5h".to_owned(),
+            "--".to_owned(),
+            "--model".to_owned(),
+            "sonnet".to_owned(),
+        ])
+        .unwrap();
+        let CliCommand::RunAgent {
+            agent,
+            claude_window,
+            agent_args,
+            ..
+        } = command
+        else {
+            panic!("expected managed Claude run");
+        };
+        assert_eq!(agent, ManagedAgent::Claude);
+        assert_eq!(claude_window, ClaudeManagedWindow::FiveHour);
+        assert_eq!(agent_args, ["--model", "sonnet"].map(str::to_owned));
     }
 
     #[cfg(unix)]
@@ -1488,8 +1691,13 @@ mod tests {
             ])
             .unwrap(),
             CliCommand::Hooks {
-                action: HooksAction::Install
+                action: HooksAction::Install,
+                provider: HookProvider::Codex,
             }
+        ));
+        assert!(matches!(
+            parse_args(vec!["hook".to_owned(), "claude".to_owned()]).unwrap(),
+            CliCommand::HookClaude
         ));
     }
 

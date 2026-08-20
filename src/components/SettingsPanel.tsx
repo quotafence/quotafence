@@ -4,6 +4,7 @@ import type {
   CodexProtectionStatus,
   CodexSyncResult,
   ClaudeStatusLineStatus,
+  ClaudeProtectionStatus,
   QuotaSourceSummary,
 } from "../types";
 import {
@@ -39,8 +40,10 @@ type SettingsPanelProps = {
   onThemeChange: (theme: ThemePreference) => void;
   onProtection: (enabled: boolean) => void;
   claudeIntegration: ClaudeStatusLineStatus | null;
+  claudeProtection: ClaudeProtectionStatus | null;
   claudeBusy: boolean;
   onClaudeIntegration: (enabled: boolean) => void;
+  onClaudeProtection: (enabled: boolean) => void;
   onClaudeSync: () => void;
   onCheck: () => void;
 };
@@ -100,8 +103,10 @@ export function SettingsPanel({
   onThemeChange,
   onProtection,
   claudeIntegration,
+  claudeProtection,
   claudeBusy,
   onClaudeIntegration,
+  onClaudeProtection,
   onClaudeSync,
   onCheck,
 }: SettingsPanelProps) {
@@ -297,6 +302,44 @@ export function SettingsPanel({
                     : "Off"}
               </button>
             </div>
+            <div className="settings-control-row settings-control-row-secondary">
+              <div>
+                <strong>Workspace protection</strong>
+                <p>
+                  {claudeProtection?.lastHookObservedAt
+                    ? `Active · last ${claudeProtection.lastDecision ?? "hook"} decision ${formatRelativeTime(claudeProtection.lastHookObservedAt)}.`
+                    : claudeProtection?.issue ??
+                      (claudeProtection?.installed
+                        ? "Restart Claude, then send a prompt in an allocated folder to verify attribution and enforcement."
+                        : "Attribute Claude usage to folders and warn or stop at allocation boundaries.")}
+                </p>
+              </div>
+              <button
+                className={`protection-toggle ${claudeProtection?.installed ? "enabled" : ""}`}
+                type="button"
+                disabled={claudeBusy || !claudeIntegration.installed}
+                onClick={() => onClaudeProtection(!(claudeProtection?.installed ?? false))}
+                role="switch"
+                aria-checked={claudeProtection?.installed ?? false}
+              >
+                <i />
+                {claudeProtection?.installed ? "Installed" : "Off"}
+              </button>
+            </div>
+            {claudeProtection?.installed &&
+              claudeProtection.lastHookObservedAt === null && (
+                <div className="settings-callout warning" role="alert">
+                  <Icon name="shield" size={18} />
+                  <div>
+                    <strong>Finish activation in Claude</strong>
+                    <p>
+                      Quit and reopen Claude Code or Claude Desktop, open an allocated
+                      folder, and send a test prompt. Protection is not active until AQM
+                      receives that lifecycle hook.
+                    </p>
+                  </div>
+                </div>
+              )}
             {claudeIntegration.state === "conflict" && (
               <div className="settings-callout warning" role="alert">
                 <Icon name="activity" size={18} />

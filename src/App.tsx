@@ -16,9 +16,11 @@ import {
   getCodexProtectionEvents,
   getCodexProtectionStatus,
   getClaudeIntegrationStatus,
+  getClaudeProtectionStatus,
   getLocalState,
   installCodexProtection,
   installClaudeIntegration,
+  installClaudeProtection,
   removeWorkspaceAllocation,
   resetWorkspacePolicy,
   setAllocation,
@@ -28,6 +30,7 @@ import {
   syncClaudeQuota,
   uninstallCodexProtection,
   uninstallClaudeIntegration,
+  uninstallClaudeProtection,
 } from "./lib/api";
 import type {
   LocalState,
@@ -35,6 +38,7 @@ import type {
   CodexProtectionStatus,
   CodexSyncResult,
   ClaudeStatusLineStatus,
+  ClaudeProtectionStatus,
   QuotaSourceInput,
   QuotaSourceSummary,
   ScopeSummary,
@@ -302,6 +306,8 @@ function App() {
   const [codexSyncIssue, setCodexSyncIssue] = useState<string | null>(null);
   const [claudeIntegration, setClaudeIntegration] =
     useState<ClaudeStatusLineStatus | null>(null);
+  const [claudeProtection, setClaudeProtection] =
+    useState<ClaudeProtectionStatus | null>(null);
   const [claudeBusy, setClaudeBusy] = useState(false);
   const [priorityBusy, setPriorityBusy] = useState(false);
   const [view, setView] = useState<DashboardView>("overview");
@@ -354,8 +360,11 @@ function App() {
         getCodexProtectionEvents().then(setCodexProtectionEvents).catch(() => {
           setCodexProtectionEvents([]);
         });
-        getClaudeIntegrationStatus()
-          .then(setClaudeIntegration)
+        Promise.all([getClaudeIntegrationStatus(), getClaudeProtectionStatus()])
+          .then(([integration, protection]) => {
+            setClaudeIntegration(integration);
+            setClaudeProtection(protection);
+          })
           .catch(() =>
             setClaudeIntegration({
               installed: false,
@@ -411,12 +420,14 @@ function App() {
     let cancelled = false;
     const refreshClaude = async () => {
       try {
-        const [status] = await Promise.all([
+        const [status, protection] = await Promise.all([
           getClaudeIntegrationStatus(),
+          getClaudeProtectionStatus(),
           loadState(localState?.selectedWindowId ?? null),
         ]);
         if (!cancelled) {
           setClaudeIntegration(status);
+          setClaudeProtection(protection);
         }
       } catch {
         // Keep the last known integration state during background polling.
@@ -436,6 +447,7 @@ function App() {
         .then(setCodexProtectionEvents)
         .catch(() => undefined);
       getClaudeIntegrationStatus().then(setClaudeIntegration).catch(() => undefined);
+      getClaudeProtectionStatus().then(setClaudeProtection).catch(() => undefined);
     };
     window.addEventListener("focus", refreshProtection);
     return () => window.removeEventListener("focus", refreshProtection);
@@ -756,6 +768,28 @@ function App() {
     }
   }
 
+  async function handleClaudeProtection(enabled: boolean) {
+    setClaudeBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const status = enabled
+        ? await installClaudeProtection()
+        : await uninstallClaudeProtection();
+      setClaudeProtection(status);
+      setNotice(
+        enabled
+          ? "Claude workspace protection installed. Restart Claude, then send a prompt from an allocated folder to verify tracking."
+          : "Claude workspace protection is off. Quota observation remains available.",
+      );
+    } catch (reason) {
+      setError(getErrorMessage(reason));
+      getClaudeProtectionStatus().then(setClaudeProtection).catch(() => undefined);
+    } finally {
+      setClaudeBusy(false);
+    }
+  }
+
   async function handlePriorityOrder(
     windowId: string,
     orderedScopeIds: string[],
@@ -865,8 +899,10 @@ function App() {
         protectionBusy={protectionBusy}
         onProtection={(enabled) => void handleProtection(enabled)}
         claudeIntegration={claudeIntegration}
+        claudeProtection={claudeProtection}
         claudeBusy={claudeBusy}
         onClaudeIntegration={(enabled) => void handleClaudeIntegration(enabled)}
+        onClaudeProtection={(enabled) => void handleClaudeProtection(enabled)}
         onClaudeSync={() => void handleClaudeSync()}
         theme={theme}
         onThemeChange={setTheme}
