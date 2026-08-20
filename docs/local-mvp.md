@@ -97,5 +97,5 @@ This milestone does not:
 The companion CLI canonicalizes the current directory, resolves its nearest
 ancestor workspace binding, and reports its active allocation context. It can
 dry-run Codex admission or reserve capacity and supervise one managed Codex
-process with `aqm run codex`.
+process with `quotafence run codex`.
 See the [CLI guide](cli.md) and [Codex-first roadmap](roadmap.md).

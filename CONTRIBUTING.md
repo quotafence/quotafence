@@ -1,4 +1,4 @@
-# Contributing to Agent Quota Manager
+# Contributing to QuotaFence
 
 Thank you for helping make subscription quota more predictable for coding-agent
 users.

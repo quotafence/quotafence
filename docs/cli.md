@@ -1,6 +1,6 @@
-# AQM CLI
+# QuotaFence CLI
 
-The lightweight `aqm` binary shares the Rust application, provider adapter, and
+The lightweight `quotafence` binary shares the Rust application, provider adapter, and
 SQLite storage layers with the desktop app. It implements workspace identity,
 binding, Codex admission dry runs, one managed Codex process, and an
 experimental Codex lifecycle-hook entrypoint.
@@ -10,7 +10,7 @@ experimental Codex lifecycle-hook entrypoint.
 From any local folder:
 
 ```bash
-npm run aqm -- context
+npm run quotafence -- context
 ```
 
 The command canonicalizes the current directory without invoking Git. If that
@@ -26,13 +26,13 @@ Workspace path: /code/example
 Workspace: unmapped
 Available workspace scopes:
   Example (workspace-...)
-Bind with: aqm bind --scope <name-or-id>
+Bind with: quotafence bind --scope <name-or-id>
 ```
 
 Binding is always explicit:
 
 ```bash
-npm run aqm -- bind --scope "Example"
+npm run quotafence -- bind --scope "Example"
 ```
 
 The scope reference may be an exact scope ID or an unambiguous,
@@ -43,10 +43,10 @@ Use `--path <directory>` to resolve a directory other than the current working
 directory, and `--json` for machine-readable output:
 
 ```bash
-npm run aqm -- context --path /code/example --json
+npm run quotafence -- context --path /code/example --json
 ```
 
-`--database <path>` and `AQM_DATABASE_PATH` exist for development and isolated
+`--database <path>` and `QUOTAFENCE_DATABASE_PATH` exist for development and isolated
 testing. Without an override, the CLI opens the same operating-system app-data
 database as the desktop.
 
@@ -55,27 +55,27 @@ database as the desktop.
 Inspect the effective policy for the current bound folder:
 
 ```bash
-npm run aqm -- policy show
+npm run quotafence -- policy show
 ```
 
 The standard default is warn at 80% and stop at 100% of the workspace
 allocation consumed. Persist a folder override with confirmation disabled:
 
 ```bash
-npm run aqm -- policy set --warn 75 --confirm off --stop 100
+npm run quotafence -- policy set --warn 75 --confirm off --stop 100
 ```
 
 Values accept up to two decimal places. The `--confirm` compatibility argument
 should remain `off`; confirmation values from older beta databases are ignored.
 
 ```bash
-npm run aqm -- policy set --warn off --confirm 90 --stop 100
+npm run quotafence -- policy set --warn off --confirm 90 --stop 100
 ```
 
 Return to application defaults with:
 
 ```bash
-npm run aqm -- policy reset
+npm run quotafence -- policy reset
 ```
 
 These commands accept `--path`, `--database`, and `--json`. Policy is stored on
@@ -86,7 +86,7 @@ the workspace, not the current provider window, so it survives quota rollover.
 After binding the workspace, refresh its Codex checkpoint and evaluate policy:
 
 ```bash
-npm run aqm -- admit codex
+npm run quotafence -- admit codex
 ```
 
 Admission considers both:
@@ -112,7 +112,7 @@ codes:
 Use `--yes` to explicitly accept only a confirmation-required outcome:
 
 ```bash
-npm run aqm -- admit codex --yes
+npm run quotafence -- admit codex --yes
 ```
 
 The assessment still reports `require_confirmation`, records that the override
@@ -122,7 +122,7 @@ Use `--json` for a stable object containing the assessment, checkpoint result,
 override state, proceed flag, and exit code:
 
 ```bash
-npm run aqm -- admit codex --json
+npm run quotafence -- admit codex --json
 ```
 
 The command starts the official local Codex App Server only long enough to read
@@ -134,7 +134,7 @@ capacity, or read or modify workspace files.
 Run Codex through the allocation bound to the current folder:
 
 ```bash
-npm run aqm -- run codex
+npm run quotafence -- run codex
 ```
 
 The wrapper:
@@ -155,33 +155,33 @@ The wrapper:
 Confirmation-required launches need an explicit override:
 
 ```bash
-npm run aqm -- run codex --yes
+npm run quotafence -- run codex --yes
 ```
 
 `--yes` never overrides a stop decision. Pass Codex arguments after a separator
-so they cannot be confused with AQM options:
+so they cannot be confused with QuotaFence options:
 
 ```bash
-npm run aqm -- run codex -- --model gpt-5
+npm run quotafence -- run codex -- --model gpt-5
 ```
 
 The child is spawned with an argument vector, never an interpolated shell
-command. AQM resolves Codex from `AGENT_QUOTA_CODEX_BIN`, `PATH`, and supported
+command. QuotaFence resolves Codex from `AGENT_QUOTA_CODEX_BIN`, `PATH`, and supported
 installation locations. It stores folder and process metadata, but does not
 read prompts, source files, transcripts, or provider credentials.
 
 An accepted confirmation is written to the local audit table atomically with
-the managed session and reservation. `aqm admit codex --yes` is only a dry-run
+the managed session and reservation. `quotafence admit codex --yes` is only a dry-run
 preview and deliberately does not create that audit record.
 
 The baseline is persisted before spawn. A same-window delta is attributed to
-the workspace at `observed` confidence only when AQM has not seen concurrent
+the workspace at `observed` confidence only when QuotaFence has not seen concurrent
 Codex work. Visible contention keeps the delta unattributed; rollover, a lower
 counter, or an unavailable final checkpoint never creates scoped usage.
 Provider percentage checkpoints are aggregate and integer-valued, so external
-usage that AQM cannot observe remains a known source of uncertainty.
+usage that QuotaFence cannot observe remains a known source of uncertainty.
 
-Hooks launched by this managed Codex child inherit an AQM session marker and
+Hooks launched by this managed Codex child inherit a QuotaFence session marker and
 return without recording a second turn observation.
 
 ## Codex Desktop protection and attribution
@@ -189,11 +189,11 @@ return without recording a second turn observation.
 Install user-level lifecycle hooks with the development CLI:
 
 ```bash
-npm run aqm -- hooks install codex
+npm run quotafence -- hooks install codex
 ```
 
-The installer merges AQM handlers into `~/.codex/hooks.json`, preserves
-unrelated hooks, and creates `~/.codex/hooks.json.aqm.bak` before its first
+The installer merges QuotaFence handlers into `~/.codex/hooks.json`, preserves
+unrelated hooks, and creates `~/.codex/hooks.json.quotafence.bak` before its first
 change to an existing file. Re-running it is idempotent.
 
 Codex does not run a new non-managed command hook until the exact definition is
@@ -202,7 +202,7 @@ reviewed, trusted, and enabled.
 In Codex Desktop:
 
 1. Open **Settings → Hooks → User config**.
-2. Review, trust, and switch on the AQM entries under `UserPromptSubmit` and
+2. Review, trust, and switch on the QuotaFence entries under `UserPromptSubmit` and
    `Stop`.
 3. Quit Codex completely, reopen it, and resume the existing task so the new
    app-server process loads the updated configuration. On macOS, closing the
@@ -210,15 +210,15 @@ In Codex Desktop:
 
 In Codex CLI, run `/hooks` and review the same two entries before restarting
 the session. Until both hooks are trusted and switched on, Codex prompts
-can still run without AQM protection.
+can still run without QuotaFence protection.
 
 The installed lifecycle is:
 
-1. `UserPromptSubmit` invokes `aqm hook codex` in the task's working folder.
-2. When at least one Codex allocation exists, AQM blocks a prompt from an
+1. `UserPromptSubmit` invokes `quotafence hook codex` in the task's working folder.
+2. When at least one Codex allocation exists, QuotaFence blocks a prompt from an
    unallocated folder. For an allocated folder it refreshes quota and applies
    that workspace's warn, confirmation, and stop policy. At confirmation, the
-   Desktop hook creates a short-lived request in AQM and blocks the original
+   Desktop hook creates a short-lived request in QuotaFence and blocks the original
    prompt. Choose **Allow once** and retry to consume the approval. Managed CLI
    launches continue to use explicit `--yes` confirmation.
 3. Allowed prompts capture an absolute provider baseline.
@@ -233,18 +233,18 @@ These event names and stdin fields follow the official
 Check or remove the integration:
 
 ```bash
-npm run aqm -- hooks status codex
-npm run aqm -- hooks uninstall codex
+npm run quotafence -- hooks status codex
+npm run quotafence -- hooks uninstall codex
 ```
 
-`status` verifies the AQM definitions in the JSON file; Codex remains the source
+`status` verifies the QuotaFence definitions in the JSON file; Codex remains the source
 of truth for whether their current hash has been trusted and the hook is
 enabled. The desktop therefore keeps protection unverified until it observes a
 new hook decision after the current hook file or application executable was
 last modified.
 
 The desktop exposes the same integration in Settings as an on/off control.
-Turning it off removes only handlers marked as AQM-owned. A partial
+Turning it off removes only handlers marked as QuotaFence-owned. A partial
 configuration or one that points at an old application executable is shown as
 needing repair; turning protection on again replaces those entries with the
 current executable.
@@ -252,7 +252,7 @@ current executable.
 Explicit allocation and policy decisions may return the official
 `{"decision":"block"}` response. Infrastructure failures remain fail-open so a
 broken local integration cannot permanently lock Codex. Set
-`AQM_HOOK_DEBUG=1` only while diagnosing integration errors.
+`QUOTAFENCE_HOOK_DEBUG=1` only while diagnosing integration errors.
 
 Current precision limits:
 
@@ -261,14 +261,14 @@ Current precision limits:
 - A small turn may consume tokens without moving that integer percentage.
 - If two observed turns overlap, neither receives the shared provider delta; it
   remains unattributed.
-- Usage outside AQM hooks between the two checkpoints is indistinguishable from
+- Usage outside QuotaFence hooks between the two checkpoints is indistinguishable from
   the observed turn and is why the scoped event carries `inferred` confidence.
 - The hook can refuse a new prompt but cannot terminate a turn that already
   started, cover another machine, or protect usage before the hook is installed
   and trusted.
 
 Codex includes prompt and transcript fields in some lifecycle event payloads.
-AQM's typed hook parser ignores those fields and stores only session ID, turn
+QuotaFence's typed hook parser ignores those fields and stores only session ID, turn
 ID, event type, canonical folder, optional scope, window baseline, timestamps,
 and contention state. For visibility, each admitted or blocked
 `UserPromptSubmit` also stores its folder, optional workspace, outcome, reason,
@@ -276,12 +276,12 @@ and timestamp. It never stores prompt text.
 
 Installation from the desktop points the hook at the installed Agent Quota
 Manager executable, which has a non-GUI `hook codex` entrypoint. Development
-CLI installation points at the current compiled `aqm` binary; removing that
+CLI installation points at the current compiled `quotafence` binary; removing that
 build directory requires reinstalling the hook.
 
 ## Current boundary
 
-`aqm context`, `aqm admit codex`, `aqm run codex`, and the experimental hook
+`quotafence context`, `quotafence admit codex`, `quotafence run codex`, and the experimental hook
 entrypoint now cover:
 
 - canonical current folder and nearest bound workspace;
@@ -308,12 +308,12 @@ outside hard enforcement. Hook attribution remains experimental and `inferred`.
 Claude's managed beta uses the same folder binding and policy boundary:
 
 ```bash
-aqm run claude --path /path/to/project
-aqm run claude --window 5h -- --model sonnet
+quotafence run claude --path /path/to/project
+quotafence run claude --window 5h -- --model sonnet
 ```
 
 The default managed Claude budget is the weekly allocation. `--window 5h`
-selects the separate 5-hour allocation explicitly; AQM does not merge or
+selects the separate 5-hour allocation explicitly; QuotaFence does not merge or
 multiply the two provider-native windows. Desktop/IDE attribution instead uses
 the reversible Claude lifecycle hooks installed from Settings and reconciles
 both windows after a turn.

@@ -62,8 +62,8 @@ enum HookOutcome {
 
 pub fn protection_status() -> Result<ClaudeProtectionStatus, String> {
     let config_path = claude_code::default_user_settings_path()?;
-    let executable = env::current_exe()
-        .map_err(|error| format!("cannot resolve Agent Quota Manager: {error}"))?;
+    let executable =
+        env::current_exe().map_err(|error| format!("cannot resolve QuotaFence: {error}"))?;
     Ok(status_for(&config_path, &executable))
 }
 
@@ -87,13 +87,13 @@ pub fn uninstall_protection() -> Result<ClaudeProtectionStatus, String> {
     if updated != original {
         write_settings(&config_path, &updated)?;
     }
-    let executable = env::current_exe()
-        .map_err(|error| format!("cannot resolve Agent Quota Manager: {error}"))?;
+    let executable =
+        env::current_exe().map_err(|error| format!("cannot resolve QuotaFence: {error}"))?;
     Ok(status_for(&config_path, &executable))
 }
 
 pub fn run_installed_hook(reader: impl Read) -> Result<Value, String> {
-    if env::var_os("AQM_MANAGED_SESSION_ID").is_some() {
+    if env::var_os("QUOTAFENCE_MANAGED_SESSION_ID").is_some() {
         return Ok(json!({}));
     }
     let mut input = String::new();
@@ -107,7 +107,7 @@ pub fn run_installed_hook(reader: impl Read) -> Result<Value, String> {
         if event.event == ClaudeHookEventKind::UserPromptSubmit {
             HookOutcome::Blocked {
                 reason: format!(
-                    "AQM could not verify this Claude workspace safely: {error}. Open Agent Quota Manager, refresh Claude, and retry."
+                    "QuotaFence could not verify this Claude workspace safely: {error}. Open QuotaFence, refresh Claude, and retry."
                 ),
             }
         } else {
@@ -132,7 +132,7 @@ pub fn run_installed_hook(reader: impl Read) -> Result<Value, String> {
 
 fn run_event(event: &ClaudeHookObservation, observed_at: i64) -> Result<HookOutcome, String> {
     let database_path = paths::default_database_path()
-        .map_err(|error| format!("cannot resolve AQM database: {error}"))?;
+        .map_err(|error| format!("cannot resolve QuotaFence database: {error}"))?;
     if let Some(parent) = database_path.parent() {
         fs::create_dir_all(parent)
             .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
@@ -225,7 +225,7 @@ fn begin_prompt(
         if protection_planned {
             return Ok(HookOutcome::Blocked {
                 reason: format!(
-                    "AQM blocked this Claude prompt because {canonical_path} has no Claude allocation. Add the folder in Agent Quota Manager or open an allocated workspace."
+                    "QuotaFence blocked this Claude prompt because {canonical_path} has no Claude allocation. Add the folder in QuotaFence or open an allocated workspace."
                 ),
             });
         }
@@ -251,7 +251,7 @@ fn begin_prompt(
         {
             return Ok(HookOutcome::Blocked {
                 reason: format!(
-                    "AQM stopped this Claude prompt because {} has no protected quota left in {}.",
+                    "QuotaFence stopped this Claude prompt because {} has no protected quota left in {}.",
                     context
                         .binding
                         .as_ref()
@@ -263,7 +263,7 @@ fn begin_prompt(
         }
         if matches!(assessment.decision, EnforcementDecision::Warn) {
             warning = Some(format!(
-                "AQM warning: {} is approaching its {} allocation limit.",
+                "QuotaFence warning: {} is approaching its {} allocation limit.",
                 context
                     .binding
                     .as_ref()
@@ -364,7 +364,10 @@ fn status_for(config_path: &Path, executable: &Path) -> ClaudeProtectionStatus {
         }) {
             Ok(())
         } else if hooks.values().any(contains_owned) {
-            Err("AQM Claude hook entries are incomplete or point to an older app build.".to_owned())
+            Err(
+                "QuotaFence Claude hook entries are incomplete or point to an older app build."
+                    .to_owned(),
+            )
         } else {
             Err("disabled".to_owned())
         }
@@ -497,7 +500,7 @@ fn write_settings(path: &Path, settings: &Value) -> Result<(), String> {
             .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
     }
     if path.exists() {
-        let backup = path.with_extension("json.aqm.bak");
+        let backup = path.with_extension("json.quotafence.bak");
         if !backup.exists() {
             fs::copy(path, &backup)
                 .map_err(|error| format!("cannot back up {}: {error}", path.display()))?;
@@ -559,7 +562,7 @@ mod tests {
         });
         add_owned_hooks(
             &mut settings,
-            Path::new("/Applications/AQM.app/Contents/MacOS/aqm"),
+            Path::new("/Applications/QuotaFence.app/Contents/MacOS/quotafence"),
         )
         .unwrap();
         assert_eq!(settings["theme"], "dark");

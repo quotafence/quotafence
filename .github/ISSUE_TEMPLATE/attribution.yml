@@ -8,9 +8,9 @@ body:
       value: |
         Aggregate percentage changes can remain unassigned during concurrent or ambiguous activity. Do not share prompts, transcripts, source code, or database files.
   - type: input
-    id: aqm_version
+    id: quotafence_version
     attributes:
-      label: AQM version
+      label: QuotaFence version
       placeholder: 0.1.0-beta.1
     validations:
       required: true
@@ -28,7 +28,7 @@ body:
       options:
         - Codex Desktop with verified hooks
         - Codex Desktop passive tracking
-        - aqm run codex
+        - quotafence run codex
         - Mixed or concurrent workflows
     validations:
       required: true

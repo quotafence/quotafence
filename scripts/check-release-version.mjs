@@ -12,7 +12,7 @@ const cargoVersion = cargoManifest.match(
   /^\[package\][\s\S]*?^version\s*=\s*"([^"]+)"/m,
 )?.[1];
 const lockedCargoVersion = cargoLock.match(
-  /\[\[package\]\]\s+name = "agent-quota-manager"\s+version = "([^"]+)"/,
+  /\[\[package\]\]\s+name = "quotafence"\s+version = "([^"]+)"/,
 )?.[1];
 
 const versions = new Map([

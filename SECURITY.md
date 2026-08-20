@@ -1,6 +1,6 @@
 # Security Policy
 
-Agent Quota Manager is pre-release software. Only the latest code on `main` is
+QuotaFence is pre-release software. Only the latest code on `main` is
 currently supported; there are no supported release versions yet.
 
 ## Reporting a vulnerability
@@ -37,8 +37,8 @@ persist prompt, response, transcript, preview, credential, or source-code
 content unless a separately reviewed requirement makes that access necessary.
 
 Codex hook configuration is changed only after an explicit install or uninstall
-action. AQM preserves unrelated hook definitions. Although Codex supplies the
-full lifecycle payload on standard input, AQM's typed parser ignores prompt,
+action. QuotaFence preserves unrelated hook definitions. Although Codex supplies the
+full lifecycle payload on standard input, QuotaFence's typed parser ignores prompt,
 response, and transcript fields and stores only lifecycle identifiers, the
 canonical working folder, allocation context, quota checkpoints, and
 timestamps. Infrastructure failures fail open; only explicit allocation or

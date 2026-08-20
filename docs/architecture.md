@@ -6,7 +6,7 @@ services, Tauri command boundary, and a Codex discovery/synchronization adapter.
 Folder-based workspace mapping and a lightweight context CLI are implemented;
 provider-refreshing admission dry runs, passive Codex Desktop attribution, and
 an optional trusted lifecycle-hook admission gate are also implemented.
-`aqm run codex` owns one admitted child process and reservation and reconciles
+`quotafence run codex` owns one admitted child process and reservation and reconciles
 terminal usage.
 
 ## Goals
@@ -27,7 +27,7 @@ terminal usage.
   or time-window allowance.
 - Acting as a cloud proxy for prompts or source code.
 - Cloud sync, team workspaces, RBAC, billing, or organization governance in v0.1.
-- Claiming that AQM can terminate a Codex Desktop turn it did not launch.
+- Claiming that QuotaFence can terminate a Codex Desktop turn it did not launch.
 
 ## Initial shape: a modular monolith
 
@@ -46,7 +46,7 @@ src-tauri/src/
     codex.rs                 Quota discovery and synchronization
     codex_desktop.rs         Read-only local activity metadata scan
     codex_hooks.rs           Desktop prompt admission, observation, hook config
-  bin/aqm.rs                 Context, admission, and Codex hook entrypoint
+  bin/quotafence.rs                 Context, admission, and Codex hook entrypoint
 ```
 
 ## Component responsibilities
@@ -139,17 +139,17 @@ only when that turn is the sole active observation for the window.
    aggregate provider snapshot remains the source of truth.
 
 Token counters are correlation evidence, not the quota unit displayed or
-debited by AQM. No prompt, response, title, preview, transcript, credential, or
+debited by QuotaFence. No prompt, response, title, preview, transcript, credential, or
 workspace-file content crosses this adapter boundary.
 
 ### CLI wrapper
 
 The CLI resolves and explicitly binds the current folder through the shared
-application and storage layers. `aqm admit codex` refreshes the relevant
+application and storage layers. `quotafence admit codex` refreshes the relevant
 checkpoint and evaluates the effective admission boundary without launching a
-process. `aqm run codex` reuses that application boundary, persists and reserves
+process. `quotafence run codex` reuses that application boundary, persists and reserves
 before spawn, supervises the child, and commits its terminal outcome with
-reservation release. `aqm hook codex` is a lifecycle entrypoint used by
+reservation release. `quotafence hook codex` is a lifecycle entrypoint used by
 installed Codex hooks; explicit allocation decisions may block a new prompt,
 while integration failures remain fail-open. It is not a managed launch. See
 [CLI](cli.md).
@@ -157,10 +157,10 @@ while integration failures remain fail-open. It is not a managed launch. See
 ## Observed Codex desktop turn
 
 1. `UserPromptSubmit` supplies session ID, turn ID, and working folder.
-2. AQM resolves the nearest folder binding. Once protection is enabled by at
+2. QuotaFence resolves the nearest folder binding. Once protection is enabled by at
    least one Codex allocation, an unmapped folder is rejected before the turn
    starts.
-3. For a mapped folder AQM refreshes the selected Codex checkpoint and applies
+3. For a mapped folder QuotaFence refreshes the selected Codex checkpoint and applies
    the workspace allocation policy. Exhausted or confirmation-boundary work is
    rejected.
 4. An allowed prompt stores a minimal active-turn row containing the baseline,
@@ -177,7 +177,7 @@ while integration failures remain fail-open. It is not a managed launch. See
 
 The trusted prompt hook is a pre-turn admission gate, not process ownership: it
 can reject a new prompt but cannot terminate an already-running turn. Codex
-supplies a complete lifecycle event on stdin, but AQM deserializes and persists
+supplies a complete lifecycle event on stdin, but QuotaFence deserializes and persists
 only session/turn identity, event type, and folder metadata. It does not
 deserialize the prompt, assistant response, or transcript path.
 
@@ -199,13 +199,13 @@ checkpoints release the reservation without inventing usage.
 
 An aggregate provider delta is not proof that one session caused it. Visible
 concurrent work marks both observations contended and keeps the managed delta
-**unattributed**. Usage outside AQM without a lifecycle signal cannot be
+**unattributed**. Usage outside QuotaFence without a lifecycle signal cannot be
 detected, so managed attribution remains `observed`, never provider-confirmed.
 
 ## Depletion forecast
 
 The forecast is a read model calculated from persisted managed-session
-reconciliation, not provider-dashboard refreshes. For the active window AQM
+reconciliation, not provider-dashboard refreshes. For the active window QuotaFence
 uses the interval from the earliest included managed launch to the explicit
 query time. It requires at least two trustworthy reconciliations, at least one
 hour of observation, and managed attribution covering at least half of observed
@@ -229,17 +229,17 @@ integer percentage, current forecast confidence is capped at medium.
 The effective mode is derived from adapter capabilities and current health, not
 only from user preference.
 
-For the initial Codex slice, a stop means refusing an AQM-managed process or a
+For the initial Codex slice, a stop means refusing a QuotaFence-managed process or a
 new trusted-hook prompt. Live termination is a separate capability requiring
 both process ownership and a timely provider signal. It must not be inferred
-merely because AQM can kill a child process.
+merely because QuotaFence can kill a child process.
 
 The effective policy resolves from a persisted workspace-scope override and
 then the application default. This keeps thresholds stable across provider
 window rollover and gives the desktop, dry-run admission, and managed launch
 one precedence rule. At a Desktop confirmation boundary, the hook creates a
 short-lived, workspace/window-scoped request and blocks the original prompt.
-The user can approve it once in AQM and retry; the next matching prompt consumes
+The user can approve it once in QuotaFence and retry; the next matching prompt consumes
 that approval atomically. Managed CLI confirmation remains explicit and is
 audited when a managed session and reservation are committed.
 

@@ -282,7 +282,7 @@ export function SettingsPanel({
                       ? `Claude Code is connected · last heartbeat ${formatRelativeTime(claudeIntegration.lastObservedAt)}. Send a prompt from a subscribed account to receive quota.`
                     : claudeIntegration.issue ??
                       (claudeIntegration.installed
-                        ? "Refresh once to authorize the existing Claude login. AQM reads the token only in memory and imports the shared CLI/Desktop quota."
+                        ? "Refresh once to authorize the existing Claude login. QuotaFence reads the token only in memory and imports the shared CLI/Desktop quota."
                         : "Install the observer to add Claude's 5-hour and weekly subscription windows automatically.")}
                 </p>
               </div>
@@ -334,7 +334,7 @@ export function SettingsPanel({
                     <strong>Finish activation in Claude</strong>
                     <p>
                       Quit and reopen Claude Code or Claude Desktop, open an allocated
-                      folder, and send a test prompt. Protection is not active until AQM
+                      folder, and send a test prompt. Protection is not active until QuotaFence
                       receives that lifecycle hook.
                     </p>
                   </div>
@@ -347,7 +347,7 @@ export function SettingsPanel({
                   <strong>Your existing Claude status line was not changed</strong>
                   <p>
                     Claude supports one status-line command. Remove or combine the
-                    existing command manually before enabling AQM.
+                    existing command manually before enabling QuotaFence.
                   </p>
                 </div>
               </div>
@@ -368,7 +368,7 @@ export function SettingsPanel({
                   {claudeBusy ? "Refreshing…" : "Refresh Claude quota"}
                 </button>
                 <small>
-                  Uses your existing Claude login once in memory. AQM never stores
+                  Uses your existing Claude login once in memory. QuotaFence never stores
                   the OAuth token.
                 </small>
               </div>
@@ -516,14 +516,14 @@ export function SettingsPanel({
                 <p>
                   {protection.state === "configured"
                     ? verifiedAt !== null
-                      ? `Agent Quota Manager observed a Codex prompt decision ${formatRelativeTime(
+                      ? `QuotaFence observed a Codex prompt decision ${formatRelativeTime(
                           verifiedAt,
                         )}.`
                       : observedAt !== null
                         ? `Codex delivered a prompt hook ${formatRelativeTime(
                             observedAt,
                           )}, but the latest check did not produce an enforceable quota decision.`
-                        : "Agent Quota Manager is installed, but Codex has not delivered a prompt hook yet."
+                        : "QuotaFence is installed, but Codex has not delivered a prompt hook yet."
                     : protection.state === "misconfigured"
                       ? protection.issue
                       : "Passive usage tracking stays available, but prompts are not blocked."}
@@ -586,7 +586,7 @@ export function SettingsPanel({
                       <code>UserPromptSubmit</code> and <code>Stop</code>.
                     </li>
                     <li>
-                      Send the next prompt here, then refresh Agent Quota Manager.
+                      Send the next prompt here, then refresh QuotaFence.
                     </li>
                   </ol>
                 </div>
@@ -599,14 +599,14 @@ export function SettingsPanel({
                 <div>
                   <strong>Hook connected, enforcement is degraded</strong>
                   <p>
-                    Codex reached Agent Quota Manager {formatRelativeTime(observedAt)}.
+                    Codex reached QuotaFence {formatRelativeTime(observedAt)}.
                     The latest prompt was not given an enforceable quota decision
                     {protection.lastHookIssue
                       ? `: ${protection.lastHookIssue}`
                       : "."}
                   </p>
                   <p>
-                    Agent Quota Manager will retry automatically. Until a decision
+                    QuotaFence will retry automatically. Until a decision
                     succeeds, allocations are planned rather than enforced.
                   </p>
                 </div>

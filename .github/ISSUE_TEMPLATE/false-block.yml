@@ -6,11 +6,11 @@ body:
   - type: markdown
     attributes:
       value: |
-        If work is urgent, disable Codex Desktop protection in AQM Settings while investigating. Do not share prompt text, credentials, transcripts, source code, or database files.
+        If work is urgent, disable Codex Desktop protection in QuotaFence Settings while investigating. Do not share prompt text, credentials, transcripts, source code, or database files.
   - type: input
-    id: aqm_version
+    id: quotafence_version
     attributes:
-      label: AQM version
+      label: QuotaFence version
       placeholder: 0.1.0-beta.1
     validations:
       required: true
@@ -46,7 +46,7 @@ body:
     attributes:
       label: Recovery checks
       options:
-        - label: I synced AQM after the latest provider reset.
+        - label: I synced QuotaFence after the latest provider reset.
         - label: I fully quit and reopened Codex after changing hooks.
   - type: checkboxes
     id: privacy

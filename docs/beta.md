@@ -1,40 +1,40 @@
 # v0.1 Beta Guide
 
-Agent Quota Manager `v0.1.0-beta.1` is an ad-hoc-signed macOS beta for solo
+QuotaFence `v0.1.0-beta.1` is an ad-hoc-signed macOS beta for solo
 Codex and Claude Code power users. It can also be built from source. Treat it as a safety aid
 with explicit health states, not as an account-level guarantee.
 
 ## Before relying on protection
 
-1. Start AQM and add the detected Codex source.
+1. Start QuotaFence and add the detected Codex source.
 2. Sync successfully and confirm the provider window and reset time look right.
 3. Add each local folder that should receive capacity and order allocations by
    priority.
-4. In AQM Settings, install Codex Desktop protection.
+4. In QuotaFence Settings, install Codex Desktop protection.
 5. In Codex **Settings → Hooks → User config**, review, trust, and enable the
-   AQM entries under `UserPromptSubmit` and `Stop`.
+   QuotaFence entries under `UserPromptSubmit` and `Stop`.
 6. Quit Codex with **Cmd+Q**, reopen it, and submit a test prompt from an
    allocated folder.
-7. Run the AQM health check. Protection is ready only when the app reports it as
+7. Run the QuotaFence health check. Protection is ready only when the app reports it as
    verified; installed, unverified, or degraded states are not equivalent.
 
-You can disable or uninstall protection from AQM Settings without modifying
+You can disable or uninstall protection from QuotaFence Settings without modifying
 unrelated Codex hook entries.
 
 For Claude, connect the observer, refresh the shared subscription windows, then
 enable **Workspace protection** in the Claude Settings tab. Restart Claude Code
-or Claude Desktop and send a test prompt from an allocated folder. AQM preserves
+or Claude Desktop and send a test prompt from an allocated folder. QuotaFence preserves
 unrelated Claude hooks and reports protection as unverified until it receives a
-lifecycle event. For an owned CLI session use `aqm run claude`; add
+lifecycle event. For an owned CLI session use `quotafence run claude`; add
 `--window 5h` when the 5-hour allocation should be the managed boundary.
 
 ## Capability boundary
 
 - A verified prompt gate can allow or block a **new** Codex Desktop prompt based
   on its mapped folder and remaining allocation.
-- `aqm run codex` owns a managed CLI process and can refuse its launch at a
+- `quotafence run codex` owns a managed CLI process and can refuse its launch at a
   policy boundary.
-- AQM cannot stop a Codex turn that is already running.
+- QuotaFence cannot stop a Codex turn that is already running.
 - If hook integration fails, it fails open and reports degraded health rather
   than claiming protection.
 - Passive tracking does not require hooks, but it is observation rather than
@@ -43,7 +43,7 @@ lifecycle event. For an owned CLI session use `aqm run claude`; add
 ## Accounting limits
 
 Codex exposes an aggregate account percentage, not exact project token totals.
-AQM attributes a provider percentage delta only when local activity points to
+QuotaFence attributes a provider percentage delta only when local activity points to
 one mapped folder. Overlapping, unmapped, or ambiguous work remains unassigned.
 Provider totals remain the source of truth and can correct local attribution.
 
@@ -55,13 +55,13 @@ allocation targets spendable again.
 
 ## Privacy
 
-AQM stores its configuration, allocations, observations, and decisions in a
+QuotaFence stores its configuration, allocations, observations, and decisions in a
 local SQLite database. It communicates with the installed Codex App Server to
 read the account quota checkpoint. Passive attribution reads Codex's local
 state database in read-only mode and selects only thread identifier, working
 folder, cumulative token counter, and update time.
 
-AQM does not read or store Codex credentials, prompts, responses, transcript
+QuotaFence does not read or store Codex credentials, prompts, responses, transcript
 contents, source files, or workspace file contents. Hook decisions retain
 folder identity and policy outcomes, not prompt text. Review diagnostic output
 before posting it because local paths may reveal usernames or project names.
@@ -82,10 +82,10 @@ before posting it because local paths may reveal usernames or project names.
 ## Reporting a problem
 
 Use the repository's structured issue form for **sync**, **attribution**, or
-**false blocking**. Include the AQM version, macOS and Codex versions, protection
+**false blocking**. Include the QuotaFence version, macOS and Codex versions, protection
 health state, window/reset context, and reproducible steps. Redact usernames and
 project names from paths. Never attach credentials, prompts, responses,
-transcripts, source code, or the entire Codex/AQM database.
+transcripts, source code, or the entire Codex/QuotaFence database.
 
 The release gate is defined in the
 [Codex beta exit checklist](beta-exit-checklist.md), with exercised recovery

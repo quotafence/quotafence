@@ -7,10 +7,16 @@
       name="description"
       content="Allocate and enforce coding-agent subscription quota by project."
     />
-    <title>Agent Quota Manager</title>
+    <title>QuotaFence</title>
     <script>
       try {
-        const preference = localStorage.getItem("aqm-theme") || "system";
+        const legacyPreference = localStorage.getItem("aqm-theme");
+        const preference =
+          localStorage.getItem("quotafence-theme") || legacyPreference || "system";
+        if (legacyPreference && !localStorage.getItem("quotafence-theme")) {
+          localStorage.setItem("quotafence-theme", legacyPreference);
+          localStorage.removeItem("aqm-theme");
+        }
         const theme =
           preference === "system"
             ? matchMedia("(prefers-color-scheme: dark)").matches

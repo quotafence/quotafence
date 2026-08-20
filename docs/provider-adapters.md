@@ -1,7 +1,7 @@
 # Provider Adapters
 
 Provider adapters isolate subscription-specific behavior from the quota core.
-Codex is the first implemented adapter. AQM will complete its managed workflow
+Codex is the first implemented adapter. QuotaFence will complete its managed workflow
 before using another provider to generalize the contract.
 
 The evidence and implementation order for a second provider are tracked in the
@@ -81,7 +81,7 @@ The current Codex adapter implements quota discovery and synchronization:
 
 The managed CLI path resolves the same supported Codex executable, reserves
 the bound workspace, and starts it directly with inherited terminal streams.
-AQM owns the child lifecycle and can refuse a new launch at a stop boundary,
+QuotaFence owns the child lifecycle and can refuse a new launch at a stop boundary,
 but does not claim live in-flight quota enforcement.
 
 Only structured quota metadata crosses the quota-detection adapter boundary.
@@ -98,7 +98,7 @@ deltas identify active folders, while `account/rateLimits/read` remains the
 source of the quota amount.
 
 If all pending activity maps through nearest-ancestor binding to one workspace,
-AQM appends the provider percentage delta to that workspace at `inferred`
+QuotaFence appends the provider percentage delta to that workspace at `inferred`
 confidence. Multiple workspaces, any unmapped activity, reset rollover, or a
 missing scan leave the provider change unattributed. A provider refresh that
 cannot include a desktop scan invalidates pending attribution rather than
@@ -107,7 +107,7 @@ guessing across an observation gap.
 ### Related work
 
 [OpenUsage](https://github.com/robinebers/openusage) demonstrates that local
-Codex session data can support useful usage analysis. AQM follows the same
+Codex session data can support useful usage analysis. QuotaFence follows the same
 local-first principle but uses a narrower input for this feature: it queries
 minimal thread counters from Codex's state database instead of parsing rollout
 content, then debits only the separately refreshed provider quota delta.
@@ -123,13 +123,13 @@ hooks:
 - explicit policy decisions may block a new prompt, while parse, database, or
   provider failures remain fail-open.
 
-Codex also supports `SessionEnd`, but AQM does not install it: some Codex
+Codex also supports `SessionEnd`, but QuotaFence does not install it: some Codex
 Desktop builds do not expose that entry in the hook-review modal, and stale
 turn cleanup already runs safely at the next prompt. This keeps the user-visible
 activation flow limited to the two hooks required for enforcement and usage
 reconciliation.
 
-Codex sends the complete lifecycle JSON to the command hook. AQM's typed input
+Codex sends the complete lifecycle JSON to the command hook. QuotaFence's typed input
 intentionally ignores prompt, assistant-message, and transcript fields and
 persists only lifecycle identifiers and folder metadata. Because the provider
 checkpoint is an account-wide integer percentage, the resulting workspace

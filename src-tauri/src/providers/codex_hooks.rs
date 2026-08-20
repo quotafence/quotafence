@@ -25,7 +25,9 @@ use crate::{
 use super::codex::{self, CodexDetection, CodexSyncStatus};
 
 const CODEX_ADAPTER: &str = "codex_app_server";
-const AQM_STATUS_PREFIX: &str = "AQM: ";
+const QUOTAFENCE_STATUS_PREFIX: &str = "QuotaFence: ";
+// Recognized only so the installer can remove pre-QuotaFence hook entries.
+const LEGACY_STATUS_PREFIX: &str = "AQM: ";
 const INSTALLED_EVENTS: [(&str, u64, &str); 2] = [
     ("UserPromptSubmit", 90, "checking workspace allocation"),
     ("Stop", 90, "reconciling workspace usage"),
@@ -97,7 +99,7 @@ pub enum CodexHookOutcome {
 #[serde(rename_all = "camelCase")]
 pub struct CodexProtectionStatus {
     pub installed: bool,
-    pub has_aqm_hooks: bool,
+    pub has_quotafence_hooks: bool,
     pub requires_review: bool,
     pub verification_required_after: Option<i64>,
     pub last_hook_observed_at: Option<i64>,
@@ -151,7 +153,7 @@ fn hook_failure_output(event: &CodexHookEvent, error: &str) -> Value {
         json!({
             "decision": "block",
             "reason": format!(
-                "AQM blocked this prompt because it could not verify the workspace allocation: {error}. Open Agent Quota Manager, sync Codex, and retry."
+                "QuotaFence blocked this prompt because it could not verify the workspace allocation: {error}. Open QuotaFence, sync Codex, and retry."
             ),
         })
     } else {
@@ -162,7 +164,7 @@ fn hook_failure_output(event: &CodexHookEvent, error: &str) -> Value {
 pub fn protection_status() -> Result<CodexProtectionStatus, String> {
     let config_path = default_user_hooks_path()?;
     let executable = env::current_exe()
-        .map_err(|error| format!("cannot resolve the Agent Quota Manager executable: {error}"))?;
+        .map_err(|error| format!("cannot resolve the QuotaFence executable: {error}"))?;
     Ok(protection_status_for(
         &config_path,
         &executable,
@@ -184,7 +186,7 @@ pub fn uninstall_protection() -> Result<CodexProtectionStatus, String> {
     let config_path = default_user_hooks_path()?;
     uninstall_user_hooks(&config_path)?;
     let executable = env::current_exe()
-        .map_err(|error| format!("cannot resolve the Agent Quota Manager executable: {error}"))?;
+        .map_err(|error| format!("cannot resolve the QuotaFence executable: {error}"))?;
     Ok(protection_status_for(
         &config_path,
         &executable,
@@ -219,7 +221,7 @@ fn protection_status_for(
         Err(issue) => {
             return CodexProtectionStatus {
                 installed: false,
-                has_aqm_hooks: false,
+                has_quotafence_hooks: false,
                 requires_review: false,
                 verification_required_after,
                 last_hook_observed_at,
@@ -235,7 +237,7 @@ fn protection_status_for(
     let Some(hooks) = config.get("hooks").and_then(Value::as_object) else {
         return CodexProtectionStatus {
             installed: false,
-            has_aqm_hooks: false,
+            has_quotafence_hooks: false,
             requires_review: false,
             verification_required_after,
             last_hook_observed_at,
@@ -246,7 +248,7 @@ fn protection_status_for(
             issue: None,
         };
     };
-    let aqm_handlers = OWNED_EVENT_NAMES
+    let quotafence_handlers = OWNED_EVENT_NAMES
         .iter()
         .flat_map(|event| {
             hooks
@@ -256,13 +258,13 @@ fn protection_status_for(
                 .flatten()
                 .filter_map(|group| group.get("hooks").and_then(Value::as_array))
                 .flatten()
-                .filter(|handler| is_aqm_handler(handler))
+                .filter(|handler| is_quotafence_handler(handler))
         })
         .collect::<Vec<_>>();
-    if aqm_handlers.is_empty() {
+    if quotafence_handlers.is_empty() {
         return CodexProtectionStatus {
             installed: false,
-            has_aqm_hooks: false,
+            has_quotafence_hooks: false,
             requires_review: false,
             verification_required_after,
             last_hook_observed_at,
@@ -284,7 +286,7 @@ fn protection_status_for(
                     .filter_map(|group| group.get("hooks").and_then(Value::as_array))
                     .flatten()
                     .any(|handler| {
-                        is_aqm_handler(handler)
+                        is_quotafence_handler(handler)
                             && handler.get("command").and_then(Value::as_str)
                                 == Some(expected_command.as_str())
                     })
@@ -293,11 +295,11 @@ fn protection_status_for(
     let has_legacy_session_end = hooks
         .get("SessionEnd")
         .and_then(Value::as_array)
-        .is_some_and(|groups| groups.iter().any(group_contains_aqm_hook));
+        .is_some_and(|groups| groups.iter().any(group_contains_quotafence_hook));
     if every_event_is_current && executable.is_file() && !has_legacy_session_end {
         CodexProtectionStatus {
             installed: true,
-            has_aqm_hooks: true,
+            has_quotafence_hooks: true,
             requires_review: true,
             verification_required_after,
             last_hook_observed_at,
@@ -310,7 +312,7 @@ fn protection_status_for(
     } else {
         CodexProtectionStatus {
             installed: false,
-            has_aqm_hooks: true,
+            has_quotafence_hooks: true,
             requires_review: false,
             verification_required_after,
             last_hook_observed_at,
@@ -319,10 +321,10 @@ fn protection_status_for(
             config_path: config_path_text,
             state: CodexProtectionState::Misconfigured,
             issue: Some(if has_legacy_session_end {
-                "AQM found a legacy SessionEnd entry that Codex Desktop may not expose for review. Repair protection to keep only the required prompt and reconciliation hooks."
+                "QuotaFence found a legacy SessionEnd entry that Codex Desktop may not expose for review. Repair protection to keep only the required prompt and reconciliation hooks."
                     .to_owned()
             } else {
-                "AQM hook entries are incomplete or point to a different app executable. Enable protection again to repair them."
+                "QuotaFence hook entries are incomplete or point to a different app executable. Enable protection again to repair them."
                     .to_owned()
             }),
         }
@@ -340,7 +342,7 @@ fn file_modified_at_millis(path: &Path) -> Option<i64> {
 }
 
 pub fn run_installed_hook(reader: impl Read) -> Result<Value, String> {
-    if env::var_os("AQM_MANAGED_SESSION_ID").is_some() {
+    if env::var_os("QUOTAFENCE_MANAGED_SESSION_ID").is_some() {
         return Ok(json!({}));
     }
     let event = CodexHookEvent::from_reader(reader)?;
@@ -383,7 +385,7 @@ pub fn run_installed_hook(reader: impl Read) -> Result<Value, String> {
     let (receipt_status, receipt_issue) = match &outcome {
         CodexHookOutcome::Skipped => (
             CodexHookReceiptStatus::Skipped,
-            Some("AQM received the hook, but no enforceable provider checkpoint was available."),
+            Some("QuotaFence received the hook, but no enforceable provider checkpoint was available."),
         ),
         _ => (CodexHookReceiptStatus::Decision, None),
     };
@@ -489,8 +491,8 @@ pub fn default_user_hooks_path() -> Result<PathBuf, String> {
 pub fn install_user_hooks(config_path: &Path, executable: &Path) -> Result<bool, String> {
     let original = read_hook_config(config_path)?;
     let mut updated = original.clone();
-    remove_aqm_hooks(&mut updated)?;
-    add_aqm_hooks(&mut updated, executable)?;
+    remove_quotafence_hooks(&mut updated)?;
+    add_quotafence_hooks(&mut updated, executable)?;
     if updated == original {
         return Ok(false);
     }
@@ -501,7 +503,7 @@ pub fn install_user_hooks(config_path: &Path, executable: &Path) -> Result<bool,
 pub fn uninstall_user_hooks(config_path: &Path) -> Result<bool, String> {
     let original = read_hook_config(config_path)?;
     let mut updated = original.clone();
-    remove_aqm_hooks(&mut updated)?;
+    remove_quotafence_hooks(&mut updated)?;
     if updated == original {
         return Ok(false);
     }
@@ -518,7 +520,7 @@ pub fn user_hooks_installed(config_path: &Path) -> Result<bool, String> {
         hooks
             .get(*event)
             .and_then(Value::as_array)
-            .is_some_and(|groups| groups.iter().any(group_contains_aqm_hook))
+            .is_some_and(|groups| groups.iter().any(group_contains_quotafence_hook))
     }))
 }
 
@@ -592,7 +594,7 @@ where
     if scope_id.is_none() && protection_enabled(service, &window_id, observed_at)? {
         return Ok(CodexHookOutcome::Blocked {
             reason: format!(
-                "AQM blocked this prompt because the Codex task reported {reported_path}, which has no Codex allocation. Add that folder in Agent Quota Manager or start the task from an allocated folder."
+                "QuotaFence blocked this prompt because the Codex task reported {reported_path}, which has no Codex allocation. Add that folder in QuotaFence or start the task from an allocated folder."
             ),
         });
     }
@@ -631,8 +633,9 @@ where
         let assessment = allocation_for_window(&refreshed_context, &window_id)?;
         if assessment.provider_remaining <= 0 {
             return Ok(CodexHookOutcome::Blocked {
-                reason: "AQM blocked this prompt because the Codex provider quota is exhausted."
-                    .to_owned(),
+                reason:
+                    "QuotaFence blocked this prompt because the Codex provider quota is exhausted."
+                        .to_owned(),
             });
         }
         if assessment.protected_now == 0 {
@@ -643,7 +646,7 @@ where
             }
             return Ok(CodexHookOutcome::Blocked {
                 reason: format!(
-                    "AQM blocked this prompt because {} has no protected quota at its current priority. Reorder workspace priorities or wait for the next reset.",
+                    "QuotaFence blocked this prompt because {} has no protected quota at its current priority. Reorder workspace priorities or wait for the next reset.",
                     scope_display_name
                 ),
             });
@@ -655,7 +658,7 @@ where
                 });
             }
             // Confirmation is retained only as a legacy storage/API value.
-            // Effective AQM policy is Warn -> Stop, so a legacy confirmation
+            // Effective QuotaFence policy is Warn -> Stop, so a legacy confirmation
             // decision must never interrupt a Codex Desktop prompt.
             EnforcementDecision::Allow
             | EnforcementDecision::Warn
@@ -684,7 +687,7 @@ where
 
 fn exhausted_allocation_reason(workspace: &str, allocation_limit: u64) -> String {
     format!(
-        "AQM stopped this Codex prompt to protect your reserved quota.\n\nWorkspace \"{workspace}\" has 0% left of its {allocation_limit}% AQM allocation for the current quota window. Your Codex subscription may still have quota available, but none is assigned to this workspace.\n\nTo continue, increase this allocation, change workspace priorities, turn off Codex Desktop protection, or wait for the next quota reset."
+        "QuotaFence stopped this Codex prompt to protect your reserved quota.\n\nWorkspace \"{workspace}\" has 0% left of its {allocation_limit}% QuotaFence allocation for the current quota window. Your Codex subscription may still have quota available, but none is assigned to this workspace.\n\nTo continue, increase this allocation, change workspace priorities, turn off Codex Desktop protection, or wait for the next quota reset."
     )
 }
 
@@ -862,7 +865,7 @@ fn write_hook_config(config_path: &Path, config: &Value) -> Result<(), String> {
         .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
 
     if config_path.exists() {
-        let backup = config_path.with_extension("json.aqm.bak");
+        let backup = config_path.with_extension("json.quotafence.bak");
         if !backup.exists() {
             fs::copy(config_path, &backup).map_err(|error| {
                 format!(
@@ -876,7 +879,7 @@ fn write_hook_config(config_path: &Path, config: &Value) -> Result<(), String> {
 
     let contents = serde_json::to_string_pretty(config)
         .map_err(|error| format!("cannot serialize hook configuration: {error}"))?;
-    let temporary = config_path.with_extension("json.aqm.tmp");
+    let temporary = config_path.with_extension("json.quotafence.tmp");
     fs::write(&temporary, format!("{contents}\n"))
         .map_err(|error| format!("cannot write {}: {error}", temporary.display()))?;
     fs::rename(&temporary, config_path).map_err(|error| {
@@ -889,7 +892,7 @@ fn write_hook_config(config_path: &Path, config: &Value) -> Result<(), String> {
     Ok(())
 }
 
-fn add_aqm_hooks(config: &mut Value, executable: &Path) -> Result<(), String> {
+fn add_quotafence_hooks(config: &mut Value, executable: &Path) -> Result<(), String> {
     let root = config
         .as_object_mut()
         .ok_or_else(|| "hook configuration root must be a JSON object".to_owned())?;
@@ -911,14 +914,14 @@ fn add_aqm_hooks(config: &mut Value, executable: &Path) -> Result<(), String> {
                 "type": "command",
                 "command": command,
                 "timeout": timeout,
-                "statusMessage": format!("{AQM_STATUS_PREFIX}{message}")
+                "statusMessage": format!("{QUOTAFENCE_STATUS_PREFIX}{message}")
             }]
         }));
     }
     Ok(())
 }
 
-fn remove_aqm_hooks(config: &mut Value) -> Result<(), String> {
+fn remove_quotafence_hooks(config: &mut Value) -> Result<(), String> {
     let Some(root) = config.as_object_mut() else {
         return Err("hook configuration root must be a JSON object".to_owned());
     };
@@ -940,7 +943,7 @@ fn remove_aqm_hooks(config: &mut Value) -> Result<(), String> {
             let Some(handlers) = group.get_mut("hooks").and_then(Value::as_array_mut) else {
                 continue;
             };
-            handlers.retain(|handler| !is_aqm_handler(handler));
+            handlers.retain(|handler| !is_quotafence_handler(handler));
         }
         groups.retain(|group| {
             group
@@ -952,18 +955,21 @@ fn remove_aqm_hooks(config: &mut Value) -> Result<(), String> {
     Ok(())
 }
 
-fn group_contains_aqm_hook(group: &Value) -> bool {
+fn group_contains_quotafence_hook(group: &Value) -> bool {
     group
         .get("hooks")
         .and_then(Value::as_array)
-        .is_some_and(|handlers| handlers.iter().any(is_aqm_handler))
+        .is_some_and(|handlers| handlers.iter().any(is_quotafence_handler))
 }
 
-fn is_aqm_handler(handler: &Value) -> bool {
+fn is_quotafence_handler(handler: &Value) -> bool {
     handler
         .get("statusMessage")
         .and_then(Value::as_str)
-        .is_some_and(|message| message.starts_with(AQM_STATUS_PREFIX))
+        .is_some_and(|message| {
+            message.starts_with(QUOTAFENCE_STATUS_PREFIX)
+                || message.starts_with(LEGACY_STATUS_PREFIX)
+        })
         && handler
             .get("command")
             .and_then(Value::as_str)
@@ -1007,7 +1013,7 @@ mod tests {
             hook_failure_output(&prompt, "database unavailable"),
             json!({
                 "decision": "block",
-                "reason": "AQM blocked this prompt because it could not verify the workspace allocation: database unavailable. Open Agent Quota Manager, sync Codex, and retry."
+                "reason": "QuotaFence blocked this prompt because it could not verify the workspace allocation: database unavailable. Open QuotaFence, sync Codex, and retry."
             })
         );
 
@@ -1074,10 +1080,18 @@ mod tests {
                 }]
             }
         });
-        add_aqm_hooks(&mut config, Path::new("/Applications/AQM/aqm")).unwrap();
+        add_quotafence_hooks(
+            &mut config,
+            Path::new("/Applications/QuotaFence/quotafence"),
+        )
+        .unwrap();
         let once = config.clone();
-        remove_aqm_hooks(&mut config).unwrap();
-        add_aqm_hooks(&mut config, Path::new("/Applications/AQM/aqm")).unwrap();
+        remove_quotafence_hooks(&mut config).unwrap();
+        add_quotafence_hooks(
+            &mut config,
+            Path::new("/Applications/QuotaFence/quotafence"),
+        )
+        .unwrap();
 
         assert_eq!(config, once);
         let stop = config["hooks"]["Stop"].as_array().unwrap();
@@ -1089,7 +1103,7 @@ mod tests {
     }
 
     #[test]
-    fn uninstall_removes_only_aqm_handlers() {
+    fn uninstall_removes_only_quotafence_handlers() {
         let mut config = json!({
             "hooks": {
                 "Stop": [{
@@ -1100,18 +1114,47 @@ mod tests {
                         },
                         {
                             "type": "command",
-                            "command": "'/tmp/aqm' hook codex",
-                            "statusMessage": "AQM: reconciling workspace usage"
+                            "command": "'/tmp/quotafence' hook codex",
+                            "statusMessage": "QuotaFence: reconciling workspace usage"
                         }
                     ]
                 }]
             }
         });
-        remove_aqm_hooks(&mut config).unwrap();
+        remove_quotafence_hooks(&mut config).unwrap();
 
         let handlers = config["hooks"]["Stop"][0]["hooks"].as_array().unwrap();
         assert_eq!(handlers.len(), 1);
         assert_eq!(handlers[0]["command"].as_str(), Some("existing-hook"));
+    }
+
+    #[test]
+    fn installer_removes_legacy_handlers_during_rebrand() {
+        let mut config = json!({
+            "hooks": {
+                "UserPromptSubmit": [{
+                    "hooks": [{
+                        "type": "command",
+                        "command": "'/Applications/Agent Quota Manager.app/Contents/MacOS/aqm' hook codex",
+                        "statusMessage": "AQM: checking workspace allocation"
+                    }]
+                }]
+            }
+        });
+
+        remove_quotafence_hooks(&mut config).unwrap();
+        add_quotafence_hooks(
+            &mut config,
+            Path::new("/Applications/QuotaFence.app/Contents/MacOS/quotafence"),
+        )
+        .unwrap();
+
+        let groups = config["hooks"]["UserPromptSubmit"].as_array().unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(
+            groups[0]["hooks"][0]["command"].as_str(),
+            Some("'/Applications/QuotaFence.app/Contents/MacOS/quotafence' hook codex")
+        );
     }
 
     #[test]
@@ -1134,9 +1177,9 @@ mod tests {
         )
         .unwrap();
 
-        assert!(install_user_hooks(&config_path, Path::new("/tmp/aqm")).unwrap());
+        assert!(install_user_hooks(&config_path, Path::new("/tmp/quotafence")).unwrap());
         assert!(user_hooks_installed(&config_path).unwrap());
-        assert!(!install_user_hooks(&config_path, Path::new("/tmp/aqm")).unwrap());
+        assert!(!install_user_hooks(&config_path, Path::new("/tmp/quotafence")).unwrap());
         assert!(uninstall_user_hooks(&config_path).unwrap());
         assert!(!user_hooks_installed(&config_path).unwrap());
         let restored: Value =
@@ -1154,7 +1197,7 @@ mod tests {
     fn protection_status_distinguishes_disabled_current_and_stale_hooks() {
         let directory = temporary_folder("protection-status");
         let config_path = directory.join("hooks.json");
-        let executable = directory.join("Agent Quota Manager");
+        let executable = directory.join("QuotaFence");
         std::fs::write(&executable, "test executable").unwrap();
 
         let disabled = protection_status_for(&config_path, &executable, None);
@@ -1174,7 +1217,7 @@ mod tests {
                 "type": "command",
                 "command": hook_command(&executable),
                 "timeout": 3,
-                "statusMessage": "AQM: cleaning session state"
+                "statusMessage": "QuotaFence: cleaning session state"
             }]
         }]);
         std::fs::write(
@@ -1190,7 +1233,7 @@ mod tests {
         let repaired = read_hook_config(&config_path).unwrap();
         assert!(repaired["hooks"]["SessionEnd"]
             .as_array()
-            .is_none_or(|groups| !groups.iter().any(group_contains_aqm_hook)));
+            .is_none_or(|groups| !groups.iter().any(group_contains_quotafence_hook)));
         assert_eq!(
             protection_status_for(&config_path, &executable, None).state,
             CodexProtectionState::Configured
@@ -1383,7 +1426,7 @@ mod tests {
             json!({
                 "decision": "block",
                 "reason": format!(
-                    "AQM blocked this prompt because the Codex task reported {}, which has no Codex allocation. Add that folder in Agent Quota Manager or start the task from an allocated folder.",
+                    "QuotaFence blocked this prompt because the Codex task reported {}, which has no Codex allocation. Add that folder in QuotaFence or start the task from an allocated folder.",
                     canonicalize_workspace_path(&other_folder).unwrap()
                 )
             })
@@ -1423,7 +1466,7 @@ mod tests {
         assert!(matches!(
             outcome,
             CodexHookOutcome::Blocked { ref reason }
-                if reason.contains("has 0% left of its 20% AQM allocation")
+                if reason.contains("has 0% left of its 20% QuotaFence allocation")
                     && reason.contains("Your Codex subscription may still have quota available")
                     && reason.contains("increase this allocation")
         ));
@@ -1816,7 +1859,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let folder = std::env::temp_dir().join(format!(
-            "aqm-codex-hook-{label}-{}-{unique}",
+            "quotafence-codex-hook-{label}-{}-{unique}",
             std::process::id()
         ));
         std::fs::create_dir(&folder).unwrap();

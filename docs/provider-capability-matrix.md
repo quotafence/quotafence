@@ -1,6 +1,6 @@
 # Provider Capability Matrix
 
-This document defines the evidence required before AQM adds a second coding
+This document defines the evidence required before QuotaFence adds a second coding
 agent. A provider name does not imply a capability: discovery, observation,
 attribution, and enforcement are assessed independently and may vary by client,
 account type, version, or operating system.
@@ -12,8 +12,8 @@ Last reviewed: 20 August 2026.
 | Level | Meaning |
 | --- | --- |
 | Documented | A provider publishes the interface and its semantics |
-| Probed | AQM can detect the interface without changing provider state |
-| Implemented | AQM consumes the interface with schema and failure tests |
+| Probed | QuotaFence can detect the interface without changing provider state |
+| Implemented | QuotaFence consumes the interface with schema and failure tests |
 | Live-tested | The installed provider client passed a dated end-to-end check |
 
 UI and policy decisions must use the current runtime capability, not the best
@@ -21,14 +21,14 @@ row ever observed for that provider.
 
 ## Current matrix
 
-| Capability | Codex subscription | Claude Code subscription | AQM implication |
+| Capability | Codex subscription | Claude Code subscription | QuotaFence implication |
 | --- | --- | --- | --- |
 | Local executable probe | Implemented and live-tested | Documented through the `claude` CLI | Probe version and installation only; do not authenticate automatically |
 | Subscription quota windows | Implemented through App Server `account/rateLimits/read` | Available from the shared Claude subscription usage endpoint using an explicitly authorized existing Claude login; CLI status-line input is a secondary passive source | Use one account checkpoint for CLI and Desktop Code while keeping OAuth tokens memory-only; Claude Chat and Cowork remain outside folder attribution |
 | Reset timestamp | Implemented | Documented with each optional status-line rate-limit window | Preserve each provider window independently |
 | Account checkpoint refresh | Implemented on demand | Implemented through the shared subscription usage endpoint after explicit local authorization | Keep tokens memory-only and surface refresh failures honestly |
-| Workspace identity | Explicit canonical folder binding | Hooks and status-line data expose current working-directory/session context | Reuse AQM folder bindings; never derive identity from prompt text |
-| Managed interactive launch | Implemented through `aqm run codex` | Implemented through `aqm run claude`; defaults to weekly and supports `--window 5h` | One managed reservation tracks one explicitly selected native window |
+| Workspace identity | Explicit canonical folder binding | Hooks and status-line data expose current working-directory/session context | Reuse QuotaFence folder bindings; never derive identity from prompt text |
+| Managed interactive launch | Implemented through `quotafence run codex` | Implemented through `quotafence run claude`; defaults to weekly and supports `--window 5h` | One managed reservation tracks one explicitly selected native window |
 | Structured managed result | Codex-specific managed reconciliation | Claude print/SDK modes document JSON results including session ID and estimated USD cost | Keep USD cost separate from subscription quota percentage |
 | Lifecycle hooks | Implemented for supported Codex hooks | Documented across terminal, IDE, Desktop, and web with `UserPromptSubmit`, `Stop`, `StopFailure`, and `SessionEnd` | Prefer user-level Claude hooks for a daily Desktop/IDE-compatible workflow |
 | Prompt admission | Implemented for verified Codex Desktop hooks | Implemented with reversible user-level `UserPromptSubmit` hooks | Installed is not equivalent to observed; the UI reports activation health |
@@ -67,10 +67,10 @@ control only after the user enables it explicitly:
 1. Probe the supported `claude` executable and version without starting an
    authenticated session.
 2. Define typed parsers for the minimal status-line and lifecycle-hook fields
-   needed by AQM. Ignore prompt, response, transcript, and tool payloads.
+   needed by QuotaFence. Ignore prompt, response, transcript, and tool payloads.
 3. Observe optional 5-hour and 7-day subscription windows from a user-approved
    status-line integration after Claude supplies them.
-4. Map the reported working directory to the nearest explicit AQM folder
+4. Map the reported working directory to the nearest explicit QuotaFence folder
    binding.
 5. Display Claude as observed/degraded until a fresh supported window exists;
    do not offer manual percentage entry as if it were provider-confirmed.
@@ -83,7 +83,7 @@ or Stop before a new prompt, and supports an explicitly selected managed CLI
 window. Provider routing remains deferred because Codex weekly percentage and
 Claude's 5-hour/weekly limits are not a single comparable budget.
 
-Done means AQM can show both real Claude subscription windows, attribute an
+Done means QuotaFence can show both real Claude subscription windows, attribute an
 unambiguous delta to a folder, and refuse a new prompt at a verified boundary,
 or clearly say which capability is unavailable. It does not mean live turn
 termination, cross-provider routing, or production readiness.
@@ -95,7 +95,7 @@ termination, cross-provider routing, or production readiness.
 - Do not parse conversation transcripts to discover quota.
 - Do not store prompts, responses, assistant messages, or tool inputs from hook
   payloads.
-- Preserve unrelated user and project hooks when installing or removing AQM
+- Preserve unrelated user and project hooks when installing or removing QuotaFence
   entries.
 - Treat hook and status-line JSON as untrusted, versioned input.
 - Require explicit user action before modifying `~/.claude/settings.json`.

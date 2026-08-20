@@ -146,13 +146,13 @@ launches all resolve that same effective policy.
 
 `allow`, `warn`, `require_confirmation`, and `stop` remain assessment results
 at this layer. A confirmation is enforced and audited only for an actual
-AQM-managed launch; a stop refuses that launch. The trusted Desktop prompt gate
+QuotaFence-managed launch; a stop refuses that launch. The trusted Desktop prompt gate
 uses priority-funded `protected_now` plus the allocation-specific result and
 rejects stop before the prompt starts. A Desktop `require_confirmation` result
 creates a short-lived request; approval is scoped to session, workspace, and
 window, then atomically consumed by one retried prompt. Usage
-outside a trusted AQM gate can still reduce real provider capacity and therefore
-current protection; AQM cannot recreate capacity already consumed. A dry run
+outside a trusted QuotaFence gate can still reduce real provider capacity and therefore
+current protection; QuotaFence cannot recreate capacity already consumed. A dry run
 has no audit side effect, and an already-running Codex turn is not terminated.
 The dashboard may still compute the same priority-funded amounts while the
 Desktop hook is unverified, but the UI labels them as planned capacity. Provider

@@ -1,16 +1,16 @@
-# Agent Quota Manager
+# QuotaFence
 
 Local-first budget guard and routing layer for AI coding agents.
 
 > [!IMPORTANT]
-> Agent Quota Manager `v0.1.0-beta.1` is an early, source-distributed beta for
+> QuotaFence `v0.1.0-beta.1` is an early, source-distributed beta for
 > macOS. It is not yet a stable release. Codex quota
 > discovery, checkpoint refresh, reset rollover, and manual allocations work
-> locally. Folder-based workspace mapping plus `aqm context` and the provider-refreshing
-> `aqm admit codex` dry run are implemented. `aqm run codex` now admits,
+> locally. Folder-based workspace mapping plus `quotafence context` and the provider-refreshing
+> `quotafence admit codex` dry run are implemented. `quotafence run codex` now admits,
 > reserves, launches, supervises, reconciles, and recovers one managed Codex
 > session. Claude's shared 5-hour and weekly subscription windows, reversible
-> folder lifecycle hooks, and `aqm run claude` are available as a beta adapter.
+> folder lifecycle hooks, and `quotafence run claude` are available as a beta adapter.
 > Desktop refresh can also read Codex's local thread usage metadata and infer
 > a workspace's aggregate quota change without requiring the CLI wrapper or
 > parsing prompts and transcripts. Aggregate percentage checkpoints still
@@ -28,19 +28,19 @@ against the same constrained subscription. Low-priority work can exhaust that
 shared capacity before important work starts, while provider dashboards cannot
 usually explain which workspace consumed it or enforce a project budget.
 
-Agent Quota Manager (AQM) aims to protect capacity for important work, attribute
+QuotaFence (QuotaFence) aims to protect capacity for important work, attribute
 managed usage to local folder workspaces, and apply policy before or during
 work when the provider integration can honestly support it.
 
 ## What it is
 
-AQM is a local control layer between a user and installed AI coding agents. The
+QuotaFence is a local control layer between a user and installed AI coding agents. The
 lightweight daily workflow starts with:
 
 ```bash
-aqm run codex
+quotafence run codex
 # or, for the Claude weekly allocation
-aqm run claude
+quotafence run claude
 ```
 
 That workflow now:
@@ -48,12 +48,12 @@ That workflow now:
 - resolves the current folder to a workspace allocation;
 - reserves capacity for the requested work;
 - warns or refuses admission at a policy boundary;
-- runs a Codex process under AQM management; and
+- runs a Codex process under QuotaFence management; and
 - refreshes the provider checkpoint after exit and attributes an unambiguous
   observed delta to the workspace.
 
 On Unix, the next managed invocation also recovers sessions orphaned by a
-crashed supervisor. When AQM observes concurrent Codex work in the same quota
+crashed supervisor. When QuotaFence observes concurrent Codex work in the same quota
 window, the aggregate delta remains unattributed. Each folder can persist its
 own warn and stop thresholds; both the desktop and CLI resolve
 that override before falling back to the application defaults.
@@ -96,7 +96,7 @@ deadline. Those dimensions are not assumed to be interchangeable.
 | --- | --- |
 | Provider | Codex |
 | Context | Map any local folder to a workspace allocation |
-| Workflow | `aqm run codex` or an equivalent lightweight managed launch |
+| Workflow | `quotafence run codex` or an equivalent lightweight managed launch |
 | Sessions | Reserve, start, observe, finish, and recover one managed session |
 | Enforcement | Refuse managed launches or trusted Desktop prompts at allocation boundaries |
 | Accounting | Automatic session attribution plus provider reconciliation |
@@ -124,10 +124,10 @@ The first beta is built from source; signed installers are not published yet.
 4. Open **Settings → Codex Desktop protection**, install the prompt gate, then
    complete the Codex trust steps shown in the app.
 5. Restart Codex Desktop, submit a test prompt from an allocated folder, and
-   run AQM's integration health check. Do not rely on protection while AQM says
+   run QuotaFence's integration health check. Do not rely on protection while QuotaFence says
    it is unverified or degraded.
 
-Read the [Beta guide](docs/beta.md) before relying on AQM for important work.
+Read the [Beta guide](docs/beta.md) before relying on QuotaFence for important work.
 It documents what the beta can enforce, what remains approximate, its privacy
 boundary, and the diagnostic information to include in bug reports.
 Maintainers can follow the [macOS release guide](docs/releasing.md) for tagged
@@ -138,7 +138,7 @@ universal builds, checksums, signing state, and draft prerelease review.
 ```mermaid
 flowchart LR
   UI["Desktop UI"] --> APP["Application use cases"]
-  CLI["aqm CLI wrapper"] --> APP
+  CLI["quotafence CLI wrapper"] --> APP
   APP --> CORE["Budget core and policy engine"]
   CORE --> STORE["Local ledger and configuration"]
   APP --> ADAPTER["Capability-aware adapter"]
@@ -154,7 +154,7 @@ or background lifecycle management justify it. See
 described in [Storage](docs/storage.md), and use-case orchestration in
 [Application services](docs/application-services.md). The desktop IPC contract
 is documented in [Tauri commands](docs/tauri-commands.md), and folder-based
-workspace binding in the [AQM CLI guide](docs/cli.md). See
+workspace binding in the [QuotaFence CLI guide](docs/cli.md). See
 [Local MVP](docs/local-mvp.md) for the current implemented baseline.
 
 ### Codex detection
@@ -173,7 +173,7 @@ events, and a new reset window carries allocations forward without old usage.
 
 Each desktop Codex refresh also opens Codex's local state database read-only and
 selects only thread ID, working folder, cumulative token counter, and update
-time. AQM does not select titles, previews, prompts, responses, or transcript
+time. QuotaFence does not select titles, previews, prompts, responses, or transcript
 contents. The first scan establishes a baseline. Later token-counter movement
 is used only as evidence of which folder was active; the amount charged remains
 the account-wide provider percentage delta. A delta is assigned only when all
@@ -216,32 +216,32 @@ Choose a folder and create a workspace allocation in the desktop app, or bind
 an existing top-level allocation from the CLI:
 
 ```bash
-npm run aqm -- context
-npm run aqm -- bind --scope "Workspace allocation name"
+npm run quotafence -- context
+npm run quotafence -- bind --scope "Workspace allocation name"
 ```
 
 Preview the current policy boundary without launching Codex:
 
 ```bash
-npm run aqm -- admit codex
+npm run quotafence -- admit codex
 ```
 
 Inspect or customize the bound folder's managed-session policy:
 
 ```bash
-npm run aqm -- policy show
-npm run aqm -- policy set --warn 75 --confirm 90 --stop 100
-npm run aqm -- policy reset
+npm run quotafence -- policy show
+npm run quotafence -- policy set --warn 75 --confirm 90 --stop 100
+npm run quotafence -- policy reset
 ```
 
 Launch a managed Codex session from an allocated folder:
 
 ```bash
-npm run aqm -- run codex
+npm run quotafence -- run codex
 ```
 
 Codex arguments must follow `--`, for example
-`npm run aqm -- run codex -- --model gpt-5`. The wrapper reserves the
+`npm run quotafence -- run codex -- --model gpt-5`. The wrapper reserves the
 workspace's current spendable capacity, refuses a stop boundary, forwards
 termination signals, preserves the Codex exit code, and releases its
 reservation on completion, failure, or interruption.
@@ -250,7 +250,7 @@ Enable Codex Desktop workspace protection from Settings, or install it
 with the development CLI:
 
 ```bash
-npm run aqm -- hooks install codex
+npm run quotafence -- hooks install codex
 ```
 
 Codex requires non-managed hooks to be reviewed and trusted. See the
@@ -261,25 +261,25 @@ from a stale or partial one, and shows recent allow/block decisions. Once
 active, an unallocated folder receives a blocked prompt instead of consuming
 quota reserved for allocated workspaces.
 
-After installing from AQM, finish activation in Codex Desktop:
+After installing from QuotaFence, finish activation in Codex Desktop:
 
 1. Open **Settings → Hooks → User config**.
-2. Review, trust, and switch on the AQM entries under `UserPromptSubmit` and
+2. Review, trust, and switch on the QuotaFence entries under `UserPromptSubmit` and
    `Stop`.
 3. Quit Codex completely with **Cmd+Q**, reopen it, then return to the existing
    task in an allocated folder. Closing the window alone does not restart the
    Codex app-server or reload the updated hook configuration.
 
-AQM's “Installed” control confirms only that the local hook definitions point
+QuotaFence's “Installed” control confirms only that the local hook definitions point
 to the current application. Codex remains the source of truth for whether each
 definition is trusted and enabled. Until both hooks are trusted and switched
-on, Codex prompts can still run without AQM protection. Overview keeps
+on, Codex prompts can still run without QuotaFence protection. Overview keeps
 an actionable warning visible and treats allocation funding as a priority plan.
 Unmanaged usage consumes currently unassigned capacity first, then erodes
 funding from the lowest-priority workspace upward. After setup, submit one test
-prompt in an allocated workspace so AQM can observe a hook decision and mark
+prompt in an allocated workspace so QuotaFence can observe a hook decision and mark
 protection active. A decision recorded before the current hook configuration or
-application build does not count as verification, so AQM warns again after the
+application build does not count as verification, so QuotaFence warns again after the
 integration changes. The detailed status, on/off control, and instructions
 live in Settings.
 

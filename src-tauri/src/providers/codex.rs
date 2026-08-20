@@ -427,8 +427,8 @@ fn communicate(child: &mut Child) -> Result<CodexDetection, AdapterError> {
             "method": "initialize",
             "params": {
                 "clientInfo": {
-                    "name": "agent-quota-manager",
-                    "title": "Agent Quota Manager",
+                    "name": "quotafence",
+                    "title": "QuotaFence",
                     "version": env!("CARGO_PKG_VERSION")
                 },
                 "capabilities": {

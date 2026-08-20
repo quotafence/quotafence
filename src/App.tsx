@@ -55,11 +55,17 @@ type ModalState =
   | { type: "remove-source"; source: QuotaSourceSummary }
   | null;
 
-const THEME_STORAGE_KEY = "aqm-theme";
+const THEME_STORAGE_KEY = "quotafence-theme";
+const LEGACY_THEME_STORAGE_KEY = "aqm-theme";
 const AUTO_SYNC_INTERVAL_MS = 2 * 60_000;
 
 function storedTheme(): ThemePreference {
-  const value = localStorage.getItem(THEME_STORAGE_KEY);
+  const legacyValue = localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+  const value = localStorage.getItem(THEME_STORAGE_KEY) ?? legacyValue;
+  if (legacyValue && !localStorage.getItem(THEME_STORAGE_KEY)) {
+    localStorage.setItem(THEME_STORAGE_KEY, legacyValue);
+    localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
+  }
   return value === "light" || value === "dark" || value === "system"
     ? value
     : "system";
@@ -71,7 +77,7 @@ function LoadingScreen() {
       <div className="loading-mark">
         <Icon name="gauge" size={30} />
       </div>
-      <strong>Agent Quota Manager</strong>
+      <strong>QuotaFence</strong>
       <span>Opening your local ledger…</span>
       <i />
     </main>
@@ -156,7 +162,7 @@ function SourcePicker({
       ))}
       {claudeIntegration?.state === "conflict" && (
         <p className="source-picker-warning">
-          Claude already has a custom status line. AQM left it unchanged; resolve
+          Claude already has a custom status line. QuotaFence left it unchanged; resolve
           the conflict in Settings before connecting.
         </p>
       )}
@@ -279,7 +285,7 @@ function WelcomeScreen({
                   : "Connect Claude Code"}
           </button>
           <p className="welcome-claude-help">
-            AQM creates the 5-hour and weekly sources after Claude's first response.
+            QuotaFence creates the 5-hour and weekly sources after Claude's first response.
           </p>
         </div>
       </section>
@@ -354,7 +360,7 @@ function App() {
               lastHookIssue: null,
               configPath: "",
               state: "misconfigured",
-              issue: "Agent Quota Manager could not inspect the Codex hook configuration.",
+              issue: "QuotaFence could not inspect the Codex hook configuration.",
             }),
           );
         getCodexProtectionEvents().then(setCodexProtectionEvents).catch(() => {
@@ -370,7 +376,7 @@ function App() {
               installed: false,
               configPath: "",
               state: "misconfigured",
-              issue: "Agent Quota Manager could not inspect Claude Code settings.",
+              issue: "QuotaFence could not inspect Claude Code settings.",
               lastObservedAt: null,
               lastQuotaObservedAt: null,
             }),
@@ -709,7 +715,7 @@ function App() {
       setCodexProtection(status);
       setNotice(
         enabled
-          ? "Trust and enable UserPromptSubmit and Stop in Codex, then send another prompt in your current task. Agent Quota Manager will verify it automatically."
+          ? "Trust and enable UserPromptSubmit and Stop in Codex, then send another prompt in your current task. QuotaFence will verify it automatically."
           : "Codex Desktop protection is off. Other Codex hooks were left unchanged.",
       );
     } catch (reason) {

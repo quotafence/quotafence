@@ -1,6 +1,6 @@
 # Local Storage
 
-Agent Quota Manager uses SQLite inside the Rust backend. The database stores
+QuotaFence uses SQLite inside the Rust backend. The database stores
 quota configuration and attribution metadata locally; prompts, source code, and
 provider credentials are not part of the schema.
 
@@ -30,9 +30,14 @@ The `src-tauri/src/storage` module provides:
 - append-only usage events.
 
 Application startup now resolves Tauri's operating-system-specific app-data
-directory and opens `agent-quota-manager.sqlite3` inside it. The storage layer
+directory and opens `quotafence.sqlite3` inside it. The storage layer
 still receives that path from its caller rather than guessing a filesystem
 location.
+
+The first QuotaFence launch copies a pre-rebrand ledger into the new
+`com.buisonanh.quotafence` application-data directory when no QuotaFence ledger
+exists yet. It never overwrites a ledger already created by QuotaFence. The old
+files remain untouched as a recovery copy.
 
 ## Connection configuration
 

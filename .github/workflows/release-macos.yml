@@ -49,13 +49,13 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
         run: |
           if test -n "$APPLE_CERTIFICATE"; then
-            echo "AQM_DEVELOPER_SIGNING=true" >> "$GITHUB_ENV"
+            echo "QUOTAFENCE_DEVELOPER_SIGNING=true" >> "$GITHUB_ENV"
           else
-            echo "AQM_DEVELOPER_SIGNING=false" >> "$GITHUB_ENV"
+            echo "QUOTAFENCE_DEVELOPER_SIGNING=false" >> "$GITHUB_ENV"
           fi
 
       - name: Require complete notarization secrets for Developer ID builds
-        if: env.AQM_DEVELOPER_SIGNING == 'true'
+        if: env.QUOTAFENCE_DEVELOPER_SIGNING == 'true'
         env:
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY_SECRET: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -72,7 +72,7 @@ jobs:
           test -n "$APPLE_TEAM_ID"
 
       - name: Import Developer ID certificate
-        if: env.AQM_DEVELOPER_SIGNING == 'true'
+        if: env.QUOTAFENCE_DEVELOPER_SIGNING == 'true'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -80,7 +80,7 @@ jobs:
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           CERTIFICATE_PATH="$RUNNER_TEMP/developer-id.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/aqm-signing.keychain-db"
+          KEYCHAIN_PATH="$RUNNER_TEMP/quotafence-signing.keychain-db"
           echo "$APPLE_CERTIFICATE" | /usr/bin/base64 -D > "$CERTIFICATE_PATH"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -89,30 +89,30 @@ jobs:
           security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY_SECRET" >> "$GITHUB_ENV"
-          echo "AQM_SIGNING_MODE=Developer ID signed and notarized" >> "$GITHUB_ENV"
+          echo "QUOTAFENCE_SIGNING_MODE=Developer ID signed and notarized" >> "$GITHUB_ENV"
 
       - name: Configure ad-hoc signing
-        if: env.AQM_DEVELOPER_SIGNING == 'false'
+        if: env.QUOTAFENCE_DEVELOPER_SIGNING == 'false'
         run: |
           echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
-          echo "AQM_SIGNING_MODE=Ad-hoc signed; not notarized" >> "$GITHUB_ENV"
+          echo "QUOTAFENCE_SIGNING_MODE=Ad-hoc signed; not notarized" >> "$GITHUB_ENV"
 
       - name: Build universal CLI companion
         run: |
-          cargo build --locked --release --manifest-path src-tauri/Cargo.toml --bin aqm --target aarch64-apple-darwin
-          cargo build --locked --release --manifest-path src-tauri/Cargo.toml --bin aqm --target x86_64-apple-darwin
+          cargo build --locked --release --manifest-path src-tauri/Cargo.toml --bin quotafence --target aarch64-apple-darwin
+          cargo build --locked --release --manifest-path src-tauri/Cargo.toml --bin quotafence --target x86_64-apple-darwin
           mkdir -p src-tauri/target/universal-apple-darwin/release
           lipo -create \
-            src-tauri/target/aarch64-apple-darwin/release/aqm \
-            src-tauri/target/x86_64-apple-darwin/release/aqm \
-            -output src-tauri/target/universal-apple-darwin/release/aqm
+            src-tauri/target/aarch64-apple-darwin/release/quotafence \
+            src-tauri/target/x86_64-apple-darwin/release/quotafence \
+            -output src-tauri/target/universal-apple-darwin/release/quotafence
 
       - name: Build ad-hoc universal app and DMG
-        if: env.AQM_DEVELOPER_SIGNING == 'false'
+        if: env.QUOTAFENCE_DEVELOPER_SIGNING == 'false'
         run: npm run tauri -- build --target universal-apple-darwin --bundles app,dmg
 
       - name: Build Developer ID universal app and DMG
-        if: env.AQM_DEVELOPER_SIGNING == 'true'
+        if: env.QUOTAFENCE_DEVELOPER_SIGNING == 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
@@ -126,12 +126,12 @@ jobs:
           test -n "$(find release-assets -maxdepth 1 -type f -name '*.dmg' -print -quit)"
           cd release-assets
           shasum -a 256 ./*.dmg > SHA256SUMS.txt
-          printf 'Signing: %s\nCommit: %s\nWorkflow: %s\n' "$AQM_SIGNING_MODE" "$GITHUB_SHA" "$GITHUB_RUN_ID" > BUILD-INFO.txt
+          printf 'Signing: %s\nCommit: %s\nWorkflow: %s\n' "$QUOTAFENCE_SIGNING_MODE" "$GITHUB_SHA" "$GITHUB_RUN_ID" > BUILD-INFO.txt
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v6
         with:
-          name: agent-quota-manager-macos-universal
+          name: quotafence-macos-universal
           path: release-assets/*
           if-no-files-found: error
           retention-days: 14
@@ -146,4 +146,4 @@ jobs:
             --draft \
             --prerelease \
             --generate-notes \
-            --title "Agent Quota Manager $GITHUB_REF_NAME"
+            --title "QuotaFence $GITHUB_REF_NAME"

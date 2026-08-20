@@ -24,7 +24,7 @@ use crate::{
         ReleaseReservation, RemoveWorkspaceAllocation, ReserveQuota, ResetWorkspacePolicy,
         ResolveCodexConfirmation, SetAllocation, SetAllocationPriorityOrder, SetWorkspacePolicy,
     },
-    paths::DATABASE_FILENAME,
+    paths::{migrate_legacy_database, DATABASE_FILENAME},
     workspace::canonicalize_workspace_path,
 };
 
@@ -35,7 +35,9 @@ pub(crate) fn initialize<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<
     let app_data_dir = app.path().app_data_dir()?;
     fs::create_dir_all(&app_data_dir)?;
 
-    let state = AppState::open(app_data_dir.join(DATABASE_FILENAME))?;
+    let database_path = app_data_dir.join(DATABASE_FILENAME);
+    migrate_legacy_database(&database_path)?;
+    let state = AppState::open(database_path)?;
     if !app.manage(state) {
         return Err(std::io::Error::other("quota service state is already managed").into());
     }
@@ -192,7 +194,7 @@ pub(crate) fn get_claude_integration_status() -> IpcResult<ClaudeStatusLineStatu
 pub(crate) fn install_claude_integration() -> IpcResult<ClaudeStatusLineStatus> {
     let executable = std::env::current_exe().map_err(|error| {
         IpcError::integration_error(format!(
-            "Could not resolve the Agent Quota Manager executable: {error}"
+            "Could not resolve the QuotaFence executable: {error}"
         ))
     })?;
     claude_code::install_integration(&executable).map_err(IpcError::integration_error)
@@ -212,7 +214,7 @@ pub(crate) fn get_claude_protection_status() -> IpcResult<ClaudeProtectionStatus
 pub(crate) fn install_claude_protection() -> IpcResult<ClaudeProtectionStatus> {
     let executable = std::env::current_exe().map_err(|error| {
         IpcError::integration_error(format!(
-            "Could not resolve the Agent Quota Manager executable: {error}"
+            "Could not resolve the QuotaFence executable: {error}"
         ))
     })?;
     claude_hooks::install_protection(&executable).map_err(IpcError::integration_error)
@@ -287,7 +289,7 @@ pub(crate) fn get_codex_protection_status() -> IpcResult<CodexProtectionStatus> 
 pub(crate) fn install_codex_protection() -> IpcResult<CodexProtectionStatus> {
     let executable = std::env::current_exe().map_err(|error| {
         IpcError::integration_error(format!(
-            "Could not resolve the Agent Quota Manager executable: {error}"
+            "Could not resolve the QuotaFence executable: {error}"
         ))
     })?;
     codex_hooks::install_protection(&executable).map_err(IpcError::integration_error)
