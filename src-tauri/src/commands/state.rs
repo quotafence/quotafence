@@ -30,4 +30,15 @@ impl AppState {
 
         operation(&mut service).map_err(Into::into)
     }
+
+    pub(crate) fn execute_integration<T>(
+        &self,
+        operation: impl FnOnce(&mut QuotaService) -> Result<T, String>,
+    ) -> IpcResult<T> {
+        let mut service = self
+            .service
+            .lock()
+            .map_err(|_| IpcError::service_unavailable())?;
+        operation(&mut service).map_err(IpcError::integration_error)
+    }
 }

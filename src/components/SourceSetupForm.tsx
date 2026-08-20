@@ -19,9 +19,10 @@ type SourceSetupFormProps = {
   onSubmit: (input: QuotaSourceInput) => Promise<void>;
   submitting: boolean;
   submitLabel?: string;
+  initialMode?: "codex" | "manual";
 };
 
-const providerOptions = ["Codex", "Claude Code", "Other"] as const;
+const providerOptions = ["Codex", "Other"] as const;
 
 function toLocalDateTime(date: Date): string {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
@@ -64,19 +65,21 @@ export function SourceSetupForm({
   onSubmit,
   submitting,
   submitLabel = "Create local workspace",
+  initialMode = "codex",
 }: SourceSetupFormProps) {
   const defaultReset = useMemo(
     () => toLocalDateTime(new Date(Date.now() + 7 * 24 * 60 * 60 * 1_000)),
     [],
   );
-  const [provider, setProvider] =
-    useState<(typeof providerOptions)[number]>("Codex");
+  const [provider, setProvider] = useState<(typeof providerOptions)[number]>(
+    initialMode === "manual" ? "Other" : "Codex",
+  );
   const [customProvider, setCustomProvider] = useState("");
   const [poolName, setPoolName] = useState("Weekly allowance");
   const [capacity, setCapacity] = useState("100");
   const [unit, setUnit] = useState("percent");
   const [resetAt, setResetAt] = useState(defaultReset);
-  const [manual, setManual] = useState(false);
+  const [manual, setManual] = useState(initialMode === "manual");
   const [detecting, setDetecting] = useState(true);
   const [detection, setDetection] = useState<CodexDetection | null>(null);
   const [detectionError, setDetectionError] = useState<string | null>(null);

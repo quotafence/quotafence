@@ -9,6 +9,7 @@ import type {
   CodexProtectionEvent,
   CodexProtectionStatus,
   CodexSyncResult,
+  ClaudeStatusLineStatus,
   LocalState,
   QuotaSourceSummary,
   QuotaHistoryPoint,
@@ -46,6 +47,10 @@ type DashboardProps = {
   codexSyncIssue: string | null;
   protectionBusy: boolean;
   onProtection: (enabled: boolean) => void;
+  claudeIntegration: ClaudeStatusLineStatus | null;
+  claudeBusy: boolean;
+  onClaudeIntegration: (enabled: boolean) => void;
+  onClaudeSync: () => void;
   theme: ThemePreference;
   onThemeChange: (theme: ThemePreference) => void;
   priorityBusy: boolean;
@@ -489,6 +494,10 @@ export function Dashboard({
   codexSyncIssue,
   protectionBusy,
   onProtection,
+  claudeIntegration,
+  claudeBusy,
+  onClaudeIntegration,
+  onClaudeSync,
   theme,
   onThemeChange,
   priorityBusy,
@@ -831,6 +840,32 @@ export function Dashboard({
                 {item.isActive && <i />}
               </button>
             ))}
+            {claudeIntegration?.installed &&
+              !state.sources.some(
+                (item) =>
+                  item.providerDisplayName.toLowerCase() === "claude code",
+              ) && (
+                <button
+                  className="source-item source-item-pending"
+                  type="button"
+                  title="Claude has not reported subscription quota yet."
+                  onClick={() => onViewChange("settings")}
+                >
+                  <ProviderLogo
+                    className="source-avatar"
+                    providerName="Claude Code"
+                  />
+                  <span>
+                    <strong>Claude Code</strong>
+                    <small>
+                      {claudeIntegration.lastObservedAt === null
+                        ? "Refresh quota to connect"
+                        : "Connected · waiting for quota"}
+                    </small>
+                  </span>
+                  <i />
+                </button>
+              )}
           </div>
         </section>
       </aside>
@@ -840,7 +875,7 @@ export function Dashboard({
           <SettingsPanel
             protection={codexProtection}
             events={codexProtectionEvents}
-            source={source}
+            sources={state.sources}
             workspaceCount={scopes.filter((scope) => scope.workspacePath).length}
             syncResult={codexSyncResult}
             syncIssue={codexSyncIssue}
@@ -850,6 +885,10 @@ export function Dashboard({
             theme={theme}
             onThemeChange={onThemeChange}
             onProtection={onProtection}
+            claudeIntegration={claudeIntegration}
+            claudeBusy={claudeBusy}
+            onClaudeIntegration={onClaudeIntegration}
+            onClaudeSync={onClaudeSync}
           />
         ) : (
           <>

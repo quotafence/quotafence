@@ -4,6 +4,7 @@ import { AllocationForm } from "./components/AllocationForm";
 import { Dashboard, type DashboardView } from "./components/Dashboard";
 import { Icon } from "./components/Icon";
 import { Modal } from "./components/Modal";
+import { ProviderLogo } from "./components/ProviderLogo";
 import { ScopeForm } from "./components/ScopeForm";
 import type { ThemePreference } from "./components/SettingsPanel";
 import { SourceSetupForm } from "./components/SourceSetupForm";
@@ -14,21 +15,26 @@ import {
   getErrorMessage,
   getCodexProtectionEvents,
   getCodexProtectionStatus,
+  getClaudeIntegrationStatus,
   getLocalState,
   installCodexProtection,
+  installClaudeIntegration,
   removeWorkspaceAllocation,
   resetWorkspacePolicy,
   setAllocation,
   setAllocationPriorityOrder,
   setWorkspacePolicy,
   syncCodexQuota,
+  syncClaudeQuota,
   uninstallCodexProtection,
+  uninstallClaudeIntegration,
 } from "./lib/api";
 import type {
   LocalState,
   CodexProtectionEvent,
   CodexProtectionStatus,
   CodexSyncResult,
+  ClaudeStatusLineStatus,
   QuotaSourceInput,
   QuotaSourceSummary,
   ScopeSummary,
@@ -38,6 +44,7 @@ import type {
 
 type ModalState =
   | { type: "source" }
+  | { type: "source-form"; mode: "codex" | "manual" }
   | { type: "scope" }
   | { type: "allocation"; scope: ScopeSummary }
   | { type: "remove-allocation"; scope: ScopeSummary }
@@ -67,12 +74,104 @@ function LoadingScreen() {
   );
 }
 
+function SourcePicker({
+  claudeIntegration,
+  claudeBusy,
+  onChooseForm,
+  onClaude,
+}: {
+  claudeIntegration: ClaudeStatusLineStatus | null;
+  claudeBusy: boolean;
+  onChooseForm: (mode: "codex" | "manual") => void;
+  onClaude: () => void;
+}) {
+  const options = [
+    {
+      id: "codex",
+      title: "Codex",
+      description: "Detect signed-in subscription windows automatically.",
+      action: () => onChooseForm("codex"),
+      disabled: false,
+      status: "Detect quota",
+    },
+    {
+      id: "claude",
+      title: "Claude Code",
+      description: "Observe 5-hour and weekly limits from Claude's status line.",
+      action: onClaude,
+      disabled:
+        claudeBusy ||
+        claudeIntegration === null ||
+        claudeIntegration.state === "conflict",
+      status: claudeBusy
+        ? "Installing…"
+        : claudeIntegration?.installed
+          ? claudeIntegration.lastQuotaObservedAt !== null
+            ? "Tracking"
+            : claudeIntegration.lastObservedAt !== null
+              ? "Connected"
+              : "Ready to refresh"
+          : claudeIntegration?.state === "conflict"
+            ? "Conflict"
+            : "Connect",
+    },
+    {
+      id: "custom",
+      title: "Custom source",
+      description: "Create a local allowance for another provider or unit.",
+      action: () => onChooseForm("manual"),
+      disabled: false,
+      status: "Set manually",
+    },
+  ];
+
+  return (
+    <div className="source-picker">
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          disabled={option.disabled}
+          onClick={option.action}
+        >
+          {option.id === "custom" ? (
+            <span className="source-picker-mark">+</span>
+          ) : (
+            <ProviderLogo
+              className="source-picker-mark"
+              providerName={option.title}
+            />
+          )}
+          <span>
+            <strong>{option.title}</strong>
+            <small>{option.description}</small>
+          </span>
+          <b>{option.status}</b>
+          <Icon name="arrow-right" size={17} />
+        </button>
+      ))}
+      {claudeIntegration?.state === "conflict" && (
+        <p className="source-picker-warning">
+          Claude already has a custom status line. AQM left it unchanged; resolve
+          the conflict in Settings before connecting.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function WelcomeScreen({
   submitting,
   onSubmit,
+  claudeIntegration,
+  claudeBusy,
+  onClaudeIntegration,
 }: {
   submitting: boolean;
   onSubmit: (input: QuotaSourceInput) => Promise<void>;
+  claudeIntegration: ClaudeStatusLineStatus | null;
+  claudeBusy: boolean;
+  onClaudeIntegration: (enabled: boolean) => void;
 }) {
   return (
     <main className="welcome-screen">
@@ -153,6 +252,31 @@ function WelcomeScreen({
             </p>
           </header>
           <SourceSetupForm onSubmit={onSubmit} submitting={submitting} />
+          <div className="welcome-provider-divider"><span>or observe automatically</span></div>
+          <button
+            className="button subtle welcome-claude-button"
+            type="button"
+            disabled={
+              claudeBusy ||
+              claudeIntegration === null ||
+              claudeIntegration.state === "conflict"
+            }
+            onClick={() =>
+              onClaudeIntegration(!(claudeIntegration?.installed ?? false))
+            }
+          >
+            <Icon name="activity" size={18} />
+            {claudeBusy
+              ? "Updating Claude tracking…"
+              : claudeIntegration?.installed
+                ? "Claude tracking installed"
+                : claudeIntegration?.state === "conflict"
+                  ? "Claude status line already in use"
+                  : "Connect Claude Code"}
+          </button>
+          <p className="welcome-claude-help">
+            AQM creates the 5-hour and weekly sources after Claude's first response.
+          </p>
         </div>
       </section>
     </main>
@@ -176,6 +300,9 @@ function App() {
   const [codexSyncResult, setCodexSyncResult] =
     useState<CodexSyncResult | null>(null);
   const [codexSyncIssue, setCodexSyncIssue] = useState<string | null>(null);
+  const [claudeIntegration, setClaudeIntegration] =
+    useState<ClaudeStatusLineStatus | null>(null);
+  const [claudeBusy, setClaudeBusy] = useState(false);
   const [priorityBusy, setPriorityBusy] = useState(false);
   const [view, setView] = useState<DashboardView>("overview");
   const [theme, setTheme] = useState<ThemePreference>(storedTheme);
@@ -227,6 +354,18 @@ function App() {
         getCodexProtectionEvents().then(setCodexProtectionEvents).catch(() => {
           setCodexProtectionEvents([]);
         });
+        getClaudeIntegrationStatus()
+          .then(setClaudeIntegration)
+          .catch(() =>
+            setClaudeIntegration({
+              installed: false,
+              configPath: "",
+              state: "misconfigured",
+              issue: "Agent Quota Manager could not inspect Claude Code settings.",
+              lastObservedAt: null,
+              lastQuotaObservedAt: null,
+            }),
+          );
         const nextState = await loadState();
         if (initialSyncStarted.current) {
           return;
@@ -266,11 +405,37 @@ function App() {
   }, [loadState]);
 
   useEffect(() => {
+    if (!claudeIntegration?.installed) {
+      return;
+    }
+    let cancelled = false;
+    const refreshClaude = async () => {
+      try {
+        const [status] = await Promise.all([
+          getClaudeIntegrationStatus(),
+          loadState(localState?.selectedWindowId ?? null),
+        ]);
+        if (!cancelled) {
+          setClaudeIntegration(status);
+        }
+      } catch {
+        // Keep the last known integration state during background polling.
+      }
+    };
+    const intervalId = window.setInterval(() => void refreshClaude(), 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [claudeIntegration?.installed, loadState, localState?.selectedWindowId]);
+
+  useEffect(() => {
     const refreshProtection = () => {
       getCodexProtectionStatus().then(setCodexProtection).catch(() => undefined);
       getCodexProtectionEvents()
         .then(setCodexProtectionEvents)
         .catch(() => undefined);
+      getClaudeIntegrationStatus().then(setClaudeIntegration).catch(() => undefined);
     };
     window.addEventListener("focus", refreshProtection);
     return () => window.removeEventListener("focus", refreshProtection);
@@ -401,7 +566,18 @@ function App() {
         setError("No quota window is selected.");
         return;
       }
-      if (selectedSource?.providerDisplayName.toLowerCase() !== "codex") {
+      const providerName = selectedSource?.providerDisplayName.toLowerCase();
+      if (providerName === "claude code") {
+        await syncClaudeQuota();
+        const [status] = await Promise.all([
+          getClaudeIntegrationStatus(),
+          loadState(windowId),
+        ]);
+        setClaudeIntegration(status);
+        setNotice("Claude subscription quota refreshed.");
+        return;
+      }
+      if (providerName !== "codex") {
         await loadState(windowId);
         setNotice("Local quota state refreshed.");
         return;
@@ -531,6 +707,55 @@ function App() {
     }
   }
 
+  async function handleClaudeIntegration(enabled: boolean) {
+    setClaudeBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const status = enabled
+        ? await installClaudeIntegration()
+        : await uninstallClaudeIntegration();
+      setClaudeIntegration(status);
+      if (enabled) {
+        await syncClaudeQuota();
+      }
+      const [latestStatus] = await Promise.all([
+        getClaudeIntegrationStatus(),
+        loadState(localState?.selectedWindowId ?? null),
+      ]);
+      setClaudeIntegration(latestStatus);
+      setNotice(
+        enabled
+          ? "Claude tracking connected. Its shared CLI and Desktop subscription quota is now available."
+          : "Claude Code tracking is off. Existing quota history remains local.",
+      );
+    } catch (reason) {
+      setError(getErrorMessage(reason));
+      getClaudeIntegrationStatus().then(setClaudeIntegration).catch(() => undefined);
+    } finally {
+      setClaudeBusy(false);
+    }
+  }
+
+  async function handleClaudeSync() {
+    setClaudeBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await syncClaudeQuota();
+      const [status] = await Promise.all([
+        getClaudeIntegrationStatus(),
+        loadState(localState?.selectedWindowId ?? null),
+      ]);
+      setClaudeIntegration(status);
+      setNotice("Claude subscription quota refreshed.");
+    } catch (reason) {
+      setError(getErrorMessage(reason));
+    } finally {
+      setClaudeBusy(false);
+    }
+  }
+
   async function handlePriorityOrder(
     windowId: string,
     orderedScopeIds: string[],
@@ -579,11 +804,26 @@ function App() {
   if (localState.sources.length === 0) {
     return (
       <>
-        <WelcomeScreen submitting={submitting} onSubmit={handleCreateSource} />
+        <WelcomeScreen
+          submitting={submitting}
+          onSubmit={handleCreateSource}
+          claudeIntegration={claudeIntegration}
+          claudeBusy={claudeBusy}
+          onClaudeIntegration={(enabled) => void handleClaudeIntegration(enabled)}
+        />
         {error && (
           <div className="error-toast" role="alert">
             <span>{error}</span>
             <button type="button" onClick={() => setError(null)} aria-label="Dismiss">
+              <Icon name="x" size={17} />
+            </button>
+          </div>
+        )}
+        {notice && (
+          <div className="error-toast success" role="status">
+            <Icon name="check" size={17} />
+            <span>{notice}</span>
+            <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss">
               <Icon name="x" size={17} />
             </button>
           </div>
@@ -624,6 +864,10 @@ function App() {
         codexSyncIssue={codexSyncIssue}
         protectionBusy={protectionBusy}
         onProtection={(enabled) => void handleProtection(enabled)}
+        claudeIntegration={claudeIntegration}
+        claudeBusy={claudeBusy}
+        onClaudeIntegration={(enabled) => void handleClaudeIntegration(enabled)}
+        onClaudeSync={() => void handleClaudeSync()}
         theme={theme}
         onThemeChange={setTheme}
         priorityBusy={priorityBusy}
@@ -661,7 +905,30 @@ function App() {
           title="Add a quota source"
           onClose={() => setModal(null)}
         >
+          <SourcePicker
+            claudeIntegration={claudeIntegration}
+            claudeBusy={claudeBusy}
+            onChooseForm={(mode) => setModal({ type: "source-form", mode })}
+            onClaude={() => {
+              if (claudeIntegration?.installed) {
+                setModal(null);
+                setView("settings");
+              } else {
+                void handleClaudeIntegration(true);
+              }
+            }}
+          />
+        </Modal>
+      )}
+
+      {modal?.type === "source-form" && (
+        <Modal
+          eyebrow={modal.mode === "codex" ? "Provider detection" : "Local allowance"}
+          title={modal.mode === "codex" ? "Connect Codex" : "Add a custom source"}
+          onClose={() => setModal(null)}
+        >
           <SourceSetupForm
+            initialMode={modal.mode}
             onSubmit={handleCreateSource}
             submitting={submitting}
             submitLabel="Add quota source"

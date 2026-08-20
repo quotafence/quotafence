@@ -83,6 +83,15 @@ export type CodexProtectionStatus = {
   issue: string | null;
 };
 
+export type ClaudeStatusLineStatus = {
+  installed: boolean;
+  configPath: string;
+  state: "disabled" | "configured" | "conflict" | "misconfigured";
+  issue: string | null;
+  lastObservedAt: number | null;
+  lastQuotaObservedAt: number | null;
+};
+
 export type CodexProtectionEvent = {
   canonicalPath: string;
   scopeId: string | null;

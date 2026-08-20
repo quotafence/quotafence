@@ -24,7 +24,7 @@ row ever observed for that provider.
 | Capability | Codex subscription | Claude Code subscription | AQM implication |
 | --- | --- | --- | --- |
 | Local executable probe | Implemented and live-tested | Documented through the `claude` CLI | Probe version and installation only; do not authenticate automatically |
-| Subscription quota windows | Implemented through App Server `account/rateLimits/read` | Documented in status-line input as optional 5-hour and 7-day windows after the first response for Claude.ai Pro/Max | Claude discovery is session-observed, not an always-available account query |
+| Subscription quota windows | Implemented through App Server `account/rateLimits/read` | Available from the shared Claude subscription usage endpoint using an explicitly authorized existing Claude login; CLI status-line input is a secondary passive source | Use one account checkpoint for CLI and Desktop Code while keeping OAuth tokens memory-only; Claude Chat and Cowork remain outside folder attribution |
 | Reset timestamp | Implemented | Documented with each optional status-line rate-limit window | Preserve each provider window independently |
 | Account checkpoint refresh | Implemented on demand | Not established as a standalone local API | Do not add a Claude Sync button until a supported refresh surface is proven |
 | Workspace identity | Explicit canonical folder binding | Hooks and status-line data expose current working-directory/session context | Reuse AQM folder bindings; never derive identity from prompt text |
@@ -61,7 +61,7 @@ or UI scraping.
 
 ## First Claude Code vertical slice
 
-The next implementation should remain read-only and reversible:
+The first observation slice is implemented as a read-only, reversible adapter:
 
 1. Probe the supported `claude` executable and version without starting an
    authenticated session.
@@ -73,8 +73,12 @@ The next implementation should remain read-only and reversible:
    binding.
 5. Display Claude as observed/degraded until a fresh supported window exists;
    do not offer manual percentage entry as if it were provider-confirmed.
-6. Add hook installation, admission, attribution, and managed launch only in
-   later PRs, each with install/status/uninstall and failure-path tests.
+6. Status-line install/status/uninstall preserves unrelated Claude settings and
+   refuses to overwrite a custom status line.
+
+Still deferred: lifecycle-hook admission, per-folder attribution, hard
+enforcement, managed launch, and provider routing. Each requires a separate
+capability-backed slice rather than inference from status-line quota alone.
 
 Done means AQM can show a real Claude subscription window with its origin and
 health, or clearly say why it cannot. It does not mean hard enforcement,
@@ -97,4 +101,3 @@ cross-provider routing, or production readiness.
 - [Claude Code hooks reference](https://code.claude.com/docs/en/hooks)
 - [Claude Code status-line reference](https://code.claude.com/docs/en/statusline)
 - [Claude Code CLI reference](https://docs.anthropic.com/en/docs/claude-code/cli-usage)
-

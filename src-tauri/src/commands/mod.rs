@@ -9,7 +9,7 @@ use std::{
 
 use tauri::{Manager, Runtime, State};
 
-use crate::providers::claude_code::{self, ClaudeCodeProbe};
+use crate::providers::claude_code::{self, ClaudeCodeProbe, ClaudeStatusLineStatus};
 use crate::providers::codex::{self, CodexDetection, CodexSyncResult, CodexSyncStatus};
 use crate::providers::codex_hooks::{self, CodexProtectionStatus};
 use crate::{
@@ -178,6 +178,38 @@ pub(crate) async fn probe_claude_code() -> ClaudeCodeProbe {
             version: None,
             message: Some("Claude Code detection stopped unexpectedly.".to_owned()),
         })
+}
+
+#[tauri::command]
+pub(crate) fn get_claude_integration_status() -> IpcResult<ClaudeStatusLineStatus> {
+    claude_code::integration_status().map_err(IpcError::integration_error)
+}
+
+#[tauri::command]
+pub(crate) fn install_claude_integration() -> IpcResult<ClaudeStatusLineStatus> {
+    let executable = std::env::current_exe().map_err(|error| {
+        IpcError::integration_error(format!(
+            "Could not resolve the Agent Quota Manager executable: {error}"
+        ))
+    })?;
+    claude_code::install_integration(&executable).map_err(IpcError::integration_error)
+}
+
+#[tauri::command]
+pub(crate) fn uninstall_claude_integration() -> IpcResult<ClaudeStatusLineStatus> {
+    claude_code::uninstall_integration().map_err(IpcError::integration_error)
+}
+
+#[tauri::command]
+pub(crate) async fn sync_claude_quota(state: State<'_, AppState>) -> IpcResult<()> {
+    let observation = tauri::async_runtime::spawn_blocking(claude_code::fetch_subscription_usage)
+        .await
+        .map_err(|_| IpcError::integration_error("Claude usage refresh stopped unexpectedly"))?
+        .map_err(IpcError::integration_error)?;
+    let observed_at = current_time_millis();
+    state.execute_integration(|service| {
+        claude_code::ingest_observation(service, &observation, observed_at)
+    })
 }
 
 #[tauri::command]
