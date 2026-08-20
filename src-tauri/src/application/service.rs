@@ -1499,15 +1499,36 @@ impl QuotaService {
             samples: forecast_samples,
         });
 
-        let quota_history = self
+        let history_since = command.at.saturating_sub(184 * 86_400_000);
+        let mut history_windows = self
             .database
-            .provider_quota_history(&window_id)?
+            .catalog()
+            .list_quota_windows()?
             .into_iter()
-            .map(|point| QuotaHistoryPoint {
-                observed_at: point.observed_at.value(),
-                remaining: window.capacity().value().saturating_sub(point.used),
+            .filter(|candidate| {
+                candidate.pool_id() == window.pool_id()
+                    && candidate.ends_at().value() >= history_since
             })
-            .collect();
+            .collect::<Vec<_>>();
+        history_windows.sort_by_key(|candidate| candidate.starts_at().value());
+        let mut quota_history = Vec::new();
+        for (index, history_window) in history_windows.into_iter().enumerate() {
+            let points = self.database.provider_quota_history(history_window.id())?;
+            if points.is_empty() {
+                continue;
+            }
+            if index > 0 {
+                quota_history.push(QuotaHistoryPoint {
+                    observed_at: history_window.starts_at().value(),
+                    remaining: history_window.capacity().value(),
+                });
+            }
+            quota_history.extend(points.into_iter().map(|point| QuotaHistoryPoint {
+                observed_at: point.observed_at.value(),
+                remaining: history_window.capacity().value().saturating_sub(point.used),
+            }));
+        }
+        quota_history.sort_by_key(|point| point.observed_at);
 
         Ok(QuotaDashboard {
             window: WindowSummary {
@@ -3303,6 +3324,42 @@ mod tests {
                 .map(|point| (point.observed_at, point.remaining))
                 .collect::<Vec<_>>(),
             vec![(1_900, 90), (2_500, 86), (3_000, 82)]
+        );
+    }
+
+    #[test]
+    fn dashboard_includes_provider_history_from_previous_pool_windows() {
+        let mut service = managed_workspace_service();
+        let rollover = service
+            .sync_provider_quota(SyncProviderQuota {
+                current_window_id: "week-1".to_owned(),
+                adapter: "codex_app_server".to_owned(),
+                remote_limit_id: "codex".to_owned(),
+                remote_window_kind: "secondary".to_owned(),
+                starts_at: 10_000,
+                ends_at: 20_000,
+                capacity: 100,
+                used: 4,
+                unit: "quota_points".to_owned(),
+                observed_at: 11_000,
+                desktop_observations: None,
+            })
+            .unwrap();
+
+        let dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: rollover.window_id,
+                at: 11_000,
+            })
+            .unwrap();
+
+        assert_eq!(
+            dashboard
+                .quota_history
+                .iter()
+                .map(|point| (point.observed_at, point.remaining))
+                .collect::<Vec<_>>(),
+            vec![(1_900, 90), (10_000, 100), (11_000, 96)]
         );
     }
 
