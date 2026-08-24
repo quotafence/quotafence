@@ -1153,7 +1153,12 @@ mod tests {
         assert_eq!(groups.len(), 1);
         assert_eq!(
             groups[0]["hooks"][0]["command"].as_str(),
-            Some("'/Applications/QuotaFence.app/Contents/MacOS/quotafence' hook codex")
+            Some(
+                hook_command(Path::new(
+                    "/Applications/QuotaFence.app/Contents/MacOS/quotafence"
+                ))
+                .as_str()
+            )
         );
     }
 
