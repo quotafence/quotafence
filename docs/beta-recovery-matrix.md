@@ -23,9 +23,9 @@ they do not replace the checklist.
 ## Live check — 12 August 2026
 
 - Full production build and test suite passed from merged `main`.
-- `quotafence context --json` resolved the current folder to its generated Codex source
+- `qfence here --json` resolved the current folder to its generated Codex source
   and an active allocation.
-- `quotafence admit codex --json` refreshed the real provider checkpoint and returned
+- `qfence admit codex --json` refreshed the real provider checkpoint and returned
   `allow` with exit code `0` after resolving the UI-generated provider ID.
 - Codex protection hooks were configured, and recent local receipts included
   successful `UserPromptSubmit` and `Stop` decisions.
@@ -64,18 +64,18 @@ automated coverage.
 
 - The full production build, Rust formatting, locked check, clippy, 139 library
   tests, and 12 CLI tests passed from merged `main` at `c16334d`.
-- `quotafence context --json` resolved the repository root to the expected active
+- `qfence here --json` resolved the repository root to the expected active
   allocation and returned an `allow` decision.
 - A direct official App Server `account/rateLimits/read` request returned the
   active Codex weekly window without reading credentials, prompts, responses,
   transcripts, or workspace contents.
-- `quotafence admit codex --json` refreshed that window, returned `synced`, preserved
+- `qfence admit codex --json` refreshed that window, returned `synced`, preserved
   the window identity, and allowed the mapped workspace with exit code `0`.
 - The allocation and provider remaining values moved together during current
   single-workspace activity. This is supporting evidence only; the isolated
   folder-attribution checklist row remains Pending until a timestamped test
   turn is compared before and after Sync.
-- `quotafence hooks status codex` confirmed that QuotaFence hook entries were configured.
+- `qfence hooks status codex` confirmed that QuotaFence hook entries were configured.
   Verified trust and enablement still require the Codex Desktop check.
 
 The first sandboxed refresh could not initialize Codex's local runtime because

@@ -6,7 +6,7 @@ services, Tauri command boundary, and a Codex discovery/synchronization adapter.
 Folder-based workspace mapping and a lightweight context CLI are implemented;
 provider-refreshing admission dry runs, passive Codex Desktop attribution, and
 an optional trusted lifecycle-hook admission gate are also implemented.
-`quotafence run codex` owns one admitted child process and reservation and reconciles
+`qfence codex` owns one admitted child process and reservation and reconciles
 terminal usage.
 
 ## Goals
@@ -145,11 +145,11 @@ workspace-file content crosses this adapter boundary.
 ### CLI wrapper
 
 The CLI resolves and explicitly binds the current folder through the shared
-application and storage layers. `quotafence admit codex` refreshes the relevant
+application and storage layers. `qfence admit codex` refreshes the relevant
 checkpoint and evaluates the effective admission boundary without launching a
-process. `quotafence run codex` reuses that application boundary, persists and reserves
+process. `qfence codex` reuses that application boundary, persists and reserves
 before spawn, supervises the child, and commits its terminal outcome with
-reservation release. `quotafence hook codex` is a lifecycle entrypoint used by
+reservation release. `qfence hook codex` is a lifecycle entrypoint used by
 installed Codex hooks; explicit allocation decisions may block a new prompt,
 while integration failures remain fail-open. It is not a managed launch. See
 [CLI](cli.md).

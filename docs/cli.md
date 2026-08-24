@@ -1,17 +1,90 @@
 # QuotaFence CLI
 
-The lightweight `quotafence` binary shares the Rust application, provider adapter, and
+The lightweight `qfence` command shares the Rust application, provider adapter, and
 SQLite storage layers with the desktop app. It implements workspace identity,
 binding, Codex admission dry runs, one managed Codex process, and an
 experimental Codex lifecycle-hook entrypoint.
+
+`qfence` is the preferred short command name. `quotafence` remains
+fully supported for scripts, hooks, and backwards compatibility.
+
+## Everyday commands
+
+```bash
+qfence
+qfence status
+qfence sync
+qfence ls
+qfence sources show claude
+qfence allocations
+qfence here
+qfence bind "Workspace name"
+qfence codex
+qfence claude --window 5h
+```
+
+Use `--json` with the read-only commands for machine-readable output. Agent
+arguments can follow the short agent command directly, for example
+`qfence codex --model gpt-5`. The explicit legacy form
+`quotafence run codex -- --model gpt-5` remains supported.
+`qfence sync` forces a fresh Claude Code and Codex checkpoint. `status` also
+refreshes before rendering, while `sources` reads the cached checkpoint and
+shows how many seconds, minutes, hours, or days ago it was synced.
+
+## Command reference
+
+| Command | Purpose | Refreshes providers? |
+| --- | --- | --- |
+| `qfence` or `qfence status` | Show the current quota table | yes |
+| `qfence sync` | Force a new Claude Code and Codex checkpoint, then show status | yes |
+| `qfence ls` | List cached sources (`list` and `sources` are aliases) | no |
+| `qfence sources show <provider>` | Filter cached sources by provider, pool, or window ID | no |
+| `qfence allocations` | List workspace allocations and decisions | no |
+| `qfence here` | Resolve the current folder (`context` is an alias) | no |
+| `qfence bind <workspace>` | Bind the folder to a workspace name or ID | no |
+| `qfence policy` | Show the effective workspace policy | no |
+| `qfence codex [args]` | Run a quota-managed Codex process | before and after |
+| `qfence claude [args]` | Run a quota-managed Claude process | before and after |
+| `qfence admit codex` | Evaluate admission without launching Codex | yes |
+| `qfence hooks ...` | Install, inspect, or remove lifecycle protection | no |
+
+The status table groups native windows by provider and keeps Claude's 5-hour
+and weekly allowances in separate columns. `SYNCED` reports checkpoint age as
+`just now`, seconds, minutes, hours, or days. If a status refresh fails,
+QuotaFence keeps the last checkpoint, displays its true age, and prints a
+warning below the table instead of presenting stale data as current.
+
+All read-only commands support `--json`. JSON never contains ANSI color or
+table characters. Human output uses color only for an interactive terminal;
+redirects, pipes, `NO_COLOR=1`, and `TERM=dumb` produce plain output.
+
+## Install from source
+
+The beta is currently source-distributed. Build only the CLI and install the
+short command into a user-local directory already present in `PATH`:
+
+```bash
+cargo build --release --locked --manifest-path src-tauri/Cargo.toml --bin quotafence
+mkdir -p ~/.local/bin
+cp src-tauri/target/release/quotafence ~/.local/bin/qfence
+chmod 755 ~/.local/bin/qfence
+qfence help
+```
+
+Rebuild and copy the binary again after updating the source checkout. A future
+release archive will contain both `qfence` and the backwards-compatible
+`quotafence` name.
 
 ## Development usage
 
 From any local folder:
 
 ```bash
-npm run quotafence -- context
+npm run qfence -- here
 ```
+
+During development, `npm run qfence -- status` provides the same short-command
+experience without installing a binary globally.
 
 The command canonicalizes the current directory without invoking Git. If that
 folder is nested under one or more bindings, the most specific ancestor
@@ -26,13 +99,13 @@ Workspace path: /code/example
 Workspace: unmapped
 Available workspace scopes:
   Example (workspace-...)
-Bind with: quotafence bind --scope <name-or-id>
+Bind with: qfence bind <workspace-name-or-id>
 ```
 
 Binding is always explicit:
 
 ```bash
-npm run quotafence -- bind --scope "Example"
+npm run qfence -- bind "Example"
 ```
 
 The scope reference may be an exact scope ID or an unambiguous,
@@ -43,7 +116,7 @@ Use `--path <directory>` to resolve a directory other than the current working
 directory, and `--json` for machine-readable output:
 
 ```bash
-npm run quotafence -- context --path /code/example --json
+npm run qfence -- here --path /code/example --json
 ```
 
 `--database <path>` and `QUOTAFENCE_DATABASE_PATH` exist for development and isolated
@@ -55,27 +128,27 @@ database as the desktop.
 Inspect the effective policy for the current bound folder:
 
 ```bash
-npm run quotafence -- policy show
+npm run qfence -- policy
 ```
 
 The standard default is warn at 80% and stop at 100% of the workspace
 allocation consumed. Persist a folder override with confirmation disabled:
 
 ```bash
-npm run quotafence -- policy set --warn 75 --confirm off --stop 100
+npm run qfence -- policy set --warn 75 --confirm off --stop 100
 ```
 
 Values accept up to two decimal places. The `--confirm` compatibility argument
 should remain `off`; confirmation values from older beta databases are ignored.
 
 ```bash
-npm run quotafence -- policy set --warn off --confirm 90 --stop 100
+npm run qfence -- policy set --warn off --confirm 90 --stop 100
 ```
 
 Return to application defaults with:
 
 ```bash
-npm run quotafence -- policy reset
+npm run qfence -- policy reset
 ```
 
 These commands accept `--path`, `--database`, and `--json`. Policy is stored on
@@ -86,7 +159,7 @@ the workspace, not the current provider window, so it survives quota rollover.
 After binding the workspace, refresh its Codex checkpoint and evaluate policy:
 
 ```bash
-npm run quotafence -- admit codex
+npm run qfence -- admit codex
 ```
 
 Admission considers both:
@@ -112,7 +185,7 @@ codes:
 Use `--yes` to explicitly accept only a confirmation-required outcome:
 
 ```bash
-npm run quotafence -- admit codex --yes
+npm run qfence -- admit codex --yes
 ```
 
 The assessment still reports `require_confirmation`, records that the override
@@ -122,7 +195,7 @@ Use `--json` for a stable object containing the assessment, checkpoint result,
 override state, proceed flag, and exit code:
 
 ```bash
-npm run quotafence -- admit codex --json
+npm run qfence -- admit codex --json
 ```
 
 The command starts the official local Codex App Server only long enough to read
@@ -134,7 +207,7 @@ capacity, or read or modify workspace files.
 Run Codex through the allocation bound to the current folder:
 
 ```bash
-npm run quotafence -- run codex
+npm run qfence -- codex
 ```
 
 The wrapper:
@@ -155,14 +228,14 @@ The wrapper:
 Confirmation-required launches need an explicit override:
 
 ```bash
-npm run quotafence -- run codex --yes
+npm run qfence -- codex --yes
 ```
 
-`--yes` never overrides a stop decision. Pass Codex arguments after a separator
-so they cannot be confused with QuotaFence options:
+`--yes` never overrides a stop decision. With the short command, pass Codex
+arguments directly:
 
 ```bash
-npm run quotafence -- run codex -- --model gpt-5
+npm run qfence -- codex --model gpt-5
 ```
 
 The child is spawned with an argument vector, never an interpolated shell
@@ -171,7 +244,7 @@ installation locations. It stores folder and process metadata, but does not
 read prompts, source files, transcripts, or provider credentials.
 
 An accepted confirmation is written to the local audit table atomically with
-the managed session and reservation. `quotafence admit codex --yes` is only a dry-run
+the managed session and reservation. `qfence admit codex --yes` is only a dry-run
 preview and deliberately does not create that audit record.
 
 The baseline is persisted before spawn. A same-window delta is attributed to
@@ -189,7 +262,7 @@ return without recording a second turn observation.
 Install user-level lifecycle hooks with the development CLI:
 
 ```bash
-npm run quotafence -- hooks install codex
+npm run qfence -- hooks install codex
 ```
 
 The installer merges QuotaFence handlers into `~/.codex/hooks.json`, preserves
@@ -214,7 +287,7 @@ can still run without QuotaFence protection.
 
 The installed lifecycle is:
 
-1. `UserPromptSubmit` invokes `quotafence hook codex` in the task's working folder.
+1. `UserPromptSubmit` invokes `qfence hook codex` in the task's working folder.
 2. When at least one Codex allocation exists, QuotaFence blocks a prompt from an
    unallocated folder. For an allocated folder it refreshes quota and applies
    that workspace's warn, confirmation, and stop policy. At confirmation, the
@@ -233,8 +306,8 @@ These event names and stdin fields follow the official
 Check or remove the integration:
 
 ```bash
-npm run quotafence -- hooks status codex
-npm run quotafence -- hooks uninstall codex
+npm run qfence -- hooks status codex
+npm run qfence -- hooks uninstall codex
 ```
 
 `status` verifies the QuotaFence definitions in the JSON file; Codex remains the source
@@ -274,14 +347,14 @@ and contention state. For visibility, each admitted or blocked
 `UserPromptSubmit` also stores its folder, optional workspace, outcome, reason,
 and timestamp. It never stores prompt text.
 
-Installation from the desktop points the hook at the installed Agent Quota
-Manager executable, which has a non-GUI `hook codex` entrypoint. Development
-CLI installation points at the current compiled `quotafence` binary; removing that
+Installation from the desktop points the hook at the installed QuotaFence
+executable, which has a non-GUI `hook codex` entrypoint. Development
+CLI installation points at the current compiled `qfence` binary; removing that
 build directory requires reinstalling the hook.
 
 ## Current boundary
 
-`quotafence context`, `quotafence admit codex`, `quotafence run codex`, and the experimental hook
+`qfence here`, `qfence admit codex`, `qfence codex`, and the experimental hook
 entrypoint now cover:
 
 - canonical current folder and nearest bound workspace;
@@ -308,8 +381,8 @@ outside hard enforcement. Hook attribution remains experimental and `inferred`.
 Claude's managed beta uses the same folder binding and policy boundary:
 
 ```bash
-quotafence run claude --path /path/to/project
-quotafence run claude --window 5h -- --model sonnet
+qfence claude --path /path/to/project
+qfence claude --window 5h --model sonnet
 ```
 
 The default managed Claude budget is the weekly allocation. `--window 5h`
