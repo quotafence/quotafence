@@ -6,11 +6,11 @@ Local-first budget guard and routing layer for AI coding agents.
 > QuotaFence `v0.1.0-beta.1` is an early, source-distributed beta for
 > macOS. It is not yet a stable release. Codex quota
 > discovery, checkpoint refresh, reset rollover, and manual allocations work
-> locally. Folder-based workspace mapping plus `quotafence context` and the provider-refreshing
-> `quotafence admit codex` dry run are implemented. `quotafence run codex` now admits,
+> locally. Folder-based workspace mapping plus `qfence here` and the provider-refreshing
+> `qfence admit codex` dry run are implemented. `qfence codex` now admits,
 > reserves, launches, supervises, reconciles, and recovers one managed Codex
 > session. Claude's shared 5-hour and weekly subscription windows, reversible
-> folder lifecycle hooks, and `quotafence run claude` are available as a beta adapter.
+> folder lifecycle hooks, and `qfence claude` are available as a beta adapter.
 > Desktop refresh can also read Codex's local thread usage metadata and infer
 > a workspace's aggregate quota change without requiring the CLI wrapper or
 > parsing prompts and transcripts. Aggregate percentage checkpoints still
@@ -38,9 +38,9 @@ QuotaFence is a local control layer between a user and installed AI coding agent
 lightweight daily workflow starts with:
 
 ```bash
-quotafence run codex
+qfence codex
 # or, for the Claude weekly allocation
-quotafence run claude
+qfence claude
 ```
 
 That workflow now:
@@ -96,7 +96,7 @@ deadline. Those dimensions are not assumed to be interchangeable.
 | --- | --- |
 | Provider | Codex |
 | Context | Map any local folder to a workspace allocation |
-| Workflow | `quotafence run codex` or an equivalent lightweight managed launch |
+| Workflow | `qfence codex` or an equivalent lightweight managed launch |
 | Sessions | Reserve, start, observe, finish, and recover one managed session |
 | Enforcement | Refuse managed launches or trusted Desktop prompts at allocation boundaries |
 | Accounting | Automatic session attribution plus provider reconciliation |
@@ -138,7 +138,7 @@ universal builds, checksums, signing state, and draft prerelease review.
 ```mermaid
 flowchart LR
   UI["Desktop UI"] --> APP["Application use cases"]
-  CLI["quotafence CLI wrapper"] --> APP
+  CLI["qfence CLI wrapper"] --> APP
   APP --> CORE["Budget core and policy engine"]
   CORE --> STORE["Local ledger and configuration"]
   APP --> ADAPTER["Capability-aware adapter"]
@@ -201,6 +201,16 @@ npm install
 npm run tauri -- dev
 ```
 
+The CLI command is available as either `qfence` (recommended) or `quotafence`.
+Common terminal entry points are `qfence`, `qfence sync`, `qfence ls`,
+`qfence allocations`, `qfence codex`, and `qfence claude --window 5h`.
+
+For source development, run the same interface without installing it globally:
+
+```bash
+npm run qfence -- status
+```
+
 ### Validate a change
 
 ```bash
@@ -216,32 +226,32 @@ Choose a folder and create a workspace allocation in the desktop app, or bind
 an existing top-level allocation from the CLI:
 
 ```bash
-npm run quotafence -- context
-npm run quotafence -- bind --scope "Workspace allocation name"
+npm run qfence -- here
+npm run qfence -- bind "Workspace allocation name"
 ```
 
 Preview the current policy boundary without launching Codex:
 
 ```bash
-npm run quotafence -- admit codex
+npm run qfence -- admit codex
 ```
 
 Inspect or customize the bound folder's managed-session policy:
 
 ```bash
-npm run quotafence -- policy show
-npm run quotafence -- policy set --warn 75 --confirm 90 --stop 100
-npm run quotafence -- policy reset
+npm run qfence -- policy
+npm run qfence -- policy set --warn 75 --confirm 90 --stop 100
+npm run qfence -- policy reset
 ```
 
 Launch a managed Codex session from an allocated folder:
 
 ```bash
-npm run quotafence -- run codex
+npm run qfence -- codex
 ```
 
-Codex arguments must follow `--`, for example
-`npm run quotafence -- run codex -- --model gpt-5`. The wrapper reserves the
+Codex arguments follow the short command directly, for example
+`npm run qfence -- codex --model gpt-5`. The wrapper reserves the
 workspace's current spendable capacity, refuses a stop boundary, forwards
 termination signals, preserves the Codex exit code, and releases its
 reservation on completion, failure, or interruption.
@@ -250,7 +260,7 @@ Enable Codex Desktop workspace protection from Settings, or install it
 with the development CLI:
 
 ```bash
-npm run quotafence -- hooks install codex
+npm run qfence -- hooks install codex
 ```
 
 Codex requires non-managed hooks to be reviewed and trusted. See the
@@ -301,8 +311,8 @@ Licensed under the [Apache License 2.0](LICENSE).
 
 ## Trademarks
 
-Codex, OpenAI, and their associated marks are trademarks of OpenAI. Agent
-Quota Manager is an independent open-source project and is not affiliated with
+Codex, OpenAI, and their associated marks are trademarks of OpenAI. QuotaFence
+is an independent open-source project and is not affiliated with
 or endorsed by OpenAI. Provider marks are displayed only to identify the
 corresponding integration and remain subject to the
 [OpenAI brand guidelines](https://openai.com/brand/).

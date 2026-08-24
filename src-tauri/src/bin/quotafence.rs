@@ -1,5 +1,6 @@
 use std::{
-    env, fs, io,
+    env, fs,
+    io::{self, IsTerminal},
     path::PathBuf,
     process::{Child, Command, ExitCode, ExitStatus, Stdio},
     sync::{
@@ -13,10 +14,10 @@ use std::{
 use quotafence_lib::{
     application::{
         AdmissionAssessment, BindWorkspace, EvaluateWorkspaceAdmission, FinishManagedSession,
-        GetWorkspaceContext, GetWorkspacePolicy, ManagedSessionOutcome,
-        ManagedSessionReconciliation, ManagedSessionReconciliationStatus,
-        MarkManagedSessionRunning, PrepareManagedSession, QuotaService, ResetWorkspacePolicy,
-        SetWorkspacePolicy, WorkspaceContext, WorkspacePolicySummary,
+        GetLocalState, GetQuotaDashboard, GetWorkspaceContext, GetWorkspacePolicy, LocalState,
+        ManagedSessionOutcome, ManagedSessionReconciliation, ManagedSessionReconciliationStatus,
+        MarkManagedSessionRunning, PrepareManagedSession, QuotaService, QuotaSourceSummary,
+        ResetWorkspacePolicy, SetWorkspacePolicy, WorkspaceContext, WorkspacePolicySummary,
     },
     domain::EnforcementDecision,
     paths,
@@ -41,6 +42,13 @@ static SIGNAL_HANDLER_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug)]
 enum CliCommand {
+    Status(CommonOptions),
+    Sync(CommonOptions),
+    Sources {
+        options: CommonOptions,
+        query: Option<String>,
+    },
+    Allocations(CommonOptions),
     Context(CommonOptions),
     Bind {
         options: CommonOptions,
@@ -128,6 +136,73 @@ fn run(args: Vec<String>) -> Result<u8, String> {
     match parse_args(args)? {
         CliCommand::Help => {
             print_help();
+            Ok(EXIT_ALLOW)
+        }
+        CliCommand::Status(options) => {
+            let mut service = open_service(&options)?;
+            let now = now_millis()?;
+            let sync_warnings = refresh_status_sources(&mut service, now)?;
+            let state = service
+                .local_state(GetLocalState {
+                    selected_window_id: None,
+                    at: now,
+                })
+                .map_err(|error| error.to_string())?;
+            print_status(&state, &sync_warnings, now, options.json)?;
+            Ok(EXIT_ALLOW)
+        }
+        CliCommand::Sync(options) => {
+            let mut service = open_service(&options)?;
+            let now = now_millis()?;
+            let sync_warnings = refresh_status_sources(&mut service, now)?;
+            let state = service
+                .local_state(GetLocalState {
+                    selected_window_id: None,
+                    at: now,
+                })
+                .map_err(|error| error.to_string())?;
+            print_status(&state, &sync_warnings, now, options.json)?;
+            Ok(EXIT_ALLOW)
+        }
+        CliCommand::Sources { options, query } => {
+            let mut service = open_service(&options)?;
+            let mut state = service
+                .local_state(GetLocalState {
+                    selected_window_id: None,
+                    at: now_millis()?,
+                })
+                .map_err(|error| error.to_string())?;
+            if let Some(query) = query {
+                let needle = query.to_ascii_lowercase();
+                state.sources.retain(|source| {
+                    source.provider_id.to_ascii_lowercase().contains(&needle)
+                        || source
+                            .provider_display_name
+                            .to_ascii_lowercase()
+                            .contains(&needle)
+                        || source
+                            .pool_display_name
+                            .to_ascii_lowercase()
+                            .contains(&needle)
+                        || source.window_id.to_ascii_lowercase() == needle
+                });
+                if state.sources.is_empty() {
+                    return Err(format!("no quota source matches {query:?}"));
+                }
+            }
+            print_sources(&state, now_millis()?, options.json)?;
+            Ok(EXIT_ALLOW)
+        }
+        CliCommand::Allocations(options) => {
+            let mut service = open_service(&options)?;
+            let now = now_millis()?;
+            let state = service
+                .local_state(GetLocalState {
+                    selected_window_id: None,
+                    at: now,
+                })
+                .map_err(|error| error.to_string())?;
+            print_allocations(&mut service, &state, now, options.json)?;
             Ok(EXIT_ALLOW)
         }
         CliCommand::Context(options) => {
@@ -957,9 +1032,20 @@ fn database_path(options: &CommonOptions) -> Result<PathBuf, String> {
     paths::default_database_path().map_err(|error| error.to_string())
 }
 
-fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
+fn parse_args(mut args: Vec<String>) -> Result<CliCommand, String> {
+    if args.is_empty() {
+        return Ok(CliCommand::Status(CommonOptions::default()));
+    }
+    if let Some(command) = args.first_mut() {
+        *command = match command.as_str() {
+            "ls" | "list" | "source" => "sources".to_owned(),
+            "alloc" => "allocations".to_owned(),
+            "here" => "context".to_owned(),
+            _ => command.clone(),
+        };
+    }
     let Some(command) = args.first().map(String::as_str) else {
-        return Ok(CliCommand::Help);
+        unreachable!("empty arguments return status");
     };
     if matches!(command, "-h" | "--help" | "help") {
         return Ok(CliCommand::Help);
@@ -971,9 +1057,22 @@ fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
         return parse_hooks_command(&args);
     }
     if command == "run" {
-        return parse_run_command(&args);
+        return parse_run_command(&args, false);
+    }
+    if matches!(command, "codex" | "claude") {
+        let mut run_args = vec!["run".to_owned()];
+        run_args.extend(args);
+        return parse_run_command(&run_args, true);
+    }
+    if matches!(command, "status" | "sync" | "sources" | "allocations") {
+        return parse_read_command(&args);
     }
     if command == "policy" {
+        if args.len() == 1 {
+            return Ok(CliCommand::Policy {
+                action: PolicyAction::Show(CommonOptions::default()),
+            });
+        }
         return parse_policy_command(&args);
     }
     if !matches!(command, "context" | "bind" | "admit") {
@@ -998,6 +1097,12 @@ fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
         None
     };
     let mut index = if command == "admit" { 2 } else { 1 };
+    if command == "bind" {
+        if let Some(reference) = args.get(1).filter(|value| !value.starts_with('-')) {
+            scope_reference = Some(reference.clone());
+            index = 2;
+        }
+    }
     while index < args.len() {
         match args[index].as_str() {
             "--path" => {
@@ -1026,7 +1131,7 @@ fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
         "bind" => Ok(CliCommand::Bind {
             options,
             scope_reference: scope_reference
-                .ok_or_else(|| "`quotafence bind` requires `--scope <name-or-id>`".to_owned())?,
+                .ok_or_else(|| "usage: qfence bind <workspace-name-or-id>".to_owned())?,
         }),
         "admit" => Ok(CliCommand::Admit {
             options,
@@ -1037,7 +1142,59 @@ fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
     }
 }
 
-fn parse_run_command(args: &[String]) -> Result<CliCommand, String> {
+fn parse_read_command(args: &[String]) -> Result<CliCommand, String> {
+    let command = args[0].as_str();
+    let mut options = CommonOptions::default();
+    let mut query = None;
+    let mut index = 1;
+
+    if command == "sources" {
+        match args.get(index).map(String::as_str) {
+            Some("list") => index += 1,
+            Some("show") => {
+                index += 1;
+                query = Some(
+                    args.get(index)
+                        .filter(|value| !value.starts_with('-'))
+                        .cloned()
+                        .ok_or_else(|| "`quotafence sources show` requires a source".to_owned())?,
+                );
+                index += 1;
+            }
+            Some(value) if !value.starts_with('-') => {
+                return Err(format!(
+                    "unknown sources action {value:?}; use list or show <source>"
+                ));
+            }
+            _ => {}
+        }
+    } else if command == "allocations" && args.get(index).map(String::as_str) == Some("list") {
+        index += 1;
+    }
+
+    while index < args.len() {
+        match args[index].as_str() {
+            "--database" => {
+                index += 1;
+                options.database = Some(PathBuf::from(required_value(args, index, "--database")?));
+            }
+            "--json" => options.json = true,
+            "-h" | "--help" => return Ok(CliCommand::Help),
+            option => return Err(format!("unknown {command} option {option:?}")),
+        }
+        index += 1;
+    }
+
+    match command {
+        "status" => Ok(CliCommand::Status(options)),
+        "sync" => Ok(CliCommand::Sync(options)),
+        "sources" => Ok(CliCommand::Sources { options, query }),
+        "allocations" => Ok(CliCommand::Allocations(options)),
+        _ => unreachable!("read command was validated"),
+    }
+}
+
+fn parse_run_command(args: &[String], implicit_agent_args: bool) -> Result<CliCommand, String> {
     let agent = match args.get(1).map(String::as_str) {
         Some("codex") => ManagedAgent::Codex,
         Some("claude") => ManagedAgent::Claude,
@@ -1079,9 +1236,18 @@ fn parse_run_command(args: &[String]) -> Result<CliCommand, String> {
             }
             "-h" | "--help" => return Ok(CliCommand::Help),
             option => {
+                if implicit_agent_args {
+                    return Ok(CliCommand::RunAgent {
+                        agent,
+                        claude_window,
+                        options,
+                        assume_yes,
+                        agent_args: args[index..].to_vec(),
+                    });
+                }
                 return Err(format!(
                     "unknown quotafence run option {option:?}; place agent arguments after --"
-                ))
+                ));
             }
         }
         index += 1;
@@ -1309,6 +1475,490 @@ fn print_context(context: &WorkspaceContext, json: bool) -> Result<(), String> {
     Ok(())
 }
 
+fn refresh_status_sources(service: &mut QuotaService, at: i64) -> Result<Vec<String>, String> {
+    let state = service
+        .local_state(GetLocalState {
+            selected_window_id: None,
+            at,
+        })
+        .map_err(|error| error.to_string())?;
+    let mut warnings = Vec::new();
+
+    if state.sources.iter().any(|source| {
+        source
+            .provider_display_name
+            .eq_ignore_ascii_case("Claude Code")
+    }) {
+        if let Err(error) = claude_code::fetch_subscription_usage()
+            .and_then(|observation| claude_code::ingest_observation(service, &observation, at))
+        {
+            warnings.push(format!("Claude Code refresh failed: {error}"));
+        }
+    }
+
+    if let Some(source) = state.sources.iter().find(|source| {
+        source.provider_display_name.eq_ignore_ascii_case("Codex")
+            && source.provider_managed
+            && source.unit == "percent"
+    }) {
+        let checkpoint =
+            codex::sync_detection(service, source.window_id.clone(), at, codex::detect());
+        if checkpoint.status != CodexSyncStatus::Synced {
+            warnings.push(format!(
+                "Codex refresh failed: {}",
+                checkpoint
+                    .message
+                    .as_deref()
+                    .unwrap_or("provider temporarily unavailable")
+            ));
+        }
+    }
+
+    Ok(warnings)
+}
+
+fn print_status(
+    state: &LocalState,
+    sync_warnings: &[String],
+    at: i64,
+    json: bool,
+) -> Result<(), String> {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(state)
+                .map_err(|error| format!("cannot serialize status: {error}"))?
+        );
+        return Ok(());
+    }
+
+    let provider_count = state
+        .sources
+        .iter()
+        .map(|source| source.provider_display_name.to_ascii_lowercase())
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    let workspace_count = state
+        .scopes
+        .iter()
+        .filter(|scope| scope.workspace_path.is_some())
+        .count();
+    println!("{}", paint("  QUOTAFENCE", "1;38;5;81"));
+    println!(
+        "  {}  {} providers  {}  {} windows  {}  {} workspaces",
+        paint("●", "38;5;84"),
+        provider_count,
+        paint("◆", "38;5;81"),
+        state.sources.len(),
+        paint("⌂", "38;5;220"),
+        workspace_count
+    );
+    println!();
+    print_sources(state, at, false)?;
+    for warning in sync_warnings {
+        println!("  {} {}", paint("▲", "38;5;220"), warning);
+    }
+    Ok(())
+}
+
+struct CliAllowanceCell {
+    label: String,
+    percent: Option<u64>,
+}
+
+struct CliAllowanceRow {
+    five_hour: CliAllowanceCell,
+    weekly: CliAllowanceCell,
+}
+
+fn print_sources(state: &LocalState, at: i64, json: bool) -> Result<(), String> {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&state.sources)
+                .map_err(|error| format!("cannot serialize sources: {error}"))?
+        );
+        return Ok(());
+    }
+    if state.sources.is_empty() {
+        println!("No quota sources configured. Add one in the QuotaFence app.");
+        return Ok(());
+    }
+
+    let mut groups: Vec<(&str, Vec<&QuotaSourceSummary>)> = Vec::new();
+    for source in &state.sources {
+        if let Some((_, sources)) = groups.iter_mut().find(|(provider_name, _)| {
+            provider_name.eq_ignore_ascii_case(&source.provider_display_name)
+        }) {
+            sources.push(source);
+        } else {
+            groups.push((&source.provider_display_name, vec![source]));
+        }
+    }
+    let provider_width = groups
+        .iter()
+        .map(|(_, sources)| sources[0].provider_display_name.chars().count())
+        .max()
+        .unwrap_or(8)
+        .max(8);
+    let allowance_rows: Vec<CliAllowanceRow> = groups
+        .iter()
+        .map(|(_, sources)| {
+            let five_hour = sources
+                .iter()
+                .copied()
+                .find(|source| is_five_hour_window(source));
+            let weekly = sources
+                .iter()
+                .copied()
+                .find(|source| is_weekly_window(source))
+                .or_else(|| {
+                    sources
+                        .iter()
+                        .copied()
+                        .find(|source| !is_five_hour_window(source))
+                });
+            CliAllowanceRow {
+                five_hour: allowance_cell(five_hour),
+                weekly: allowance_cell(weekly),
+            }
+        })
+        .collect();
+    let five_hour_width = allowance_rows
+        .iter()
+        .map(|row| row.five_hour.label.chars().count())
+        .max()
+        .unwrap_or(6)
+        .max(6);
+    let weekly_width = allowance_rows
+        .iter()
+        .map(|row| row.weekly.label.chars().count())
+        .max()
+        .unwrap_or(6)
+        .max(6);
+    let sync_width = 12;
+    println!(
+        "{}",
+        paint(
+            &table_rule(
+                '╭',
+                '┬',
+                '╮',
+                &[provider_width, five_hour_width, weekly_width, sync_width]
+            ),
+            "2"
+        )
+    );
+    println!(
+        "{} {} {} {} {} {} {} {} {}",
+        paint("│", "2"),
+        paint(&format!("{:<provider_width$}", "PROVIDER"), "2"),
+        paint("│", "2"),
+        paint(&format!("{:<five_hour_width$}", "5-HOUR"), "2"),
+        paint("│", "2"),
+        paint(&format!("{:<weekly_width$}", "WEEKLY"), "2"),
+        paint("│", "2"),
+        paint(&format!("{:<sync_width$}", "SYNCED"), "2"),
+        paint("│", "2")
+    );
+    println!(
+        "{}",
+        paint(
+            &table_rule(
+                '├',
+                '┼',
+                '┤',
+                &[provider_width, five_hour_width, weekly_width, sync_width]
+            ),
+            "2"
+        )
+    );
+    for ((_, sources), allowances) in groups.iter().zip(allowance_rows) {
+        let five_hour_plain_width = allowances.five_hour.label.chars().count();
+        let weekly_plain_width = allowances.weekly.label.chars().count();
+        let five_hour_display =
+            color_quota(&allowances.five_hour.label, allowances.five_hour.percent);
+        let weekly_display = color_quota(&allowances.weekly.label, allowances.weekly.percent);
+        let (sync, synced_at) = grouped_sync_status(sources);
+        let sync_label = if sync == "synced" || sync == "healthy" {
+            paint(&format!("● {}", relative_age(synced_at, at)), "38;5;84")
+        } else if sync == "never" {
+            paint("○ never", "2")
+        } else {
+            paint(&format!("● {sync}"), "38;5;220")
+        };
+        println!(
+            "{} {} {} {}{} {} {}{} {} {} {} {}",
+            paint("│", "2"),
+            paint(
+                &format!("{:<provider_width$}", sources[0].provider_display_name),
+                "1"
+            ),
+            paint("│", "2"),
+            five_hour_display,
+            " ".repeat(five_hour_width - five_hour_plain_width),
+            paint("│", "2"),
+            weekly_display,
+            " ".repeat(weekly_width - weekly_plain_width),
+            paint("│", "2"),
+            sync_label,
+            " ".repeat(sync_width.saturating_sub(visible_sync_width(&sync, synced_at, at))),
+            paint("│", "2")
+        );
+    }
+    println!(
+        "{}",
+        paint(
+            &table_rule(
+                '╰',
+                '┴',
+                '╯',
+                &[provider_width, five_hour_width, weekly_width, sync_width]
+            ),
+            "2"
+        )
+    );
+    Ok(())
+}
+
+fn allowance_cell(source: Option<&QuotaSourceSummary>) -> CliAllowanceCell {
+    let Some(source) = source else {
+        return CliAllowanceCell {
+            label: "—".to_owned(),
+            percent: None,
+        };
+    };
+    let percent = source
+        .provider_used
+        .map(|used| source.capacity.saturating_sub(used) * 100 / source.capacity.max(1));
+    let meter = percent
+        .map(|value| format!("{} {value:>3}%", quota_bar(value)))
+        .unwrap_or_else(|| format!("{}   —", quota_bar_empty()));
+    let reset = chrono::DateTime::from_timestamp_millis(source.ends_at)
+        .map(|date| date.format("%d %b %H:%M").to_string())
+        .unwrap_or_else(|| source.ends_at.to_string());
+    CliAllowanceCell {
+        label: format!("{meter} ↻ {reset}"),
+        percent,
+    }
+}
+
+fn is_five_hour_window(source: &QuotaSourceSummary) -> bool {
+    let name = source.pool_display_name.to_ascii_lowercase();
+    name.contains("5-hour") || name.contains("5h")
+}
+
+fn is_weekly_window(source: &QuotaSourceSummary) -> bool {
+    source
+        .pool_display_name
+        .to_ascii_lowercase()
+        .contains("weekly")
+}
+
+fn grouped_sync_status(sources: &[&QuotaSourceSummary]) -> (String, Option<i64>) {
+    let statuses: Vec<&str> = sources
+        .iter()
+        .map(|source| {
+            source
+                .sync_health
+                .as_ref()
+                .map(|health| health.status.as_str())
+                .unwrap_or(if source.last_synced_at.is_some() {
+                    "synced"
+                } else {
+                    "never"
+                })
+        })
+        .collect();
+    for status in statuses {
+        if status != "synced" && status != "healthy" {
+            return (status.to_owned(), oldest_sync_at(sources));
+        }
+    }
+    ("synced".to_owned(), oldest_sync_at(sources))
+}
+
+fn oldest_sync_at(sources: &[&QuotaSourceSummary]) -> Option<i64> {
+    sources
+        .iter()
+        .filter_map(|source| source.last_synced_at)
+        .min()
+}
+
+fn relative_age(synced_at: Option<i64>, at: i64) -> String {
+    let Some(synced_at) = synced_at else {
+        return "never".to_owned();
+    };
+    let seconds = at.saturating_sub(synced_at).max(0) / 1_000;
+    match seconds {
+        0..=4 => "just now".to_owned(),
+        5..=59 => format!("{seconds}s ago"),
+        60..=3_599 => format!("{}m ago", seconds / 60),
+        3_600..=86_399 => format!("{}h ago", seconds / 3_600),
+        _ => format!("{}d ago", seconds / 86_400),
+    }
+}
+
+fn visible_sync_width(status: &str, synced_at: Option<i64>, at: i64) -> usize {
+    if status == "synced" || status == "healthy" {
+        // The status circles render as two terminal cells in common macOS
+        // monospace fonts, plus one separating space before the label.
+        relative_age(synced_at, at).chars().count() + 3
+    } else if status == "never" {
+        8
+    } else {
+        status.chars().count() + 3
+    }
+}
+
+fn table_rule(left: char, middle: char, right: char, widths: &[usize]) -> String {
+    let sections = widths
+        .iter()
+        .map(|width| "─".repeat(width + 2))
+        .collect::<Vec<_>>()
+        .join(&middle.to_string());
+    format!("{left}{sections}{right}")
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CliAllocation {
+    provider: String,
+    window: String,
+    scope_id: String,
+    scope: String,
+    unit: String,
+    limit: u64,
+    remaining: i64,
+    decision: EnforcementDecision,
+}
+
+fn print_allocations(
+    service: &mut QuotaService,
+    state: &LocalState,
+    at: i64,
+    json: bool,
+) -> Result<(), String> {
+    let mut rows = Vec::new();
+    for source in &state.sources {
+        let dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: source.window_id.clone(),
+                at,
+            })
+            .map_err(|error| error.to_string())?;
+        rows.extend(
+            dashboard
+                .allocations
+                .iter()
+                .map(|allocation| CliAllocation {
+                    provider: source.provider_display_name.clone(),
+                    window: source.pool_display_name.clone(),
+                    scope_id: allocation.scope_id.clone(),
+                    scope: allocation.display_name.clone(),
+                    unit: allocation.unit.clone(),
+                    limit: allocation.limit,
+                    remaining: allocation.remaining,
+                    decision: allocation.decision,
+                }),
+        );
+    }
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&rows)
+                .map_err(|error| format!("cannot serialize allocations: {error}"))?
+        );
+    } else if rows.is_empty() {
+        println!("No allocations configured. Create one in the QuotaFence app.");
+    } else {
+        let provider_width = rows
+            .iter()
+            .map(|row| row.provider.chars().count())
+            .max()
+            .unwrap_or(8)
+            .max(8);
+        let window_width = rows
+            .iter()
+            .map(|row| row.window.chars().count())
+            .max()
+            .unwrap_or(6)
+            .max(6);
+        let scope_width = rows
+            .iter()
+            .map(|row| row.scope.chars().count())
+            .max()
+            .unwrap_or(5)
+            .max(5);
+        println!(
+            "  {}  {}  {}  {}  {}",
+            paint(&format!("{:<provider_width$}", "PROVIDER"), "2"),
+            paint(&format!("{:<window_width$}", "WINDOW"), "2"),
+            paint(&format!("{:<scope_width$}", "SCOPE"), "2"),
+            paint(&format!("{:<18}", "REMAINING"), "2"),
+            paint("DECISION", "2")
+        );
+        for row in rows {
+            let remaining = format!("{}/{} {}", row.remaining, row.limit, row.unit);
+            let (icon, color) = decision_style(row.decision);
+            println!(
+                "  {:<provider_width$}  {:<window_width$}  {:<scope_width$}  {:<18}  {}",
+                row.provider,
+                row.window,
+                row.scope,
+                remaining,
+                paint(
+                    &format!("{icon} {}", decision_label(row.decision, false)),
+                    color
+                )
+            );
+        }
+    }
+    Ok(())
+}
+
+fn color_enabled() -> bool {
+    env::var_os("NO_COLOR").is_none()
+        && (io::stdout().is_terminal() || env::var_os("CLICOLOR_FORCE").is_some())
+        && env::var("TERM").map_or(true, |term| term != "dumb")
+}
+
+fn paint(value: &str, ansi: &str) -> String {
+    if color_enabled() {
+        format!("\x1b[{ansi}m{value}\x1b[0m")
+    } else {
+        value.to_owned()
+    }
+}
+
+fn quota_bar(percent: u64) -> String {
+    let filled = (percent.min(100) * 8).div_ceil(100) as usize;
+    format!("{}{}", "━".repeat(filled), "─".repeat(8 - filled))
+}
+
+fn quota_bar_empty() -> String {
+    "────────".to_owned()
+}
+
+fn color_quota(value: &str, percent: Option<u64>) -> String {
+    match percent {
+        Some(0..=15) => paint(value, "38;5;203"),
+        Some(16..=35) => paint(value, "38;5;220"),
+        Some(_) => paint(value, "38;5;84"),
+        None => paint(value, "2"),
+    }
+}
+
+fn decision_style(decision: EnforcementDecision) -> (&'static str, &'static str) {
+    match decision {
+        EnforcementDecision::Allow => ("●", "38;5;84"),
+        EnforcementDecision::Warn => ("▲", "38;5;220"),
+        EnforcementDecision::RequireConfirmation => ("◆", "38;5;214"),
+        EnforcementDecision::Stop => ("■", "38;5;203"),
+    }
+}
+
 fn print_policy(summary: &WorkspacePolicySummary, json: bool) -> Result<(), String> {
     if json {
         println!(
@@ -1453,23 +2103,35 @@ fn print_help() {
     println!(
         "QuotaFence CLI
 
-Usage:
-  quotafence context [--path <directory>] [--json]
-  quotafence bind --scope <name-or-id> [--path <directory>] [--json]
-  quotafence admit codex [--path <directory>] [--yes] [--json]
-  quotafence run codex [--path <directory>] [--yes] -- [codex args]
-  quotafence run claude [--path <directory>] [--window <weekly|5h>] [--yes] -- [claude args]
-  quotafence policy show [--path <directory>] [--json]
-  quotafence policy set --warn <percent|off> --confirm <percent|off> --stop <percent|off>
-  quotafence policy reset [--path <directory>] [--json]
-  quotafence hook codex [--database <path>]
-  quotafence hook claude
-  quotafence hooks <install|status|uninstall> <codex|claude>
+Everyday:
+  qfence                              Show current quota status
+  qfence sync                         Force-refresh all providers
+  qfence ls                           List cached quota sources
+  qfence codex [codex args]           Run Codex with quota protection
+  qfence claude [claude args]         Run Claude with quota protection
+  qfence claude --window 5h           Use Claude's 5-hour allowance
+
+Workspace:
+  qfence here                         Show the current workspace mapping
+  qfence bind <workspace>             Bind this folder to an allocation
+  qfence allocations                  List workspace allocations
+  qfence policy                       Show the current workspace policy
+
+More:
+  qfence sources show <provider> [--json]
+  qfence admit codex [--path <directory>] [--yes] [--json]
+  qfence policy set --warn <percent|off> --confirm <percent|off> --stop <percent|off>
+  qfence policy reset [--path <directory>] [--json]
+  qfence hooks <install|status|uninstall> <codex|claude>
+  qfence help
+
+Compatibility:
+  The previous `quotafence ...`, `context`, `sources`, and `run` forms still work.
 
 Options:
   --path <directory>   Resolve a workspace from this directory instead of cwd
   --database <path>    Override the local database (or set QUOTAFENCE_DATABASE_PATH)
-  --yes                Explicitly accept a confirmation-required admission
+  --yes                Accept a confirmation-required admission
   percent|off          Percentage of a workspace allocation consumed, or disabled
   --json               Print machine-readable output"
     );
@@ -1481,10 +2143,10 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn bind_requires_an_explicit_scope() {
+    fn bind_requires_an_explicit_workspace() {
         assert!(parse_args(vec!["bind".to_owned()])
             .unwrap_err()
-            .contains("--scope"));
+            .contains("bind <workspace-name-or-id>"));
     }
 
     #[test]
@@ -1606,6 +2268,112 @@ mod tests {
             agent_args,
             ["--model", "gpt-5", "fix the tests"].map(str::to_owned)
         );
+    }
+
+    #[test]
+    fn short_agent_commands_parse_like_managed_runs() {
+        let command = parse_args(vec![
+            "claude".to_owned(),
+            "--window".to_owned(),
+            "5h".to_owned(),
+            "--".to_owned(),
+            "--model".to_owned(),
+            "sonnet".to_owned(),
+        ])
+        .unwrap();
+        let CliCommand::RunAgent {
+            agent,
+            claude_window,
+            agent_args,
+            ..
+        } = command
+        else {
+            panic!("expected managed Claude run");
+        };
+        assert_eq!(agent, ManagedAgent::Claude);
+        assert_eq!(claude_window, ClaudeManagedWindow::FiveHour);
+        assert_eq!(agent_args, ["--model", "sonnet"]);
+    }
+
+    #[test]
+    fn read_commands_support_shorthand_and_json() {
+        assert!(matches!(
+            parse_args(vec!["status".to_owned()]).unwrap(),
+            CliCommand::Status(_)
+        ));
+        assert!(matches!(
+            parse_args(vec!["sync".to_owned(), "--json".to_owned()]).unwrap(),
+            CliCommand::Sync(CommonOptions { json: true, .. })
+        ));
+        assert!(matches!(
+            parse_args(vec![
+                "sources".to_owned(),
+                "show".to_owned(),
+                "claude".to_owned(),
+                "--json".to_owned(),
+            ])
+            .unwrap(),
+            CliCommand::Sources {
+                query: Some(_),
+                options: CommonOptions { json: true, .. }
+            }
+        ));
+        assert!(matches!(
+            parse_args(vec!["allocations".to_owned(), "list".to_owned()]).unwrap(),
+            CliCommand::Allocations(_)
+        ));
+    }
+
+    #[test]
+    fn friendly_commands_cover_the_common_workflow() {
+        assert!(matches!(
+            parse_args(Vec::new()).unwrap(),
+            CliCommand::Status(_)
+        ));
+        assert!(matches!(
+            parse_args(vec!["ls".to_owned()]).unwrap(),
+            CliCommand::Sources { .. }
+        ));
+        assert!(matches!(
+            parse_args(vec!["here".to_owned()]).unwrap(),
+            CliCommand::Context(_)
+        ));
+        assert!(matches!(
+            parse_args(vec!["policy".to_owned()]).unwrap(),
+            CliCommand::Policy {
+                action: PolicyAction::Show(_)
+            }
+        ));
+
+        let CliCommand::Bind {
+            scope_reference, ..
+        } = parse_args(vec!["bind".to_owned(), "My workspace".to_owned()]).unwrap()
+        else {
+            panic!("expected positional workspace binding");
+        };
+        assert_eq!(scope_reference, "My workspace");
+
+        let CliCommand::RunAgent { agent_args, .. } = parse_args(vec![
+            "codex".to_owned(),
+            "--model".to_owned(),
+            "gpt-5".to_owned(),
+            "fix tests".to_owned(),
+        ])
+        .unwrap() else {
+            panic!("expected friendly Codex launch");
+        };
+        assert_eq!(agent_args, ["--model", "gpt-5", "fix tests"]);
+    }
+
+    #[test]
+    fn sync_age_uses_human_scale_units() {
+        let now = 10 * 86_400_000;
+        assert_eq!(relative_age(Some(now - 2_000), now), "just now");
+        assert_eq!(relative_age(Some(now - 18_000), now), "18s ago");
+        assert_eq!(relative_age(Some(now - 240_000), now), "4m ago");
+        assert_eq!(relative_age(Some(now - 7_200_000), now), "2h ago");
+        assert_eq!(relative_age(Some(now - 172_800_000), now), "2d ago");
+        assert_eq!(relative_age(None, now), "never");
     }
 
     #[test]

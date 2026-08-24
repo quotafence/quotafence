@@ -25,14 +25,14 @@ For Claude, connect the observer, refresh the shared subscription windows, then
 enable **Workspace protection** in the Claude Settings tab. Restart Claude Code
 or Claude Desktop and send a test prompt from an allocated folder. QuotaFence preserves
 unrelated Claude hooks and reports protection as unverified until it receives a
-lifecycle event. For an owned CLI session use `quotafence run claude`; add
+lifecycle event. For an owned CLI session use `qfence claude`; add
 `--window 5h` when the 5-hour allocation should be the managed boundary.
 
 ## Capability boundary
 
 - A verified prompt gate can allow or block a **new** Codex Desktop prompt based
   on its mapped folder and remaining allocation.
-- `quotafence run codex` owns a managed CLI process and can refuse its launch at a
+- `qfence codex` owns a managed CLI process and can refuse its launch at a
   policy boundary.
 - QuotaFence cannot stop a Codex turn that is already running.
 - If hook integration fails, it fails open and reports degraded health rather
