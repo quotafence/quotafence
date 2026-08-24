@@ -1,6 +1,6 @@
-# macOS Beta Release
+# Beta Release
 
-The release workflow builds one universal macOS application for Apple Silicon
+The macOS release workflow builds one universal macOS application for Apple Silicon
 and Intel, including the CLI companion expected by Tauri's multi-binary bundle,
 packages a DMG, produces SHA-256 checksums, and creates a **draft prerelease**.
 A human must inspect and publish the draft.
@@ -8,6 +8,11 @@ A human must inspect and publish the draft.
 Manual workflow runs build and retain the same artifacts for 14 days but do not
 create a GitHub release. Tag pushes create the draft release only when the tag
 matches every application version file.
+
+The separate Windows workflow builds an unsigned x64 NSIS installer plus
+`quotafence.exe` and `qfence.exe`. It retains them as a GitHub Actions artifact
+for 14 days; it does not attach them to the public release until Windows signing
+and native smoke testing are complete. See the [Windows guide](windows.md).
 
 ## Release modes
 
@@ -70,6 +75,11 @@ or issue reports.
    - confirm Codex discovery, sync, folder allocation, protection health, and
      one allow/block decision;
    - edit generated release notes and publish only after those checks pass.
+
+7. Inspect the `Windows beta release` workflow artifact independently. Verify
+   `SHA256SUMS.txt`, install it in a Windows test account, and run the smoke
+   checklist in the Windows guide. Do not copy the unsigned preview into the
+   public release without explicitly labelling the SmartScreen warning.
 
 ## Rollback
 
