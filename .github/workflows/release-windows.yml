@@ -1,0 +1,74 @@
+name: Windows beta release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Windows x64 bundle
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Set up Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Validate release version
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: npm run check:release-version
+
+      - name: Build Windows CLI companion
+        run: cargo build --locked --release --manifest-path src-tauri/Cargo.toml --bin quotafence
+
+      - name: Build unsigned Windows NSIS installer
+        run: npm run tauri -- build --bundles nsis
+
+      - name: Create release assets and checksums
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          Copy-Item src-tauri/target/release/quotafence.exe release-assets/quotafence.exe
+          Copy-Item src-tauri/target/release/quotafence.exe release-assets/qfence.exe
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if (-not $installer) { throw "Windows NSIS installer was not produced" }
+          Copy-Item $installer.FullName release-assets/$($installer.Name)
+          Get-ChildItem release-assets -File |
+            Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $([System.IO.Path]::GetFileName($_.Path))" } |
+            Set-Content release-assets/SHA256SUMS.txt
+          "Signing: unsigned beta`nCommit: $env:GITHUB_SHA`nWorkflow: $env:GITHUB_RUN_ID" |
+            Set-Content release-assets/BUILD-INFO.txt
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: quotafence-windows-x64
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14

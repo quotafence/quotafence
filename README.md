@@ -3,8 +3,8 @@
 Local-first budget guard and routing layer for AI coding agents.
 
 > [!IMPORTANT]
-> QuotaFence `v0.1.0-beta.1` is an early, source-distributed beta for
-> macOS. It is not yet a stable release. Codex quota
+> QuotaFence `v0.1.0-beta.1` is an early beta for macOS, with Windows x64
+> available as a source-built preview. It is not yet a stable release. Codex quota
 > discovery, checkpoint refresh, reset rollover, and manual allocations work
 > locally. Folder-based workspace mapping plus `qfence here` and the provider-refreshing
 > `qfence admit codex` dry run are implemented. `qfence codex` now admits,
@@ -130,8 +130,9 @@ The first beta is built from source; signed installers are not published yet.
 Read the [Beta guide](docs/beta.md) before relying on QuotaFence for important work.
 It documents what the beta can enforce, what remains approximate, its privacy
 boundary, and the diagnostic information to include in bug reports.
-Maintainers can follow the [macOS release guide](docs/releasing.md) for tagged
-universal builds, checksums, signing state, and draft prerelease review.
+Maintainers can follow the [release guide](docs/releasing.md) for tagged macOS
+builds and the [Windows guide](docs/windows.md) for native development, CI, and
+preview artifacts.
 
 ## Architecture at a glance
 
@@ -188,6 +189,10 @@ alternative.
 ## Development
 
 ### Prerequisites
+
+On macOS, install Xcode Command Line Tools, Rust, and Node.js. On Windows,
+follow the [Windows setup guide](docs/windows.md) to install Microsoft C++ Build
+Tools, WebView2, Rust, and Node.js before running the same npm scripts.
 
 - Node.js 22 or newer
 - npm 10 or newer (included with Node.js)

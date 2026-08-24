@@ -1,7 +1,7 @@
 use std::{
     env,
     io::{BufRead, BufReader, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::mpsc::{self, Receiver},
     thread,
@@ -646,8 +646,19 @@ fn resolve_executable_candidate(candidate: PathBuf) -> Option<PathBuf> {
     env::var_os("PATH")
         .into_iter()
         .flat_map(|path| env::split_paths(&path).collect::<Vec<_>>())
-        .map(|directory| directory.join(&candidate))
+        .flat_map(|directory| executable_paths_in(&directory, &candidate))
         .find(|path| path.is_file())
+}
+
+fn executable_paths_in(directory: &Path, candidate: &Path) -> Vec<PathBuf> {
+    let path = directory.join(candidate);
+    #[cfg(windows)]
+    {
+        if candidate.extension().is_none() {
+            return vec![path.with_extension("exe"), path];
+        }
+    }
+    vec![path]
 }
 
 fn looks_like_auth_error(message: &str) -> bool {

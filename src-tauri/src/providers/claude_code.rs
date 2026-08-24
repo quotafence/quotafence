@@ -5,13 +5,18 @@ use std::{
     process::Command,
 };
 
+#[cfg(target_os = "macos")]
 use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
 use chrono::DateTime;
+#[cfg(target_os = "macos")]
 use pbkdf2::pbkdf2_hmac;
+#[cfg(target_os = "macos")]
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+#[cfg(target_os = "macos")]
 use sha1::Sha1;
+#[cfg(target_os = "macos")]
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -31,8 +36,11 @@ const FIVE_HOURS_MILLIS: i64 = 5 * 60 * 60 * 1_000;
 const SEVEN_DAYS_MILLIS: i64 = 7 * 24 * 60 * 60 * 1_000;
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const CLAUDE_KEYCHAIN_SERVICE: &str = "Claude Code-credentials";
+#[cfg(target_os = "macos")]
 const CLAUDE_SAFE_STORAGE_SERVICE: &str = "Claude Safe Storage";
+#[cfg(target_os = "macos")]
 const CLAUDE_SAFE_STORAGE_ACCOUNT: &str = "Claude Key";
+#[cfg(target_os = "macos")]
 const CLAUDE_DESKTOP_CONFIG: &str = "Library/Application Support/Claude/config.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -195,8 +203,19 @@ fn resolve_executable_candidate(candidate: PathBuf) -> Option<PathBuf> {
     env::var_os("PATH")
         .into_iter()
         .flat_map(|path| env::split_paths(&path).collect::<Vec<_>>())
-        .map(|directory| directory.join(&candidate))
+        .flat_map(|directory| executable_paths_in(&directory, &candidate))
         .find(|path| path.is_file())
+}
+
+fn executable_paths_in(directory: &Path, candidate: &Path) -> Vec<PathBuf> {
+    let path = directory.join(candidate);
+    #[cfg(windows)]
+    {
+        if candidate.extension().is_none() {
+            return vec![path.with_extension("exe"), path];
+        }
+    }
+    vec![path]
 }
 
 fn parse_version_output(output: &[u8]) -> Option<String> {
@@ -535,6 +554,7 @@ impl TryFrom<StatusLineRateLimitWindow> for ClaudeRateLimitWindow {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn read_claude_code_credentials() -> Result<(String, ClaudeCredentialsFile), String> {
     let account = env::var("USER").map_err(|_| "cannot resolve the macOS account name")?;
     let output = Command::new("/usr/bin/security")
@@ -563,6 +583,33 @@ fn read_claude_code_credentials() -> Result<(String, ClaudeCredentialsFile), Str
     Ok((account, credentials))
 }
 
+#[cfg(not(target_os = "macos"))]
+fn read_claude_code_credentials() -> Result<(String, ClaudeCredentialsFile), String> {
+    let path = claude_credentials_path()?;
+    let credentials: ClaudeCredentialsFile =
+        serde_json::from_slice(&fs::read(&path).map_err(|_| {
+            format!(
+                "Claude Code login was not found at {}. Run `claude`, sign in, and try again.",
+                path.display()
+            )
+        })?)
+        .map_err(|_| "Claude Code returned an unsupported credential format".to_owned())?;
+    if credentials.claude_ai_oauth.access_token.trim().is_empty() {
+        return Err("Claude Code login does not contain an access token".to_owned());
+    }
+    Ok((path.to_string_lossy().into_owned(), credentials))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn claude_credentials_path() -> Result<PathBuf, String> {
+    env::var_os("CLAUDE_CONFIG_DIR")
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|home| home.join(".claude")))
+        .map(|directory| directory.join(".credentials.json"))
+        .ok_or_else(|| "cannot resolve the Claude configuration directory".to_owned())
+}
+
+#[cfg(target_os = "macos")]
 fn write_claude_code_credentials(
     account: &str,
     credentials: &ClaudeCredentialsFile,
@@ -586,6 +633,22 @@ fn write_claude_code_credentials(
         return Err("macOS Keychain could not save the refreshed Claude login".to_owned());
     }
     Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn write_claude_code_credentials(
+    account: &str,
+    credentials: &ClaudeCredentialsFile,
+) -> Result<(), String> {
+    let path = PathBuf::from(account);
+    let encoded = serde_json::to_string(credentials)
+        .map_err(|_| "could not preserve the refreshed Claude login")?;
+    fs::write(&path, format!("{encoded}\n")).map_err(|_| {
+        format!(
+            "could not update the refreshed Claude login at {}",
+            path.display()
+        )
+    })
 }
 
 fn refresh_claude_access_token(
@@ -646,6 +709,7 @@ fn refresh_claude_access_token(
     write_claude_code_credentials(account, credentials)
 }
 
+#[cfg(target_os = "macos")]
 fn read_keychain_password(service: &str, account: &str) -> Result<Vec<u8>, String> {
     let mut output = Command::new("/usr/bin/security")
         .args(["find-generic-password", "-w", "-s", service, "-a", account])
@@ -664,6 +728,7 @@ fn read_keychain_password(service: &str, account: &str) -> Result<Vec<u8>, Strin
     Ok(output.stdout)
 }
 
+#[cfg(target_os = "macos")]
 fn decrypt_desktop_value(encrypted: &[u8], key: &[u8; 16]) -> Result<Vec<u8>, String> {
     if encrypted.len() <= 3 || &encrypted[..3] != b"v10" {
         return Err("Claude Desktop returned unsupported encrypted data".to_owned());
@@ -675,6 +740,7 @@ fn decrypt_desktop_value(encrypted: &[u8], key: &[u8; 16]) -> Result<Vec<u8>, St
     Ok(decrypted.to_vec())
 }
 
+#[cfg(target_os = "macos")]
 fn desktop_safe_storage_key() -> Result<[u8; 16], String> {
     let password =
         read_keychain_password(CLAUDE_SAFE_STORAGE_SERVICE, CLAUDE_SAFE_STORAGE_ACCOUNT)?;
@@ -683,6 +749,7 @@ fn desktop_safe_storage_key() -> Result<[u8; 16], String> {
     Ok(key)
 }
 
+#[cfg(target_os = "macos")]
 fn read_desktop_active_organization(key: &[u8; 16]) -> Result<String, String> {
     let home = dirs::home_dir().ok_or_else(|| "cannot resolve the home directory".to_owned())?;
     for relative in [
@@ -732,6 +799,7 @@ fn read_desktop_active_organization(key: &[u8; 16]) -> Result<String, String> {
     Err("Claude Desktop active organization was not found".to_owned())
 }
 
+#[cfg(target_os = "macos")]
 fn read_desktop_access_token() -> Result<String, String> {
     use base64::Engine;
 
@@ -805,6 +873,14 @@ fn read_desktop_access_token() -> Result<String, String> {
             "Claude Desktop has no current usage-capable login. Reopen Claude Desktop and try again."
                 .to_owned()
         })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_desktop_access_token() -> Result<String, String> {
+    Err(
+        "Claude Code login could not be refreshed. Run `claude`, sign in again, and retry."
+            .to_owned(),
+    )
 }
 
 fn map_usage_window(window: ClaudeUsageWindow) -> Result<ClaudeRateLimitWindow, String> {

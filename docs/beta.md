@@ -1,7 +1,8 @@
 # v0.1 Beta Guide
 
 QuotaFence `v0.1.0-beta.1` is an ad-hoc-signed macOS beta for solo
-Codex and Claude Code power users. It can also be built from source. Treat it as a safety aid
+Codex and Claude Code power users. A Windows x64 source-built preview is also
+available. Treat it as a safety aid
 with explicit health states, not as an account-level guarantee.
 
 ## Before relying on protection
@@ -70,13 +71,16 @@ before posting it because local paths may reveal usernames or project names.
 
 - Claude support is beta; cross-provider routing is not implemented because
   unlike native quota windows are not safely comparable.
-- macOS is the live-tested platform for this beta.
+- macOS is the live-tested platform for this beta. Windows x64 is compiled and
+  tested in CI, but still needs native manual smoke testing before it reaches
+  the same support level.
 - The beta DMG is not notarized, so macOS displays a Gatekeeper warning and the
   user must explicitly allow the first launch. There is no automatic update or
   production signing flow yet.
 - Percentage checkpoints are integer and aggregate, so small or concurrent
   changes may be delayed or remain unassigned.
-- Cross-platform managed-process orphan recovery is incomplete.
+- Windows can recover managed sessions whose supervisor process has exited;
+  Windows console signal forwarding still needs native end-to-end validation.
 - No cloud sync, team workspace, RBAC, billing, or remote enforcement.
 
 ## Reporting a problem
