@@ -18,7 +18,7 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: macOS version, Mac architecture, and Codex version.
+      description: OS version/architecture plus Codex or Claude client and version.
     validations:
       required: true
   - type: dropdown
@@ -28,7 +28,9 @@ body:
       options:
         - Codex Desktop with verified hooks
         - Codex Desktop passive tracking
-        - quotafence run codex
+        - qfence codex
+        - Claude lifecycle hooks
+        - qfence claude
         - Mixed or concurrent workflows
     validations:
       required: true

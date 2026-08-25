@@ -58,22 +58,75 @@ All read-only commands support `--json`. JSON never contains ANSI color or
 table characters. Human output uses color only for an interactive terminal;
 redirects, pipes, `NO_COLOR=1`, and `TERM=dumb` produce plain output.
 
-## Install from source
+## Install the CLI
 
-The beta is currently source-distributed. Build only the CLI and install the
-short command into a user-local directory already present in `PATH`:
+Release artifacts contain the short `qfence` command, the backwards-compatible
+`quotafence` name, and an installer script. On macOS, download and verify the
+release artifact, then run:
+
+```bash
+./install-cli.sh ./qfence
+qfence help
+```
+
+The default destination is `~/.local/bin`. Set `QFENCE_INSTALL_DIR` to choose a
+different directory. If the destination is not already in `PATH`, the installer
+prints the exact export command without modifying shell startup files.
+
+On Windows, open PowerShell in the extracted artifact directory and run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\install-cli.ps1
+qfence help
+```
+
+The Windows installer copies both command names to
+`%LOCALAPPDATA%\QuotaFence\bin` and adds that directory to the current user's
+`PATH`. Open a new terminal after installation.
+
+To upgrade, extract a newer verified artifact and run the same installer again;
+both command binaries are replaced. To remove
+only the CLI commands (the desktop app and its local data are unaffected), run:
+
+```bash
+./uninstall-cli.sh
+```
+
+or on Windows:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\uninstall-cli.ps1
+```
+
+The Windows uninstaller also removes the CLI directory from the user `PATH`.
+
+To build and install from source on macOS or Linux:
 
 ```bash
 cargo build --release --locked --manifest-path src-tauri/Cargo.toml --bin quotafence
 mkdir -p ~/.local/bin
 cp src-tauri/target/release/quotafence ~/.local/bin/qfence
+cp src-tauri/target/release/quotafence ~/.local/bin/quotafence
 chmod 755 ~/.local/bin/qfence
 qfence help
 ```
 
-Rebuild and copy the binary again after updating the source checkout. A future
-release archive will contain both `qfence` and the backwards-compatible
-`quotafence` name.
+Rebuild and copy the binaries again after updating the source checkout.
+
+### CLI installation troubleshooting
+
+- If `qfence` is not found after installation, open a new terminal and inspect
+  `PATH`; the installer always prints the destination it used.
+- On macOS, add `~/.local/bin` to the shell `PATH` when the installer reports it
+  is missing. The script deliberately does not edit `.zshrc` or other startup
+  files.
+- On Windows, a restrictive PowerShell execution policy can block downloaded
+  scripts. Use the process-scoped command above; do not weaken the machine-wide
+  policy.
+- `qfence` and `quotafence` are identical binaries and use the same local
+  database as the desktop app.
 
 ## Development usage
 
@@ -132,18 +185,21 @@ npm run qfence -- policy
 ```
 
 The standard default is warn at 80% and stop at 100% of the workspace
-allocation consumed. Persist a folder override with confirmation disabled:
+allocation consumed. Persist a folder override with:
 
 ```bash
-npm run qfence -- policy set --warn 75 --confirm off --stop 100
+npm run qfence -- policy set --warn 75 --stop 100
 ```
 
-Values accept up to two decimal places. The `--confirm` compatibility argument
-should remain `off`; confirmation values from older beta databases are ignored.
+Values accept up to two decimal places. `off` disables a boundary:
 
 ```bash
-npm run qfence -- policy set --warn off --confirm 90 --stop 100
+npm run qfence -- policy set --warn off --stop 100
 ```
+
+The parser still accepts the legacy `--confirm` compatibility argument so old
+scripts do not fail, but persisted confirmation thresholds are ignored by the
+active Warn → Stop policy.
 
 Return to application defaults with:
 
@@ -168,8 +224,8 @@ Admission considers both:
 - aggregate provider usage and active reservations against the subscription
   window.
 
-The more restrictive signal wins. Standard policy thresholds are 80% for
-`warn`, 90% for `require_confirmation`, and 100% for `stop`.
+The more restrictive signal wins. The standard active policy warns at 80% and
+stops at 100%.
 
 The command is deliberately non-interactive and returns stable shell exit
 codes:
@@ -178,18 +234,19 @@ codes:
 | ---: | --- | --- |
 | `0` | allow | yes |
 | `10` | warn | yes, with a warning |
-| `20` | confirmation required | no, unless explicitly accepted |
+| `20` | legacy confirmation compatibility | no; active policy does not emit it |
 | `30` | stop | no |
 | `1` | configuration, workspace, or provider error | no |
 
-Use `--yes` to explicitly accept only a confirmation-required outcome:
+`--yes` remains accepted only for compatibility with a legacy
+confirmation-required outcome:
 
 ```bash
 npm run qfence -- admit codex --yes
 ```
 
-The assessment still reports `require_confirmation`, records that the override
-was applied in JSON output, and exits `0`. `--yes` never overrides `stop`.
+If older data or a compatibility fixture produces that outcome, the assessment
+records the override in JSON and exits `0`. `--yes` never overrides `stop`.
 
 Use `--json` for a stable object containing the assessment, checkpoint result,
 override state, proceed flag, and exit code:

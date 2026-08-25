@@ -38,6 +38,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
+
       - name: Validate release version
         env:
           RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
@@ -55,15 +58,49 @@ jobs:
           New-Item -ItemType Directory -Force release-assets | Out-Null
           Copy-Item src-tauri/target/release/quotafence.exe release-assets/quotafence.exe
           Copy-Item src-tauri/target/release/quotafence.exe release-assets/qfence.exe
+          Copy-Item scripts/install-cli.ps1 release-assets/install-cli.ps1
+          Copy-Item scripts/uninstall-cli.ps1 release-assets/uninstall-cli.ps1
           $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
           if (-not $installer) { throw "Windows NSIS installer was not produced" }
           Copy-Item $installer.FullName release-assets/$($installer.Name)
-          Get-ChildItem release-assets -File |
+          $checksumLines = Get-ChildItem release-assets -File |
             Get-FileHash -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash.ToLower())  $([System.IO.Path]::GetFileName($_.Path))" } |
-            Set-Content release-assets/SHA256SUMS.txt
-          "Signing: unsigned beta`nCommit: $env:GITHUB_SHA`nWorkflow: $env:GITHUB_RUN_ID" |
-            Set-Content release-assets/BUILD-INFO.txt
+            ForEach-Object { "$($_.Hash.ToLower())  $([System.IO.Path]::GetFileName($_.Path))" }
+          $utf8 = [System.Text.UTF8Encoding]::new($false)
+          [System.IO.File]::WriteAllText(
+            (Join-Path $PWD "release-assets/SHA256SUMS.txt"),
+            ($checksumLines -join "`n") + "`n",
+            $utf8
+          )
+          $buildInfo = "Signing: unsigned beta`nCommit: $env:GITHUB_SHA`nWorkflow: $env:GITHUB_RUN_ID`n"
+          [System.IO.File]::WriteAllText(
+            (Join-Path $PWD "release-assets/BUILD-INFO.txt"),
+            $buildInfo,
+            $utf8
+          )
+          if ([System.IO.File]::ReadAllBytes("release-assets/SHA256SUMS.txt") -contains 13) {
+            throw "SHA256SUMS.txt must use portable LF line endings"
+          }
+          Get-Content release-assets/SHA256SUMS.txt | ForEach-Object {
+            $expected, $name = $_ -split "  ", 2
+            $actual = (Get-FileHash -Algorithm SHA256 (Join-Path "release-assets" $name)).Hash.ToLower()
+            if ($actual -ne $expected) { throw "Checksum mismatch for $name" }
+          }
+
+      - name: Smoke-test Windows CLI assets
+        shell: pwsh
+        run: |
+          ./release-assets/install-cli.ps1 `
+            -BinaryPath release-assets/qfence.exe `
+            -InstallDir "$env:RUNNER_TEMP\qfence-bin" `
+            -SkipPathUpdate
+          & "$env:RUNNER_TEMP\qfence-bin\qfence.exe" help | Select-String "QuotaFence"
+          & "$env:RUNNER_TEMP\qfence-bin\quotafence.exe" help | Select-String "QuotaFence"
+          ./release-assets/uninstall-cli.ps1 `
+            -InstallDir "$env:RUNNER_TEMP\qfence-bin" `
+            -KeepPath
+          if (Test-Path "$env:RUNNER_TEMP\qfence-bin\qfence.exe") { throw "qfence.exe was not removed" }
+          if (Test-Path "$env:RUNNER_TEMP\qfence-bin\quotafence.exe") { throw "quotafence.exe was not removed" }
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v6

@@ -5,6 +5,10 @@ Codex and Claude Code power users. A Windows x64 source-built preview is also
 available. Treat it as a safety aid
 with explicit health states, not as an account-level guarantee.
 
+Before installing an artifact, follow the
+[install, upgrade, and removal guide](installing.md) to verify its checksum and
+review the unsigned/ad-hoc signing warning.
+
 ## Before relying on protection
 
 1. Start QuotaFence and add the detected Codex source.

@@ -39,6 +39,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
+
       - name: Validate release version
         env:
           RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
@@ -106,6 +109,10 @@ jobs:
             src-tauri/target/aarch64-apple-darwin/release/quotafence \
             src-tauri/target/x86_64-apple-darwin/release/quotafence \
             -output src-tauri/target/universal-apple-darwin/release/quotafence
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" \
+            src-tauri/target/universal-apple-darwin/release/quotafence
+          codesign --verify --verbose \
+            src-tauri/target/universal-apple-darwin/release/quotafence
 
       - name: Build ad-hoc universal app and DMG
         if: env.QUOTAFENCE_DEVELOPER_SIGNING == 'false'
@@ -125,10 +132,23 @@ jobs:
           find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -type f -name '*.dmg' -exec cp {} release-assets/ \;
           cp src-tauri/target/universal-apple-darwin/release/quotafence release-assets/quotafence
           cp src-tauri/target/universal-apple-darwin/release/quotafence release-assets/qfence
+          cp scripts/install-cli.sh release-assets/install-cli.sh
+          cp scripts/uninstall-cli.sh release-assets/uninstall-cli.sh
+          chmod 755 release-assets/install-cli.sh
+          chmod 755 release-assets/uninstall-cli.sh
           test -n "$(find release-assets -maxdepth 1 -type f -name '*.dmg' -print -quit)"
           cd release-assets
-          shasum -a 256 ./*.dmg ./quotafence ./qfence > SHA256SUMS.txt
+          shasum -a 256 ./*.dmg ./quotafence ./qfence ./install-cli.sh ./uninstall-cli.sh > SHA256SUMS.txt
           printf 'Signing: %s\nCommit: %s\nWorkflow: %s\n' "$QUOTAFENCE_SIGNING_MODE" "$GITHUB_SHA" "$GITHUB_RUN_ID" > BUILD-INFO.txt
+
+      - name: Smoke-test macOS CLI assets
+        run: |
+          QFENCE_INSTALL_DIR="$RUNNER_TEMP/qfence-bin" release-assets/install-cli.sh release-assets/qfence
+          "$RUNNER_TEMP/qfence-bin/qfence" help | grep QuotaFence
+          "$RUNNER_TEMP/qfence-bin/quotafence" help | grep QuotaFence
+          QFENCE_INSTALL_DIR="$RUNNER_TEMP/qfence-bin" release-assets/uninstall-cli.sh
+          test ! -e "$RUNNER_TEMP/qfence-bin/qfence"
+          test ! -e "$RUNNER_TEMP/qfence-bin/quotafence"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v6

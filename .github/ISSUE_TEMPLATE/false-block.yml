@@ -1,12 +1,12 @@
 name: Incorrect prompt block
-description: Report an allocated Codex workspace being blocked unexpectedly.
+description: Report an allocated Codex or Claude workspace being blocked unexpectedly.
 title: "[False block]: "
 labels: ["bug", "enforcement"]
 body:
   - type: markdown
     attributes:
       value: |
-        If work is urgent, disable Codex Desktop protection in QuotaFence Settings while investigating. Do not share prompt text, credentials, transcripts, source code, or database files.
+        If work is urgent, disable the provider's workspace protection in QuotaFence Settings while investigating. Do not share prompt text, credentials, transcripts, source code, or database files.
   - type: input
     id: quotafence_version
     attributes:
@@ -18,7 +18,7 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: macOS version, Mac architecture, and Codex version.
+      description: OS version/architecture plus Codex or Claude client and version.
     validations:
       required: true
   - type: textarea
@@ -38,7 +38,7 @@ body:
     id: steps
     attributes:
       label: Reproduction steps
-      description: Include whether Codex was restarted and whether this was a new or existing task.
+      description: Include whether the provider client was restarted and whether this was a new or existing task.
     validations:
       required: true
   - type: checkboxes
@@ -47,7 +47,7 @@ body:
       label: Recovery checks
       options:
         - label: I synced QuotaFence after the latest provider reset.
-        - label: I fully quit and reopened Codex after changing hooks.
+        - label: I fully quit and reopened the provider client after changing hooks.
   - type: checkboxes
     id: privacy
     attributes:
