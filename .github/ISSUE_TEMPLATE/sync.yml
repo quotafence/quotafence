@@ -1,5 +1,5 @@
 name: Quota sync problem
-description: Report a failed, stale, or incorrect Codex quota checkpoint.
+description: Report a failed, stale, or incorrect Codex or Claude quota checkpoint.
 title: "[Sync]: "
 labels: ["bug", "sync"]
 body:
@@ -18,7 +18,7 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: macOS version, Mac architecture, and Codex version.
+      description: OS version/architecture, provider client and version, and whether the desktop app or qfence CLI initiated Sync.
     validations:
       required: true
   - type: textarea

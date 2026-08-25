@@ -5,6 +5,10 @@ builds a native NSIS installer on GitHub Actions. macOS can be used for most
 implementation work, but the final installer, WebView2 runtime behavior,
 provider clients, hooks, and process lifecycle must be exercised on Windows.
 
+Normal users should start with the cross-platform
+[install, upgrade, and removal guide](installing.md). The development setup
+below is only for contributors building from source.
+
 ## Development prerequisites
 
 Install these on Windows:

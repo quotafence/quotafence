@@ -135,6 +135,8 @@ boundary, and the diagnostic information to include in bug reports.
 Maintainers can follow the [release guide](docs/releasing.md) for tagged macOS
 builds and the [Windows guide](docs/windows.md) for native development, CI, and
 preview artifacts.
+End users should follow the [install, upgrade, and removal guide](docs/installing.md)
+to verify checksums and handle Gatekeeper or SmartScreen warnings safely.
 
 The standalone release archive includes `qfence`, the compatible `quotafence`
 command name, and a platform installer script. See the [CLI guide](docs/cli.md)
@@ -251,7 +253,7 @@ Inspect or customize the bound folder's managed-session policy:
 
 ```bash
 npm run qfence -- policy
-npm run qfence -- policy set --warn 75 --confirm 90 --stop 100
+npm run qfence -- policy set --warn 75 --stop 100
 npm run qfence -- policy reset
 ```
 

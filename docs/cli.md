@@ -185,18 +185,21 @@ npm run qfence -- policy
 ```
 
 The standard default is warn at 80% and stop at 100% of the workspace
-allocation consumed. Persist a folder override with confirmation disabled:
+allocation consumed. Persist a folder override with:
 
 ```bash
-npm run qfence -- policy set --warn 75 --confirm off --stop 100
+npm run qfence -- policy set --warn 75 --stop 100
 ```
 
-Values accept up to two decimal places. The `--confirm` compatibility argument
-should remain `off`; confirmation values from older beta databases are ignored.
+Values accept up to two decimal places. `off` disables a boundary:
 
 ```bash
-npm run qfence -- policy set --warn off --confirm 90 --stop 100
+npm run qfence -- policy set --warn off --stop 100
 ```
+
+The parser still accepts the legacy `--confirm` compatibility argument so old
+scripts do not fail, but persisted confirmation thresholds are ignored by the
+active Warn → Stop policy.
 
 Return to application defaults with:
 
@@ -221,8 +224,8 @@ Admission considers both:
 - aggregate provider usage and active reservations against the subscription
   window.
 
-The more restrictive signal wins. Standard policy thresholds are 80% for
-`warn`, 90% for `require_confirmation`, and 100% for `stop`.
+The more restrictive signal wins. The standard active policy warns at 80% and
+stops at 100%.
 
 The command is deliberately non-interactive and returns stable shell exit
 codes:
@@ -231,18 +234,19 @@ codes:
 | ---: | --- | --- |
 | `0` | allow | yes |
 | `10` | warn | yes, with a warning |
-| `20` | confirmation required | no, unless explicitly accepted |
+| `20` | legacy confirmation compatibility | no; active policy does not emit it |
 | `30` | stop | no |
 | `1` | configuration, workspace, or provider error | no |
 
-Use `--yes` to explicitly accept only a confirmation-required outcome:
+`--yes` remains accepted only for compatibility with a legacy
+confirmation-required outcome:
 
 ```bash
 npm run qfence -- admit codex --yes
 ```
 
-The assessment still reports `require_confirmation`, records that the override
-was applied in JSON output, and exits `0`. `--yes` never overrides `stop`.
+If older data or a compatibility fixture produces that outcome, the assessment
+records the override in JSON and exits `0`. `--yes` never overrides `stop`.
 
 Use `--json` for a stable object containing the assessment, checkpoint result,
 override state, proceed flag, and exit code:

@@ -18,6 +18,12 @@ The gate must pass the production frontend build, release-version alignment,
 Rust formatting, locked dependency build, clippy with warnings denied, all
 library tests, all CLI tests, and documentation whitespace checks.
 
+Pull-request Windows CI must also build the x64 NSIS installer, build the CLI
+explicitly, install and run both CLI command names, uninstall them, verify every
+SHA-256 entry, enforce portable LF manifest line endings, and upload the exact
+preview artifact. The macOS job performs the equivalent CLI lifecycle smoke
+test. A green compile without these artifact checks is not sufficient.
+
 ## Manual installed-app gate
 
 Record the macOS, Codex, and QuotaFence versions plus the date in the recovery matrix.
@@ -51,6 +57,8 @@ The Codex beta can exit P4 only when:
 - limitations are visible in the app or beta guide at the point they matter;
 - the chosen distribution artifact and Gatekeeper instructions have been
   tested by someone other than the build author.
+- Windows support remains Preview until the Windows native smoke checklist has
+  dated evidence; CI success alone does not promote it to live-tested support.
 
 Failures are release blockers. Record the issue link and leave the row failed
 or pending; do not weaken the expected behavior to make the matrix green.
