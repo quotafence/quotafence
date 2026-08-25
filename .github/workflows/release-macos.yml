@@ -109,6 +109,10 @@ jobs:
             src-tauri/target/aarch64-apple-darwin/release/quotafence \
             src-tauri/target/x86_64-apple-darwin/release/quotafence \
             -output src-tauri/target/universal-apple-darwin/release/quotafence
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" \
+            src-tauri/target/universal-apple-darwin/release/quotafence
+          codesign --verify --verbose \
+            src-tauri/target/universal-apple-darwin/release/quotafence
 
       - name: Build ad-hoc universal app and DMG
         if: env.QUOTAFENCE_DEVELOPER_SIGNING == 'false'
