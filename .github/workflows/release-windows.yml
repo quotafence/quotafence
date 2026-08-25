@@ -55,6 +55,8 @@ jobs:
           New-Item -ItemType Directory -Force release-assets | Out-Null
           Copy-Item src-tauri/target/release/quotafence.exe release-assets/quotafence.exe
           Copy-Item src-tauri/target/release/quotafence.exe release-assets/qfence.exe
+          Copy-Item scripts/install-cli.ps1 release-assets/install-cli.ps1
+          Copy-Item scripts/uninstall-cli.ps1 release-assets/uninstall-cli.ps1
           $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
           if (-not $installer) { throw "Windows NSIS installer was not produced" }
           Copy-Item $installer.FullName release-assets/$($installer.Name)
@@ -64,6 +66,21 @@ jobs:
             Set-Content release-assets/SHA256SUMS.txt
           "Signing: unsigned beta`nCommit: $env:GITHUB_SHA`nWorkflow: $env:GITHUB_RUN_ID" |
             Set-Content release-assets/BUILD-INFO.txt
+
+      - name: Smoke-test Windows CLI assets
+        shell: pwsh
+        run: |
+          ./release-assets/install-cli.ps1 `
+            -BinaryPath release-assets/qfence.exe `
+            -InstallDir "$env:RUNNER_TEMP\qfence-bin" `
+            -SkipPathUpdate
+          & "$env:RUNNER_TEMP\qfence-bin\qfence.exe" help | Select-String "QuotaFence"
+          & "$env:RUNNER_TEMP\qfence-bin\quotafence.exe" help | Select-String "QuotaFence"
+          ./release-assets/uninstall-cli.ps1 `
+            -InstallDir "$env:RUNNER_TEMP\qfence-bin" `
+            -KeepPath
+          if (Test-Path "$env:RUNNER_TEMP\qfence-bin\qfence.exe") { throw "qfence.exe was not removed" }
+          if (Test-Path "$env:RUNNER_TEMP\qfence-bin\quotafence.exe") { throw "quotafence.exe was not removed" }
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v6

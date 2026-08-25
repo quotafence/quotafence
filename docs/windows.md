@@ -49,18 +49,40 @@ QuotaFence does not log or copy the token into its own database.
 
 ## CI and preview artifacts
 
-Every pull request runs the Rust tests and produces an NSIS build on
-`windows-latest`. The `Windows beta release` workflow runs manually and for
-version tags. Its `quotafence-windows-x64` artifact contains:
+Every pull request runs the Rust tests, smoke-tests both CLI command names, and
+uploads the NSIS installer, CLI binary, and installer script for seven days.
+This makes a PR build testable by a normal Windows user without installing a
+Rust or Node.js toolchain.
+
+The `Windows beta release` workflow runs manually and for version tags. Its
+`quotafence-windows-x64` artifact contains:
 
 - the unsigned NSIS installer;
 - `quotafence.exe` and the short-name copy `qfence.exe`;
+- `install-cli.ps1`, which installs both command names into the user `PATH`;
+- `uninstall-cli.ps1`, which removes both commands and its `PATH` entry;
 - `SHA256SUMS.txt`; and
 - `BUILD-INFO.txt`.
 
 The artifact is intentionally not attached to the public GitHub release yet.
 Unsigned Windows applications can trigger Microsoft Defender SmartScreen. Code
 signing is required before this becomes a normal end-user distribution path.
+
+After extracting the artifact, install the CLI from PowerShell with:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\install-cli.ps1
+qfence help
+```
+
+Upgrade by running `install-cli.ps1` from a newer verified artifact. Remove the
+CLI without touching desktop data with:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\uninstall-cli.ps1
+```
 
 ## Native smoke checklist
 

@@ -58,22 +58,75 @@ All read-only commands support `--json`. JSON never contains ANSI color or
 table characters. Human output uses color only for an interactive terminal;
 redirects, pipes, `NO_COLOR=1`, and `TERM=dumb` produce plain output.
 
-## Install from source
+## Install the CLI
 
-The beta is currently source-distributed. Build only the CLI and install the
-short command into a user-local directory already present in `PATH`:
+Release artifacts contain the short `qfence` command, the backwards-compatible
+`quotafence` name, and an installer script. On macOS, download and verify the
+release artifact, then run:
+
+```bash
+./install-cli.sh ./qfence
+qfence help
+```
+
+The default destination is `~/.local/bin`. Set `QFENCE_INSTALL_DIR` to choose a
+different directory. If the destination is not already in `PATH`, the installer
+prints the exact export command without modifying shell startup files.
+
+On Windows, open PowerShell in the extracted artifact directory and run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\install-cli.ps1
+qfence help
+```
+
+The Windows installer copies both command names to
+`%LOCALAPPDATA%\QuotaFence\bin` and adds that directory to the current user's
+`PATH`. Open a new terminal after installation.
+
+To upgrade, extract a newer verified artifact and run the same installer again;
+both command binaries are replaced. To remove
+only the CLI commands (the desktop app and its local data are unaffected), run:
+
+```bash
+./uninstall-cli.sh
+```
+
+or on Windows:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\uninstall-cli.ps1
+```
+
+The Windows uninstaller also removes the CLI directory from the user `PATH`.
+
+To build and install from source on macOS or Linux:
 
 ```bash
 cargo build --release --locked --manifest-path src-tauri/Cargo.toml --bin quotafence
 mkdir -p ~/.local/bin
 cp src-tauri/target/release/quotafence ~/.local/bin/qfence
+cp src-tauri/target/release/quotafence ~/.local/bin/quotafence
 chmod 755 ~/.local/bin/qfence
 qfence help
 ```
 
-Rebuild and copy the binary again after updating the source checkout. A future
-release archive will contain both `qfence` and the backwards-compatible
-`quotafence` name.
+Rebuild and copy the binaries again after updating the source checkout.
+
+### CLI installation troubleshooting
+
+- If `qfence` is not found after installation, open a new terminal and inspect
+  `PATH`; the installer always prints the destination it used.
+- On macOS, add `~/.local/bin` to the shell `PATH` when the installer reports it
+  is missing. The script deliberately does not edit `.zshrc` or other startup
+  files.
+- On Windows, a restrictive PowerShell execution policy can block downloaded
+  scripts. Use the process-scoped command above; do not weaken the machine-wide
+  policy.
+- `qfence` and `quotafence` are identical binaries and use the same local
+  database as the desktop app.
 
 ## Development usage
 

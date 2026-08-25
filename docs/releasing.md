@@ -81,6 +81,11 @@ or issue reports.
    checklist in the Windows guide. Do not copy the unsigned preview into the
    public release without explicitly labelling the SmartScreen warning.
 
+Both platform artifacts must contain install and uninstall scripts for the CLI.
+The workflows exercise `qfence help`, the compatible `quotafence help`, and CLI
+removal before uploading an artifact. A missing or non-runnable command is a
+release failure, even when the desktop bundle itself builds successfully.
+
 ## Rollback
 
 Keep a failed draft unpublished. If a published beta is unsafe, mark it clearly

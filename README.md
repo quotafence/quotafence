@@ -109,7 +109,9 @@ milestones, and recommended architecture decisions.
 
 ## Beta quick start
 
-The first beta is built from source; signed installers are not published yet.
+The beta can be built from source. GitHub Actions also produces checksum-bearing
+macOS and unsigned Windows preview artifacts; production-signed installers are
+not published yet.
 
 1. Install the prerequisites listed below, clone the repository, and launch it:
 
@@ -133,6 +135,10 @@ boundary, and the diagnostic information to include in bug reports.
 Maintainers can follow the [release guide](docs/releasing.md) for tagged macOS
 builds and the [Windows guide](docs/windows.md) for native development, CI, and
 preview artifacts.
+
+The standalone release archive includes `qfence`, the compatible `quotafence`
+command name, and a platform installer script. See the [CLI guide](docs/cli.md)
+for user-local installation without Rust or Node.js.
 
 ## Architecture at a glance
 

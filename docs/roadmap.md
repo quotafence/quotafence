@@ -137,7 +137,7 @@ The repository currently has:
 - a provider-refreshing `qfence admit codex` dry run with stable policy outcomes;
 - a persisted `qfence codex` managed-session lifecycle with atomic reservation,
   direct process supervision, pre/post checkpoint reconciliation, terminal
-  cleanup, and Unix orphan recovery;
+  cleanup, and Unix/Windows orphan recovery;
 - a Claude beta lifecycle covering both provider windows, folder hooks, and
   `qfence claude --window <weekly|5h>` without inventing token totals;
 - passive Codex Desktop attribution from local thread metadata at refresh, plus
@@ -148,8 +148,8 @@ The repository currently has:
 - an evidence-gated managed burn rate and depletion signal for the active
   provider window.
 
-It does **not** yet have in-flight usage enforcement, cross-platform orphan
-recovery, or exact token accounting.
+It does **not** yet have in-flight usage enforcement, native Windows console
+signal-forwarding validation, or exact token accounting.
 
 ## Gap to an end-to-end Codex slice
 
@@ -265,7 +265,9 @@ Implemented as `qfence codex`. The wrapper owns the child process, inherits
 the terminal, forwards Unix termination signals, preserves the provider exit
 code, and atomically pairs a persisted starting session with its reservation.
 Terminal transitions release that reservation, and the next invocation
-recovers active records whose supervisor process no longer exists on Unix.
+recovers active records whose supervisor process no longer exists on Unix or
+Windows. Native Windows console termination forwarding still requires a dated
+manual smoke test.
 
 ### M4 — Automatic attribution and reconciliation — complete
 
@@ -367,9 +369,11 @@ The current automated and live results are tracked in the
 - Provide structured issue forms for sync, attribution, and false-block bugs.
 - Require the full frontend and Rust validation suite before tagging.
 
-Signed artifacts, automatic updates, checksums, and a GitHub release workflow
-belong to the following release-engineering milestone; they are not implied by
-the source-distributed beta.
+The repository now builds checksum-bearing macOS and Windows artifacts in
+GitHub Actions. macOS tag builds create a draft prerelease; Windows remains an
+unsigned workflow artifact until its native smoke matrix and signing strategy
+are complete. Automatic updates, Windows signing, and production Apple
+notarization remain later release-engineering work.
 
 ### Later — Capability-aware routing
 
