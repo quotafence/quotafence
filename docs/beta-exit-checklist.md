@@ -16,7 +16,8 @@ npm run check
 
 The gate must pass the production frontend build, release-version alignment,
 Rust formatting, locked dependency build, clippy with warnings denied, all
-library tests, all CLI tests, and documentation whitespace checks.
+library tests, all CLI tests, a high-severity npm advisory gate, and
+documentation whitespace checks.
 
 Pull-request Windows CI must also build the x64 NSIS installer, build the CLI
 explicitly, install and run both CLI command names, uninstall them, verify every
