@@ -60,12 +60,29 @@ jobs:
           $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
           if (-not $installer) { throw "Windows NSIS installer was not produced" }
           Copy-Item $installer.FullName release-assets/$($installer.Name)
-          Get-ChildItem release-assets -File |
+          $checksumLines = Get-ChildItem release-assets -File |
             Get-FileHash -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash.ToLower())  $([System.IO.Path]::GetFileName($_.Path))" } |
-            Set-Content release-assets/SHA256SUMS.txt
-          "Signing: unsigned beta`nCommit: $env:GITHUB_SHA`nWorkflow: $env:GITHUB_RUN_ID" |
-            Set-Content release-assets/BUILD-INFO.txt
+            ForEach-Object { "$($_.Hash.ToLower())  $([System.IO.Path]::GetFileName($_.Path))" }
+          $utf8 = [System.Text.UTF8Encoding]::new($false)
+          [System.IO.File]::WriteAllText(
+            (Join-Path $PWD "release-assets/SHA256SUMS.txt"),
+            ($checksumLines -join "`n") + "`n",
+            $utf8
+          )
+          $buildInfo = "Signing: unsigned beta`nCommit: $env:GITHUB_SHA`nWorkflow: $env:GITHUB_RUN_ID`n"
+          [System.IO.File]::WriteAllText(
+            (Join-Path $PWD "release-assets/BUILD-INFO.txt"),
+            $buildInfo,
+            $utf8
+          )
+          if ([System.IO.File]::ReadAllBytes("release-assets/SHA256SUMS.txt") -contains 13) {
+            throw "SHA256SUMS.txt must use portable LF line endings"
+          }
+          Get-Content release-assets/SHA256SUMS.txt | ForEach-Object {
+            $expected, $name = $_ -split "  ", 2
+            $actual = (Get-FileHash -Algorithm SHA256 (Join-Path "release-assets" $name)).Hash.ToLower()
+            if ($actual -ne $expected) { throw "Checksum mismatch for $name" }
+          }
 
       - name: Smoke-test Windows CLI assets
         shell: pwsh

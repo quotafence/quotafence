@@ -121,12 +121,29 @@ jobs:
           Copy-Item src-tauri/target/release/quotafence.exe preview-assets/qfence.exe
           Copy-Item scripts/install-cli.ps1 preview-assets/install-cli.ps1
           Copy-Item scripts/uninstall-cli.ps1 preview-assets/uninstall-cli.ps1
-          Get-ChildItem preview-assets -File |
+          $checksumLines = Get-ChildItem preview-assets -File |
             Get-FileHash -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash.ToLower())  $([System.IO.Path]::GetFileName($_.Path))" } |
-            Set-Content preview-assets/SHA256SUMS.txt
-          "Signing: unsigned CI preview`nCommit: $env:GITHUB_SHA`nWorkflow: $env:GITHUB_RUN_ID" |
-            Set-Content preview-assets/BUILD-INFO.txt
+            ForEach-Object { "$($_.Hash.ToLower())  $([System.IO.Path]::GetFileName($_.Path))" }
+          $utf8 = [System.Text.UTF8Encoding]::new($false)
+          [System.IO.File]::WriteAllText(
+            (Join-Path $PWD "preview-assets/SHA256SUMS.txt"),
+            ($checksumLines -join "`n") + "`n",
+            $utf8
+          )
+          $buildInfo = "Signing: unsigned CI preview`nCommit: $env:GITHUB_SHA`nWorkflow: $env:GITHUB_RUN_ID`n"
+          [System.IO.File]::WriteAllText(
+            (Join-Path $PWD "preview-assets/BUILD-INFO.txt"),
+            $buildInfo,
+            $utf8
+          )
+          if ([System.IO.File]::ReadAllBytes("preview-assets/SHA256SUMS.txt") -contains 13) {
+            throw "SHA256SUMS.txt must use portable LF line endings"
+          }
+          Get-Content preview-assets/SHA256SUMS.txt | ForEach-Object {
+            $expected, $name = $_ -split "  ", 2
+            $actual = (Get-FileHash -Algorithm SHA256 (Join-Path "preview-assets" $name)).Hash.ToLower()
+            if ($actual -ne $expected) { throw "Checksum mismatch for $name" }
+          }
 
       - name: Upload Windows preview installer
         uses: actions/upload-artifact@v6
