@@ -48,8 +48,9 @@ shows how many seconds, minutes, hours, or days ago it was synced.
 | `qfence admit codex` | Evaluate admission without launching Codex | yes |
 | `qfence hooks ...` | Install, inspect, or remove lifecycle protection | no |
 
-The status table groups native windows by provider and keeps Claude's 5-hour
-and weekly allowances in separate columns. `SYNCED` reports checkpoint age as
+The status table groups native windows by provider and keeps Codex and Claude's
+5-hour and weekly allowances in separate columns when the provider returns
+them. `SYNCED` reports checkpoint age as
 `just now`, seconds, minutes, hours, or days. If a status refresh fails,
 QuotaFence keeps the last checkpoint, displays its true age, and prints a
 warning below the table instead of presenting stale data as current.

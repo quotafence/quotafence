@@ -128,7 +128,7 @@ export function SourceSetupForm({
         providerSnapshot: {
           adapter: "codex_app_server",
           remoteLimitId: detection.providerId,
-          remoteWindowKind: selectedWindow.kind,
+          remoteWindowKind: `duration_${selectedWindow.durationMinutes}_minutes`,
           used: selectedWindow.used,
           observedAt: Date.now(),
           resetsAt: selectedWindow.endsAt,

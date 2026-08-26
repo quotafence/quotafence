@@ -73,9 +73,11 @@ The current Codex adapter implements quota discovery and synchronization:
 - call `account/rateLimits/read`;
 - map every complete primary or secondary window into percentage capacity,
   provider-confirmed usage, duration, and reset time; and
-- replace the absolute provider snapshot on startup or explicit refresh,
-  identifying the connected source by adapter metadata rather than its local
-  storage ID;
+- upsert every returned native window on startup or explicit refresh, so a
+  provider-side 5-hour or weekly window can appear again without recreating the
+  existing Codex source;
+- replace each absolute provider snapshot, matching native windows by duration
+  rather than assuming `primary` or `secondary` always means the same period;
 - carry allocations into a fresh local window after the provider reset; and
 - stop the transient App Server process after the snapshot is returned.
 
