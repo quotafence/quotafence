@@ -12,7 +12,8 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::application::{
-    DesktopUsageReconciliationStatus, GetLocalState, QuotaService, SyncProviderQuota,
+    CreateQuotaSource, DesktopUsageReconciliationStatus, GetLocalState, ProviderQuotaSnapshotInput,
+    QuotaService, QuotaSourceSummary, SyncProviderQuota,
 };
 
 use super::codex_desktop::CodexDesktopScan;
@@ -221,7 +222,7 @@ fn sync_detection_inner(
     let selected_window_id = local_state.selected_window_id.as_deref();
     let source = local_state
         .sources
-        .into_iter()
+        .iter()
         .find(|source| Some(source.window_id.as_str()) == selected_window_id);
     let Some(source) = source else {
         return CodexSyncResult {
@@ -240,7 +241,7 @@ fn sync_detection_inner(
     {
         return CodexSyncResult {
             status: CodexSyncStatus::NotApplicable,
-            window_id: Some(source.window_id),
+            window_id: Some(source.window_id.clone()),
             rolled_over: false,
             synced_at: None,
             message: Some(
@@ -252,7 +253,7 @@ fn sync_detection_inner(
     if detection.status != DetectionStatus::Detected {
         return CodexSyncResult {
             status: CodexSyncStatus::Unavailable,
-            window_id: Some(source.window_id),
+            window_id: Some(source.window_id.clone()),
             rolled_over: false,
             synced_at: None,
             message: detection.message,
@@ -260,11 +261,54 @@ fn sync_detection_inner(
         };
     }
 
-    let Some(remote_window) = matching_window(&detection.windows, source.starts_at, source.ends_at)
-    else {
+    if let Err(message) = sync_additional_windows(
+        service,
+        &local_state.sources,
+        source,
+        &detection,
+        observed_at,
+    ) {
         return CodexSyncResult {
             status: CodexSyncStatus::Unavailable,
-            window_id: Some(source.window_id),
+            window_id: Some(source.window_id.clone()),
+            rolled_over: false,
+            synced_at: None,
+            message: Some(message),
+            desktop_tracking: None,
+        };
+    }
+
+    let Some(remote_window) = matching_window(&detection.windows, source.starts_at, source.ends_at)
+    else {
+        let fallback = service
+            .local_state(GetLocalState {
+                selected_window_id: None,
+                at: observed_at,
+            })
+            .ok()
+            .and_then(|state| {
+                detection
+                    .windows
+                    .iter()
+                    .find_map(|window| matching_source(&state.sources, window))
+                    .map(|source| source.window_id.clone())
+            });
+        if let Some(window_id) = fallback {
+            return CodexSyncResult {
+                status: CodexSyncStatus::Unavailable,
+                window_id: Some(window_id),
+                rolled_over: false,
+                synced_at: None,
+                message: Some(
+                    "Codex changed its active quota windows. QuotaFence added the available window; select it and configure its allocations before relying on protection."
+                        .to_owned(),
+                ),
+                desktop_tracking: None,
+            };
+        }
+        return CodexSyncResult {
+            status: CodexSyncStatus::Unavailable,
+            window_id: Some(source.window_id.clone()),
             rolled_over: false,
             synced_at: None,
             message: Some(
@@ -288,7 +332,7 @@ fn sync_detection_inner(
         current_window_id: source.window_id.clone(),
         adapter: "codex_app_server".to_owned(),
         remote_limit_id: detection.provider_id,
-        remote_window_kind: remote_window.kind.clone(),
+        remote_window_kind: stable_remote_window_kind(remote_window),
         starts_at,
         ends_at,
         capacity: remote_window.capacity,
@@ -353,13 +397,99 @@ fn sync_detection_inner(
         }
         Err(error) => CodexSyncResult {
             status: CodexSyncStatus::Unavailable,
-            window_id: Some(source.window_id),
+            window_id: Some(source.window_id.clone()),
             rolled_over: false,
             synced_at: None,
             message: Some(error.to_string()),
             desktop_tracking: None,
         },
     }
+}
+
+fn sync_additional_windows(
+    service: &mut QuotaService,
+    sources: &[QuotaSourceSummary],
+    selected_source: &QuotaSourceSummary,
+    detection: &CodexDetection,
+    observed_at: i64,
+) -> Result<(), String> {
+    for remote_window in &detection.windows {
+        let existing = matching_source(sources, remote_window);
+        if existing.is_some_and(|source| source.window_id == selected_source.window_id) {
+            continue;
+        }
+
+        if let Some(source) = existing {
+            service
+                .sync_provider_quota(SyncProviderQuota {
+                    current_window_id: source.window_id.clone(),
+                    adapter: "codex_app_server".to_owned(),
+                    remote_limit_id: detection.provider_id.clone(),
+                    remote_window_kind: stable_remote_window_kind(remote_window),
+                    starts_at: remote_window.starts_at,
+                    ends_at: remote_window.ends_at,
+                    capacity: remote_window.capacity,
+                    used: remote_window.used,
+                    unit: remote_window.unit.clone(),
+                    observed_at,
+                    desktop_observations: None,
+                })
+                .map_err(|error| error.to_string())?;
+            continue;
+        }
+
+        let pool_id = format!("codex-{}-minute", remote_window.duration_minutes);
+        let window_id = format!("{pool_id}-window-{}", remote_window.ends_at);
+        service
+            .create_quota_source(CreateQuotaSource {
+                provider_id: format!("{pool_id}-provider"),
+                provider_display_name: selected_source.provider_display_name.clone(),
+                account_id: format!("{pool_id}-account"),
+                account_display_name: selected_source.account_display_name.clone(),
+                pool_id: pool_id.clone(),
+                pool_display_name: remote_window.display_name.clone(),
+                window_id,
+                starts_at: remote_window.starts_at,
+                ends_at: remote_window.ends_at,
+                capacity: remote_window.capacity,
+                unit: remote_window.unit.clone(),
+                provider_snapshot: Some(ProviderQuotaSnapshotInput {
+                    adapter: "codex_app_server".to_owned(),
+                    remote_limit_id: detection.provider_id.clone(),
+                    remote_window_kind: stable_remote_window_kind(remote_window),
+                    used: remote_window.used,
+                    observed_at,
+                    resets_at: remote_window.ends_at,
+                }),
+            })
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn matching_source<'a>(
+    sources: &'a [QuotaSourceSummary],
+    remote_window: &DetectedQuotaWindow,
+) -> Option<&'a QuotaSourceSummary> {
+    let remote_duration = remote_window.ends_at.checked_sub(remote_window.starts_at)?;
+    sources
+        .iter()
+        .filter(|source| {
+            source.provider_managed
+                && source.provider_display_name.eq_ignore_ascii_case("codex")
+                && source.unit == "percent"
+        })
+        .filter_map(|source| {
+            let local_duration = source.ends_at.checked_sub(source.starts_at)?;
+            let difference = local_duration.abs_diff(remote_duration);
+            (difference <= 5 * 60_000).then_some((difference, source))
+        })
+        .min_by_key(|(difference, _)| *difference)
+        .map(|(_, source)| source)
+}
+
+fn stable_remote_window_kind(window: &DetectedQuotaWindow) -> String {
+    format!("duration_{}_minutes", window.duration_minutes)
 }
 
 fn query_rate_limits() -> Result<CodexDetection, AdapterError> {
@@ -826,6 +956,164 @@ mod tests {
             })
             .unwrap();
         assert_eq!(dashboard.window.provider_remaining, 12);
+    }
+
+    #[test]
+    fn sync_adds_a_restored_five_hour_window_without_replacing_weekly_history() {
+        let mut service = QuotaService::new(Database::open_in_memory().unwrap());
+        let week = 10_080 * 60_000;
+        let five_hours = 300 * 60_000;
+        service
+            .create_quota_source(CreateQuotaSource {
+                provider_id: "existing-codex-provider".to_owned(),
+                provider_display_name: "Codex".to_owned(),
+                account_id: "existing-codex-account".to_owned(),
+                account_display_name: "Plus subscription".to_owned(),
+                pool_id: "existing-codex-weekly-pool".to_owned(),
+                pool_display_name: "Weekly allowance".to_owned(),
+                window_id: "existing-codex-weekly-window".to_owned(),
+                starts_at: 1_000,
+                ends_at: 1_000 + week,
+                capacity: 100,
+                unit: "percent".to_owned(),
+                provider_snapshot: Some(ProviderQuotaSnapshotInput {
+                    adapter: "codex_app_server".to_owned(),
+                    remote_limit_id: "codex".to_owned(),
+                    // Codex previously labelled the weekly window as primary.
+                    // That unstable role must not collide with a restored 5-hour primary.
+                    remote_window_kind: "primary".to_owned(),
+                    used: 5,
+                    observed_at: 2_000,
+                    resets_at: 1_000 + week,
+                }),
+            })
+            .unwrap();
+        let checkpoint = || {
+            CodexDetection::detected(
+                Some("plus".to_owned()),
+                vec![
+                    DetectedQuotaWindow {
+                        id: "codex-primary".to_owned(),
+                        display_name: "5-hour allowance".to_owned(),
+                        kind: "primary".to_owned(),
+                        starts_at: 10_000,
+                        ends_at: 10_000 + five_hours,
+                        capacity: 100,
+                        used: 24,
+                        remaining: 76,
+                        unit: "percent".to_owned(),
+                        duration_minutes: 300,
+                    },
+                    DetectedQuotaWindow {
+                        id: "codex-secondary".to_owned(),
+                        display_name: "Weekly allowance".to_owned(),
+                        kind: "secondary".to_owned(),
+                        starts_at: 1_000,
+                        ends_at: 1_000 + week,
+                        capacity: 100,
+                        used: 6,
+                        remaining: 94,
+                        unit: "percent".to_owned(),
+                        duration_minutes: 10_080,
+                    },
+                ],
+            )
+        };
+
+        let first = sync_detection(
+            &mut service,
+            "existing-codex-weekly-window".to_owned(),
+            20_000,
+            checkpoint(),
+        );
+        assert_eq!(first.status, CodexSyncStatus::Synced, "{first:?}");
+        assert_eq!(
+            first.window_id.as_deref(),
+            Some("existing-codex-weekly-window")
+        );
+
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: first.window_id.clone(),
+                at: 20_000,
+            })
+            .unwrap();
+        let codex_sources = state
+            .sources
+            .iter()
+            .filter(|source| source.provider_display_name == "Codex")
+            .collect::<Vec<_>>();
+        assert_eq!(codex_sources.len(), 2);
+        let five_hour = codex_sources
+            .iter()
+            .find(|source| source.pool_display_name == "5-hour allowance")
+            .unwrap();
+        assert_eq!(five_hour.provider_id, "codex-300-minute-provider");
+        assert_eq!(five_hour.account_display_name, "Plus subscription");
+        assert_eq!(five_hour.provider_used, Some(24));
+        let weekly = codex_sources
+            .iter()
+            .find(|source| source.pool_display_name == "Weekly allowance")
+            .unwrap();
+        assert_eq!(weekly.pool_id, "existing-codex-weekly-pool");
+        assert_eq!(weekly.provider_used, Some(6));
+
+        let second = sync_detection(
+            &mut service,
+            "existing-codex-weekly-window".to_owned(),
+            21_000,
+            checkpoint(),
+        );
+        assert_eq!(second.status, CodexSyncStatus::Synced);
+        let state = service
+            .local_state(GetLocalState {
+                selected_window_id: second.window_id,
+                at: 21_000,
+            })
+            .unwrap();
+        assert_eq!(
+            state
+                .sources
+                .iter()
+                .filter(|source| source.provider_display_name == "Codex")
+                .count(),
+            2
+        );
+
+        let five_hour_only = CodexDetection::detected(
+            Some("plus".to_owned()),
+            vec![DetectedQuotaWindow {
+                id: "codex-primary".to_owned(),
+                display_name: "5-hour allowance".to_owned(),
+                kind: "primary".to_owned(),
+                starts_at: 10_000,
+                ends_at: 10_000 + five_hours,
+                capacity: 100,
+                used: 25,
+                remaining: 75,
+                unit: "percent".to_owned(),
+                duration_minutes: 300,
+            }],
+        );
+        let fallback = sync_detection(
+            &mut service,
+            "existing-codex-weekly-window".to_owned(),
+            22_000,
+            five_hour_only,
+        );
+        assert_eq!(
+            fallback.status,
+            CodexSyncStatus::Unavailable,
+            "{fallback:?}"
+        );
+        assert_ne!(
+            fallback.window_id.as_deref(),
+            Some("existing-codex-weekly-window")
+        );
+        assert!(fallback
+            .message
+            .as_deref()
+            .is_some_and(|message| message.contains("changed its active quota windows")));
     }
 
     #[test]

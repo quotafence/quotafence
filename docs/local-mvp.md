@@ -18,11 +18,13 @@ provider → subscription account → quota pool → quota window
 ```
 
 The app first probes the installed Codex App Server. When a signed-in
-subscription exposes rate limits, the user chooses one detected window and the
-app imports its duration, reset time, percentage capacity, and current usage.
-The provider total is stored as a replaceable absolute snapshot, so the
-dashboard reflects provider remaining capacity without adding repeated reads
-together.
+subscription exposes rate limits, the user chooses one detected window for the
+initial source. Subsequent syncs import every complete native Codex window and
+group them under Codex, including provider-side windows that are restored after
+being temporarily absent. Existing window IDs, allocations, and history remain
+intact. Each provider total is stored as a replaceable absolute snapshot, so
+the dashboard reflects provider remaining capacity without adding repeated
+reads together.
 
 Manual provider, allowance, unit, and reset configuration remains available as
 an explicit fallback. Selecting Claude Code manually does not claim that a
