@@ -14,6 +14,11 @@ The separate Windows workflow builds an unsigned x64 NSIS installer plus
 for 14 days; it does not attach them to the public release until Windows signing
 and native smoke testing are complete. See the [Windows guide](windows.md).
 
+Production signing is a distribution safety requirement, not a Pro
+entitlement. Once configured, official signed/notarized downloads must remain
+available to Free users. Automatic update convenience may be capability-gated
+later, but important security fixes must always remain manually downloadable.
+
 ## Release modes
 
 ### Ad-hoc beta build

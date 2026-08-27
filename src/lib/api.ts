@@ -9,11 +9,16 @@ import type {
   ClaudeProtectionStatus,
   ClaudeSyncResult,
   IpcError,
+  EntitlementSnapshot,
   LocalState,
   PolicySummary,
   QuotaSourceInput,
   WorkspaceInput,
 } from "../types";
+
+export async function getEntitlements(): Promise<EntitlementSnapshot> {
+  return invoke<EntitlementSnapshot>("get_entitlements");
+}
 
 function createId(prefix: string): string {
   const suffix =

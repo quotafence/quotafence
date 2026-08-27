@@ -240,6 +240,32 @@ export type LocalState = {
   dashboard: QuotaDashboard | null;
 };
 
+export type Capability =
+  | "basic_usage"
+  | "project_quotas"
+  | "local_enforcement"
+  | "basic_history"
+  | "basic_forecasting"
+  | "basic_alerts"
+  | "basic_export"
+  | "manual_configuration"
+  | "advanced_analytics"
+  | "advanced_forecasting"
+  | "smart_alerts"
+  | "scheduled_reports"
+  | "advanced_export"
+  | "advanced_rules"
+  | "automatic_routing"
+  | "automatic_updates"
+  | "multi_device_sync"
+  | "backup_restore"
+  | "priority_support";
+
+export type EntitlementSnapshot = {
+  source: "free" | "license";
+  capabilities: Capability[];
+};
+
 export type QuotaSourceInput = {
   providerDisplayName: string;
   accountDisplayName?: string;

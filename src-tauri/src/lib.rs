@@ -1,6 +1,7 @@
 pub mod application;
 mod commands;
 pub mod domain;
+pub mod entitlements;
 pub mod paths;
 pub mod providers;
 pub mod storage;
@@ -29,6 +30,7 @@ pub fn run() {
             commands::release_reservation,
             commands::get_quota_dashboard,
             commands::get_local_state,
+            commands::get_entitlements,
             commands::detect_codex_quota,
             commands::probe_claude_code,
             commands::get_claude_integration_status,

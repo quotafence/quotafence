@@ -1,4 +1,4 @@
-# Codex-First Roadmap
+# QuotaFence roadmap
 
 This roadmap turns QuotaFence from a local quota dashboard into a budget guard in the
 execution path of an AI coding agent. It favors small, testable vertical
@@ -12,9 +12,10 @@ provider process, and reconciles usage afterward. Routing across providers is a
 later extension of this control loop, not part of v0.1.
 
 The initial user is a solo power user running multiple agents or workspaces
-against one constrained Codex subscription. Team governance may become a paid
-product later, but cloud workspaces, RBAC, billing, and organization policy are
-not current requirements.
+against constrained subscriptions. The project quota engine remains open and
+local. Commercial work adds convenience, advanced insight, automation, and
+optional coordination without making cloud access a requirement for the core.
+See the [product and monetization direction](product-and-monetization.md).
 
 ## Immediate execution queue
 
@@ -116,6 +117,22 @@ reversible status-line setup, 5-hour/7-day checkpoint ingestion, rollover,
 lifecycle attribution, new-prompt Warn/Stop protection, and an explicit-window
 managed CLI launch are implemented. Cross-provider routing remains
 evidence-gated because the native windows are not interchangeable.
+
+### P5 — Commercial beta foundation — in progress
+
+- Centralize Free and future paid behavior behind a capability registry.
+- Preserve the full local quota engine, unlimited projects, basic history,
+  forecast, alerts, and export in the open core.
+- Fall back to Free without deleting or locking data when a future grant is
+  missing, invalid, offline, or expired.
+- Complete signed distribution, external native testing, privacy/terms/support
+  operations, and one real Pro workflow before accepting payment.
+- Defer checkout, cloud sync, and Team until those gates pass.
+
+The capability contract, Free resolver, frontend IPC types, and commercial
+launch checklist are implemented. Payment, license persistence, automatic
+updates, advanced analytics, cloud sync, and Team remain intentionally
+unimplemented.
 
 ## Current implementation
 

@@ -107,6 +107,12 @@ Additional providers, cloud sync, teams, RBAC, billing, and routing are outside
 the current slice. See the [Roadmap](docs/roadmap.md) for implementation gaps,
 milestones, and recommended architecture decisions.
 
+Project quotas, local enforcement, and a useful basic forecast are part of the
+open-source core and are not project-count paywalls. Commercial development is
+capability-based and reserved for advanced insight, automation, and optional
+coordination. See [Product and monetization](docs/product-and-monetization.md)
+and the [commercial launch checklist](docs/commercial-launch-checklist.md).
+
 ## Beta quick start
 
 The beta can be built from source. GitHub Actions also produces checksum-bearing

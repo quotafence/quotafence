@@ -9,6 +9,7 @@ use std::{
 
 use tauri::{Manager, Runtime, State};
 
+use crate::entitlements::EntitlementSnapshot;
 use crate::providers::claude_code::{
     self, ClaudeCodeProbe, ClaudeStatusLineStatus, ClaudeSyncResult,
 };
@@ -164,6 +165,13 @@ pub(crate) fn get_local_state(
     request: GetLocalState,
 ) -> IpcResult<LocalState> {
     state.execute(|service| service.local_state(request))
+}
+
+#[tauri::command]
+pub(crate) fn get_entitlements() -> EntitlementSnapshot {
+    // The open core never needs a network or license service to start. A future
+    // signed-license adapter can feed a verified grant into the resolver here.
+    EntitlementSnapshot::free()
 }
 
 #[tauri::command]

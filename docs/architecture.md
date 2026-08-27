@@ -40,6 +40,7 @@ src/                         React presentation and view state
 src-tauri/src/
   commands/                  Narrow Tauri command boundary
   domain/                    Quota, allocation, scope, policy, usage event
+  entitlements.rs            Central Free/paid capability boundary
   application/               Use cases and orchestration
   storage/                   Local persistence and migrations
   providers/
@@ -88,6 +89,20 @@ resource types have different semantics: concurrency is instantaneous, USD
 should use integer minor units, and priority/deadline belong to workload policy
 rather than an amount. See [Quota model](quota-model.md). No general resource
 rewrite is required for the Codex slice.
+
+### Entitlements
+
+Entitlements are a boundary beside the quota core, not part of it. The backend
+returns a capability snapshot containing the complete Free core plus any
+capabilities from a verified, unexpired grant. The UI and future commercial
+modules ask for individual capabilities instead of reading a plan name.
+
+The current adapter always returns Free. It performs no network request and
+stores no license. Future payment, signature-verification, and cached-license
+adapters must feed the resolver without introducing a dependency from the
+domain or storage layers to a cloud service. Expired grants resolve to Free;
+they do not mutate or delete user data. See
+[Product and monetization direction](product-and-monetization.md).
 
 ### Application services
 

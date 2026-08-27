@@ -19,6 +19,14 @@ recoverable IPC error instead of a panic.
 
 ## Commands
 
+### `get_entitlements`
+
+Returns the centralized capability snapshot available to the frontend. The current
+implementation is local and always returns the complete Free capability set;
+it does not contact a license or payment service. Future verified grants may
+add capabilities, but an expired grant falls back to Free without modifying
+quota data.
+
 The approved product commands are:
 
 - `create_provider`
@@ -36,6 +44,7 @@ The approved product commands are:
 - `release_reservation`
 - `get_quota_dashboard`
 - `get_local_state`
+- `get_entitlements`
 - `detect_codex_quota`
 - `probe_claude_code`
 - `sync_codex_quota`
