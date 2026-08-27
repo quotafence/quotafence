@@ -41,6 +41,9 @@ not depend on a paid subscription.
   for the jurisdictions where sales are offered.
 - [ ] Document exactly what remains local and every optional network request.
 - [ ] Add a security reporting address and vulnerability response process.
+- [ ] Enable and test GitHub private vulnerability reporting before changing
+  repository visibility; the API did not expose that channel while this
+  checklist was written.
 - [ ] Audit repository history, CI logs, artifacts, and application bundles for
   credentials and signing secrets before making the repository public.
 - [ ] Test backup/export and confirm uninstall does not silently destroy user
@@ -72,4 +75,3 @@ real business decisions.
   its purpose is explicitly sync or remote delivery.
 - [ ] Support channel, issue triage owner, crash-response owner, and release
   owner are named.
-

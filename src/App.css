@@ -1648,6 +1648,35 @@ h3,
   line-height: 1.5;
 }
 
+.capability-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.capability-grid span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--muted-strong);
+  background: var(--panel-raised);
+  font-size: 12px;
+}
+
+.capability-grid svg {
+  flex: 0 0 auto;
+  color: var(--success);
+}
+
+.settings-card .capability-contract-note {
+  margin-top: 12px;
+}
+
 .settings-status {
   padding: 6px 9px;
   border: 1px solid var(--line-strong);
@@ -3029,6 +3058,10 @@ h3,
   .settings-status {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .capability-grid {
+    grid-template-columns: 1fr;
   }
 
   .integration-health-actions {

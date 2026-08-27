@@ -28,6 +28,8 @@ First source-distributed multi-agent beta of the QuotaFence vertical slice.
   process recovery.
 - A centralized capability/entitlement boundary that keeps the complete Free
   core available and falls back safely when future grants expire.
+- A versioned capability snapshot in Desktop Settings and the read-only
+  `qfence features [--json]` command.
 
 ### Known limitations
 

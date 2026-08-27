@@ -19,6 +19,7 @@ qfence sources show claude
 qfence allocations
 qfence here
 qfence bind "Workspace name"
+qfence features
 qfence codex
 qfence claude --window 5h
 ```
@@ -43,6 +44,7 @@ shows how many seconds, minutes, hours, or days ago it was synced.
 | `qfence here` | Resolve the current folder (`context` is an alias) | no |
 | `qfence bind <workspace>` | Bind the folder to a workspace name or ID | no |
 | `qfence policy` | Show the effective workspace policy | no |
+| `qfence features` | Show enabled local product capabilities (`capabilities` is an alias) | no |
 | `qfence codex [args]` | Run a quota-managed Codex process | before and after |
 | `qfence claude [args]` | Run a quota-managed Claude process | before and after |
 | `qfence admit codex` | Evaluate admission without launching Codex | yes |
@@ -58,6 +60,11 @@ warning below the table instead of presenting stale data as current.
 All read-only commands support `--json`. JSON never contains ANSI color or
 table characters. Human output uses color only for an interactive terminal;
 redirects, pipes, `NO_COLOR=1`, and `TERM=dumb` produce plain output.
+
+`qfence features` does not open the quota database or contact a network service.
+Its JSON response contains `schemaVersion`, `source`, and the enabled capability
+identifiers so scripts can inspect the same entitlement snapshot as the desktop
+app.
 
 ## Install the CLI
 

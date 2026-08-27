@@ -25,7 +25,8 @@ Returns the centralized capability snapshot available to the frontend. The curre
 implementation is local and always returns the complete Free capability set;
 it does not contact a license or payment service. Future verified grants may
 add capabilities, but an expired grant falls back to Free without modifying
-quota data.
+quota data. `schemaVersion` versions this transport contract; `source` describes
+where additions came from, and `capabilities` contains stable snake-case IDs.
 
 The approved product commands are:
 

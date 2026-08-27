@@ -262,6 +262,7 @@ export type Capability =
   | "priority_support";
 
 export type EntitlementSnapshot = {
+  schemaVersion: number;
   source: "free" | "license";
   capabilities: Capability[];
 };

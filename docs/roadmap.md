@@ -129,10 +129,11 @@ evidence-gated because the native windows are not interchangeable.
   operations, and one real Pro workflow before accepting payment.
 - Defer checkout, cloud sync, and Team until those gates pass.
 
-The capability contract, Free resolver, frontend IPC types, and commercial
-launch checklist are implemented. Payment, license persistence, automatic
-updates, advanced analytics, cloud sync, and Team remain intentionally
-unimplemented.
+The versioned capability contract, Free resolver, frontend IPC types, Settings
+visibility, `qfence features`, license design, security policy, and commercial
+launch checklist are implemented. Payment, signature verification, license
+persistence, automatic updates, advanced analytics, cloud sync, and Team remain
+intentionally unimplemented.
 
 ## Current implementation
 

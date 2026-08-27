@@ -89,6 +89,9 @@ Rules:
 The current implementation exposes the Free snapshot through Tauri IPC and has
 a provider-neutral resolver for future verified grants. It intentionally does
 not yet store a license, call a license server, or implement payment.
+The snapshot is versioned, visible in Desktop Settings, and inspectable with
+`qfence features --json`. The signed-envelope and offline behavior are defined
+in the [license entitlement design](licensing.md).
 
 ## Launch order
 
@@ -101,4 +104,3 @@ not yet store a license, call a license server, or implement payment.
 5. Add a Merchant-of-Record checkout, signed license grants, recovery, and
    self-service cancellation only when the paid workflow is ready.
 6. Add optional sync and Team only after observed demand.
-

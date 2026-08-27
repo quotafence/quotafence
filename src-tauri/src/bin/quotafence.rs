@@ -20,6 +20,7 @@ use quotafence_lib::{
         ResetWorkspacePolicy, SetWorkspacePolicy, WorkspaceContext, WorkspacePolicySummary,
     },
     domain::EnforcementDecision,
+    entitlements::EntitlementSnapshot,
     paths,
     providers::{
         claude_code, claude_hooks,
@@ -42,6 +43,9 @@ static SIGNAL_HANDLER_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug)]
 enum CliCommand {
+    Features {
+        json: bool,
+    },
     Status(CommonOptions),
     Sync(CommonOptions),
     Sources {
@@ -136,6 +140,10 @@ fn run(args: Vec<String>) -> Result<u8, String> {
     match parse_args(args)? {
         CliCommand::Help => {
             print_help();
+            Ok(EXIT_ALLOW)
+        }
+        CliCommand::Features { json } => {
+            print_features(&EntitlementSnapshot::free(), json)?;
             Ok(EXIT_ALLOW)
         }
         CliCommand::Status(options) => {
@@ -1060,6 +1068,7 @@ fn parse_args(mut args: Vec<String>) -> Result<CliCommand, String> {
             "ls" | "list" | "source" => "sources".to_owned(),
             "alloc" => "allocations".to_owned(),
             "here" => "context".to_owned(),
+            "feature" | "capabilities" => "features".to_owned(),
             _ => command.clone(),
         };
     }
@@ -1068,6 +1077,9 @@ fn parse_args(mut args: Vec<String>) -> Result<CliCommand, String> {
     };
     if matches!(command, "-h" | "--help" | "help") {
         return Ok(CliCommand::Help);
+    }
+    if command == "features" {
+        return parse_features_command(&args);
     }
     if command == "hook" {
         return parse_hook_command(&args);
@@ -1159,6 +1171,18 @@ fn parse_args(mut args: Vec<String>) -> Result<CliCommand, String> {
         }),
         _ => unreachable!("command was validated"),
     }
+}
+
+fn parse_features_command(args: &[String]) -> Result<CliCommand, String> {
+    let mut json = false;
+    for option in &args[1..] {
+        match option.as_str() {
+            "--json" => json = true,
+            "-h" | "--help" => return Ok(CliCommand::Help),
+            option => return Err(format!("unknown features option {option:?}")),
+        }
+    }
+    Ok(CliCommand::Features { json })
 }
 
 fn parse_read_command(args: &[String]) -> Result<CliCommand, String> {
@@ -2135,6 +2159,7 @@ Workspace:
   qfence bind <workspace>             Bind this folder to an allocation
   qfence allocations                  List workspace allocations
   qfence policy                       Show the current workspace policy
+  qfence features                     Show enabled product capabilities
 
 More:
   qfence sources show <provider> [--json]
@@ -2154,6 +2179,33 @@ Options:
   percent|off          Percentage of a workspace allocation consumed, or disabled
   --json               Print machine-readable output"
     );
+}
+
+fn print_features(snapshot: &EntitlementSnapshot, json: bool) -> Result<(), String> {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(snapshot)
+                .map_err(|error| format!("cannot serialize capabilities: {error}"))?
+        );
+        return Ok(());
+    }
+
+    let edition = match snapshot.source {
+        quotafence_lib::entitlements::EntitlementSource::Free => "FREE · LOCAL CORE",
+        quotafence_lib::entitlements::EntitlementSource::License => "LICENSED CAPABILITIES",
+    };
+    println!("{}  {edition}", paint("QUOTAFENCE", "38;5;45"));
+    println!("\nEnabled capabilities\n");
+    for capability in &snapshot.capabilities {
+        println!("  {} {}", paint("●", "38;5;84"), capability.display_name());
+    }
+    println!(
+        "\n{} capabilities · contract v{} · no license or network required",
+        snapshot.capabilities.len(),
+        snapshot.schema_version
+    );
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2341,6 +2393,19 @@ mod tests {
             parse_args(vec!["allocations".to_owned(), "list".to_owned()]).unwrap(),
             CliCommand::Allocations(_)
         ));
+    }
+
+    #[test]
+    fn feature_command_is_simple_and_supports_machine_readable_output() {
+        assert!(matches!(
+            parse_args(vec!["features".to_owned()]).unwrap(),
+            CliCommand::Features { json: false }
+        ));
+        assert!(matches!(
+            parse_args(vec!["capabilities".to_owned(), "--json".to_owned()]).unwrap(),
+            CliCommand::Features { json: true }
+        ));
+        assert!(parse_args(vec!["features".to_owned(), "--database".to_owned()]).is_err());
     }
 
     #[test]
