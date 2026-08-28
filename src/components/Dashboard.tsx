@@ -1117,11 +1117,26 @@ export function Dashboard({
                       <span>{formatDate(quotaWindow.endsAt)}</span>
                     </div>
                   </div>
-                  <UsageHeatmap
-                    history={dashboard.quotaHistory}
-                    capacity={quotaWindow.capacity}
-                    unit={quotaWindow.unit}
-                  />
+                  {shortWindow && (
+                    <dl className="short-window-facts">
+                      <div>
+                        <dt>Used this window</dt>
+                        <dd>{formatAmount(usedAmount, quotaWindow.unit)}</dd>
+                      </div>
+                      <div>
+                        <dt>Time remaining</dt>
+                        <dd>
+                          {remainingPacingUnits}h
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Safe pace</dt>
+                        <dd>
+                          {formatAmount(pacingBudget, quotaWindow.unit)}/h
+                        </dd>
+                      </div>
+                    </dl>
+                  )}
                 </article>
 
                 <article className="dashboard-block allocation-summary-block">
@@ -1206,44 +1221,6 @@ export function Dashboard({
                 </article>
               </section>
 
-              <section className="attribution-diagnostics dashboard-block">
-                <div className="attribution-diagnostics-heading">
-                  <div>
-                    <span className="block-kicker">Attribution</span>
-                    <h2>Where provider usage went</h2>
-                  </div>
-                  <p>{attributionIssue}</p>
-                </div>
-                <dl>
-                  <div>
-                    <dt>Tracked to folders</dt>
-                    <dd>{formatAmount(attributedUsage, quotaWindow.unit)}</dd>
-                    <small>Debited from matching allocations</small>
-                  </div>
-                  <div>
-                    <dt>Unassigned usage</dt>
-                    <dd>
-                      {formatAmount(
-                        quotaWindow.unattributedUsage,
-                        quotaWindow.unit,
-                      )}
-                    </dd>
-                    <small>Reduces total quota, not a guessed folder</small>
-                  </div>
-                  <div>
-                    <dt>Open observations</dt>
-                    <dd>{turnHealth?.pendingCount ?? 0}</dd>
-                    <small>
-                      {(turnHealth?.contendedCount ?? 0) > 0
-                        ? `${turnHealth?.contendedCount} overlapping`
-                        : (turnHealth?.staleCount ?? 0) > 0
-                          ? `${turnHealth?.staleCount} stale`
-                          : "Awaiting safe reconciliation"}
-                    </small>
-                  </div>
-                </dl>
-              </section>
-
               <section className="workspace-budget-section dashboard-block">
                 <header>
                   <div>
@@ -1308,6 +1285,54 @@ export function Dashboard({
                   })}
                 </div>
               </section>
+
+              <section className="attribution-diagnostics dashboard-block">
+                <div className="attribution-diagnostics-heading">
+                  <div>
+                    <span className="block-kicker">Attribution</span>
+                    <h2>Where provider usage went</h2>
+                  </div>
+                  <p>{attributionIssue}</p>
+                </div>
+                <dl>
+                  <div>
+                    <dt>Tracked to folders</dt>
+                    <dd>{formatAmount(attributedUsage, quotaWindow.unit)}</dd>
+                    <small>Debited from matching allocations</small>
+                  </div>
+                  <div>
+                    <dt>Unassigned usage</dt>
+                    <dd>
+                      {formatAmount(
+                        quotaWindow.unattributedUsage,
+                        quotaWindow.unit,
+                      )}
+                    </dd>
+                    <small>Reduces total quota, not a guessed folder</small>
+                  </div>
+                  <div>
+                    <dt>Open observations</dt>
+                    <dd>{turnHealth?.pendingCount ?? 0}</dd>
+                    <small>
+                      {(turnHealth?.contendedCount ?? 0) > 0
+                        ? `${turnHealth?.contendedCount} overlapping`
+                        : (turnHealth?.staleCount ?? 0) > 0
+                          ? `${turnHealth?.staleCount} stale`
+                          : "Awaiting safe reconciliation"}
+                    </small>
+                  </div>
+                </dl>
+              </section>
+
+              {!shortWindow && (
+                <section className="usage-history-section dashboard-block">
+                  <UsageHeatmap
+                    history={dashboard.quotaHistory}
+                    capacity={quotaWindow.capacity}
+                    unit={quotaWindow.unit}
+                  />
+                </section>
+              )}
             </div>
           </>
         )}

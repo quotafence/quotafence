@@ -3938,6 +3938,40 @@ h3,
   height: 9px;
 }
 
+.short-window-facts {
+  margin: 26px 0 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.short-window-facts > div {
+  min-width: 0;
+}
+
+.short-window-facts dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.short-window-facts dd {
+  margin: 6px 0 0;
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 580;
+  letter-spacing: -0.025em;
+}
+
+.usage-history-section {
+  padding: 24px 28px 26px;
+}
+
+.usage-history-section .quota-trend {
+  margin-top: 0;
+}
+
 .allocation-summary-block {
   min-height: 326px;
   padding: 22px 26px;
@@ -4020,6 +4054,10 @@ h3,
   .attribution-diagnostics dl > div:first-child {
     padding-top: 0;
     border-top: 0;
+  }
+
+  .short-window-facts {
+    gap: 12px;
   }
 }
 
@@ -4426,6 +4464,10 @@ h3,
 
   .quota-dashboard-block {
     padding: 25px 24px;
+  }
+
+  .short-window-facts {
+    grid-template-columns: 1fr;
   }
 
   .allocation-summary-block {
