@@ -289,4 +289,5 @@ export type WorkspaceInput = {
   displayName: string;
   allocation: number;
   workspacePath: string;
+  reallocateFromScopeId: string | null;
 };

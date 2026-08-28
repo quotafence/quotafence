@@ -376,6 +376,64 @@ CREATE INDEX idx_codex_desktop_confirmations_scope
     ON codex_desktop_confirmations(session_id, scope_id, window_id, status);
 "#;
 
+const WEEKLY_WORKSPACE_ALLOCATIONS: &str = r#"
+DELETE FROM allocation_priorities
+WHERE EXISTS (
+    SELECT 1
+    FROM allocations short_allocation
+    JOIN quota_windows short_window ON short_window.id = short_allocation.window_id
+    JOIN quota_pools short_pool ON short_pool.id = short_window.pool_id
+    JOIN accounts short_account ON short_account.id = short_pool.account_id
+    JOIN providers short_provider ON short_provider.id = short_account.provider_id
+    JOIN provider_quota_snapshots short_snapshot
+      ON short_snapshot.window_id = short_window.id
+    WHERE short_allocation.scope_id = allocation_priorities.scope_id
+      AND short_pool.id = allocation_priorities.pool_id
+      AND lower(short_pool.display_name) NOT LIKE '%weekly%'
+      AND EXISTS (
+          SELECT 1
+          FROM allocations weekly_allocation
+          JOIN quota_windows weekly_window ON weekly_window.id = weekly_allocation.window_id
+          JOIN quota_pools weekly_pool ON weekly_pool.id = weekly_window.pool_id
+          JOIN accounts weekly_account ON weekly_account.id = weekly_pool.account_id
+          JOIN providers weekly_provider ON weekly_provider.id = weekly_account.provider_id
+          JOIN provider_quota_snapshots weekly_snapshot
+            ON weekly_snapshot.window_id = weekly_window.id
+          WHERE weekly_allocation.scope_id = short_allocation.scope_id
+            AND lower(weekly_pool.display_name) LIKE '%weekly%'
+            AND lower(weekly_provider.display_name) = lower(short_provider.display_name)
+            AND lower(weekly_account.display_name) = lower(short_account.display_name)
+      )
+);
+
+DELETE FROM allocations
+WHERE rowid IN (
+    SELECT short_allocation.rowid
+    FROM allocations short_allocation
+    JOIN quota_windows short_window ON short_window.id = short_allocation.window_id
+    JOIN quota_pools short_pool ON short_pool.id = short_window.pool_id
+    JOIN accounts short_account ON short_account.id = short_pool.account_id
+    JOIN providers short_provider ON short_provider.id = short_account.provider_id
+    JOIN provider_quota_snapshots short_snapshot
+      ON short_snapshot.window_id = short_window.id
+    WHERE lower(short_pool.display_name) NOT LIKE '%weekly%'
+      AND EXISTS (
+          SELECT 1
+          FROM allocations weekly_allocation
+          JOIN quota_windows weekly_window ON weekly_window.id = weekly_allocation.window_id
+          JOIN quota_pools weekly_pool ON weekly_pool.id = weekly_window.pool_id
+          JOIN accounts weekly_account ON weekly_account.id = weekly_pool.account_id
+          JOIN providers weekly_provider ON weekly_provider.id = weekly_account.provider_id
+          JOIN provider_quota_snapshots weekly_snapshot
+            ON weekly_snapshot.window_id = weekly_window.id
+          WHERE weekly_allocation.scope_id = short_allocation.scope_id
+            AND lower(weekly_pool.display_name) LIKE '%weekly%'
+            AND lower(weekly_provider.display_name) = lower(short_provider.display_name)
+            AND lower(weekly_account.display_name) = lower(short_account.display_name)
+      )
+);
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -461,6 +519,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 17,
         name: "codex_desktop_confirmations",
         sql: CODEX_DESKTOP_CONFIRMATIONS,
+    },
+    Migration {
+        version: 18,
+        name: "weekly_workspace_allocations",
+        sql: WEEKLY_WORKSPACE_ALLOCATIONS,
     },
 ];
 
@@ -565,6 +628,94 @@ pub(crate) fn latest_version() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn weekly_allocation_migration_removes_only_the_mirrored_short_window_copy() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys = ON;
+                 CREATE TABLE schema_migrations (
+                    version INTEGER PRIMARY KEY NOT NULL,
+                    name TEXT NOT NULL,
+                    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );",
+            )
+            .unwrap();
+        for migration in MIGRATIONS
+            .iter()
+            .filter(|migration| migration.version <= 17)
+        {
+            let transaction = connection.transaction().unwrap();
+            if migration.version == 10 {
+                repair_managed_session_reconciliation_schema(&transaction).unwrap();
+            } else {
+                transaction.execute_batch(migration.sql).unwrap();
+            }
+            transaction
+                .execute(
+                    "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+                    params![migration.version, migration.name],
+                )
+                .unwrap();
+            transaction.commit().unwrap();
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO providers (id, display_name)
+                 VALUES ('codex-weekly-provider', 'Codex'), ('codex-short-provider', 'Codex');
+                 INSERT INTO accounts (id, provider_id, display_name)
+                 VALUES
+                    ('codex-weekly-account', 'codex-weekly-provider', 'Subscription'),
+                    ('codex-short-account', 'codex-short-provider', 'Subscription');
+                 INSERT INTO quota_pools (id, account_id, display_name, unit)
+                 VALUES
+                    ('codex-weekly', 'codex-weekly-account', 'Weekly allowance', 'percent'),
+                    ('codex-short', 'codex-short-account', '5-hour allowance', 'percent');
+                 INSERT INTO quota_windows (id, pool_id, starts_at, ends_at, capacity)
+                 VALUES
+                    ('codex-weekly-window', 'codex-weekly', 1000, 10000, 100),
+                    ('codex-short-window', 'codex-short', 1000, 5000, 100);
+                 INSERT INTO provider_quota_snapshots (
+                    window_id, adapter, remote_limit_id, remote_window_kind,
+                    used, observed_at, resets_at
+                 ) VALUES
+                    ('codex-weekly-window', 'codex_app_server', 'codex', 'secondary', 10, 2000, 10000),
+                    ('codex-short-window', 'codex_app_server', 'codex', 'primary', 20, 2000, 5000);
+                 INSERT INTO scopes (id, parent_id, kind, display_name)
+                 VALUES ('workspace-a', NULL, 'repository', 'Workspace A');
+                 INSERT INTO allocations (scope_id, window_id, amount)
+                 VALUES
+                    ('workspace-a', 'codex-weekly-window', 80),
+                    ('workspace-a', 'codex-short-window', 80);
+                 INSERT INTO allocation_priorities (pool_id, scope_id, rank)
+                 VALUES
+                    ('codex-weekly', 'workspace-a', 0),
+                    ('codex-short', 'workspace-a', 0);",
+            )
+            .unwrap();
+
+        migrate(&mut connection).unwrap();
+
+        let allocations = connection
+            .prepare("SELECT window_id, amount FROM allocations ORDER BY window_id")
+            .unwrap()
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(allocations, vec![("codex-weekly-window".to_owned(), 80)]);
+        let priorities: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM allocation_priorities WHERE pool_id = 'codex-short'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(priorities, 0);
+    }
 
     #[test]
     fn reconciliation_migration_preserves_existing_terminal_sessions() {

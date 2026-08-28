@@ -174,40 +174,52 @@ function UsageHeatmap({
   return (
     <div className="quota-trend">
       <div className="quota-trend-heading">
-        <span>Daily usage</span>
+        <span>
+          <Icon name="activity" size={15} />
+          Daily usage
+        </span>
         <small>
           Last 6 months · {activeDayCount}{" "}
           {activeDayCount === 1 ? "active day" : "active days"}
         </small>
       </div>
-      <div
-        className="quota-heatmap"
-        role="img"
-        aria-label="Daily quota usage heatmap"
-        style={{ gridTemplateColumns: `repeat(${weekCount}, minmax(0, 1fr))` }}
-      >
-        {days.map((day, index) =>
-          day ? (
-            <span
-              className={`quota-heatmap-day level-${usageLevel(day.usage)}`}
-              key={day.timestamp}
-              title={`${formatDate(day.timestamp)} · ${formatAmount(day.usage, unit)} used`}
-            />
-          ) : (
-            <span className="quota-heatmap-day empty" key={`empty-${index}`} />
-          ),
-        )}
-      </div>
-      <div className="quota-trend-axis">
-        <span>{formatDate(firstDay)}</span>
-        <span className="quota-heatmap-legend" aria-hidden="true">
-          Less
-          {[0, 1, 2, 3, 4].map((level) => (
-            <i className={`level-${level}`} key={level} />
-          ))}
-          More
-        </span>
-        <span>{formatDate(lastDay)}</span>
+      <div className="quota-heatmap-calendar">
+        <div className="quota-heatmap-body">
+          <div className="quota-weekday-axis" aria-hidden="true">
+            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+              <span key={day}>{day}</span>
+            ))}
+          </div>
+          <div
+            className="quota-heatmap"
+            role="img"
+            aria-label="Daily quota usage heatmap, rows run from Sunday through Saturday"
+            style={{ gridTemplateColumns: `repeat(${weekCount}, minmax(0, 1fr))` }}
+          >
+            {days.map((day, index) =>
+              day ? (
+                <span
+                  className={`quota-heatmap-day level-${usageLevel(day.usage)}`}
+                  key={day.timestamp}
+                  title={`${formatDate(day.timestamp)} · ${formatAmount(day.usage, unit)} used`}
+                />
+              ) : (
+                <span className="quota-heatmap-day empty" key={`empty-${index}`} />
+              ),
+            )}
+          </div>
+        </div>
+        <div className="quota-trend-axis">
+          <span>{formatDate(firstDay)}</span>
+          <span className="quota-heatmap-legend" aria-hidden="true">
+            Less
+            {[0, 1, 2, 3, 4].map((level) => (
+              <i className={`level-${level}`} key={level} />
+            ))}
+            More
+          </span>
+          <span>{formatDate(lastDay)}</span>
+        </div>
       </div>
     </div>
   );
@@ -363,6 +375,7 @@ function AllocationRow({
     >
       <div className="allocation-row-identity">
         <strong className="allocation-rank">{allocation.priority + 1}</strong>
+        <Icon className="allocation-folder-icon" name="folder" size={20} />
         <div>
           <strong>{scope.displayName}</strong>
           <span title={scope.workspacePath ?? undefined}>
@@ -557,6 +570,18 @@ export function Dashboard({
       candidate.providerDisplayName.toLowerCase() ===
       source.providerDisplayName.toLowerCase(),
   );
+  const displayedProviderWindows = [...providerWindows].sort(
+    (left, right) =>
+      left.endsAt - left.startsAt - (right.endsAt - right.startsAt),
+  );
+  const providerLastSyncedAt = providerWindows.reduce<number | null>(
+    (latest, candidate) =>
+      candidate.lastSyncedAt !== null &&
+      (latest === null || candidate.lastSyncedAt > latest)
+        ? candidate.lastSyncedAt
+        : latest,
+    null,
+  );
   const sidebarSources = state.sources.reduce<
     Array<{ key: string; sources: QuotaSourceSummary[] }>
   >((groups, candidate) => {
@@ -579,24 +604,11 @@ export function Dashboard({
   const shortWindow =
     quotaWindow.endsAt - quotaWindow.startsAt < 86_400_000;
   const pacingUnit = shortWindow ? "hour" : "day";
-  const pacingArticle = shortWindow ? "an" : "a";
   const pacingUnitMillis = shortWindow ? 3_600_000 : 86_400_000;
   const remainingPacingUnits = Math.max(
     0,
     Math.ceil((quotaWindow.endsAt - Date.now()) / pacingUnitMillis),
   );
-  const pacingBudget =
-    remainingPacingUnits > 0
-      ? Math.floor(quotaWindow.providerSpendable / remainingPacingUnits)
-      : 0;
-  const availablePercent = quotaWindow.capacity
-    ? Math.min(
-        100,
-        Math.round(
-          (quotaWindow.providerSpendable / quotaWindow.capacity) * 100,
-        ),
-      )
-    : 0;
   const allocationByScope = new Map(
     dashboard.allocations.map((allocation) => [allocation.scopeId, allocation]),
   );
@@ -669,42 +681,6 @@ export function Dashboard({
       ? `Funding then erodes from ${nextAllocationAtRisk.displayName} toward higher priorities.`
       : `Further usage then reduces ${nextAllocationAtRisk.displayName}'s planned capacity.`
     : "No allocation has funded capacity left.";
-  const forecast = dashboard.forecast;
-  const showForecast =
-    forecast.sampleCount >= 5 &&
-    forecast.status === "depletes_before_reset" &&
-    forecast.projectedDepletionAt !== null;
-  const projectedPacingUnits =
-    showForecast && forecast.projectedDepletionAt !== null
-      ? Math.max(
-          0,
-          Math.ceil(
-            (forecast.projectedDepletionAt - Date.now()) / pacingUnitMillis,
-          ),
-        )
-      : 0;
-  const statusTone =
-    source.isActive && availablePercent < 10
-      ? "danger"
-      : source.isActive && showForecast
-        ? "warning"
-        : "neutral";
-  const statusMessage =
-    !source.isActive
-      ? "This allowance window is inactive. Sync to check for a newer window."
-      : availablePercent < 10
-      ? `Only ${formatAmount(
-          quotaWindow.providerSpendable,
-          quotaWindow.unit,
-        )} left. Reserve it for priority work.`
-      : showForecast
-        ? `At your current pace you run out in ${projectedPacingUnits} ${
-            projectedPacingUnits === 1 ? pacingUnit : `${pacingUnit}s`
-          }.`
-        : `About ${formatAmount(
-            pacingBudget,
-            quotaWindow.unit,
-          )} ${pacingArticle} ${pacingUnit} keeps you safe.`;
   const clearPriorityDrag = () => {
     draggedScopeIdRef.current = null;
     dragOverScopeIdRef.current = null;
@@ -847,10 +823,10 @@ export function Dashboard({
               );
               const item =
                 selectedGroupSource ??
-                group.sources.find((candidate) => candidate.isActive) ??
                 group.sources.find((candidate) =>
                   candidate.poolDisplayName.toLowerCase().includes("weekly"),
                 ) ??
+                group.sources.find((candidate) => candidate.isActive) ??
                 group.sources[0];
               const latestSync = group.sources.reduce<number | null>(
                 (latest, candidate) =>
@@ -956,7 +932,11 @@ export function Dashboard({
             <header className="topbar block-dashboard-header">
               <div>
                 <h1>{source.providerDisplayName}</h1>
-                <p className="topbar-subtitle">{source.poolDisplayName}</p>
+                <p className="topbar-subtitle">
+                  {providerWindows.length > 1
+                    ? "5-hour + Weekly allowances"
+                    : source.poolDisplayName}
+                </p>
               </div>
               <div className="topbar-actions">
                 <button
@@ -982,37 +962,6 @@ export function Dashboard({
                 />
               </div>
             </header>
-
-            {providerWindows.length > 1 && (
-              <nav className="provider-window-strip" aria-label="Provider quota windows">
-                {providerWindows.map((candidate) => {
-                  const left =
-                    candidate.providerUsed === null
-                      ? null
-                      : Math.max(0, candidate.capacity - candidate.providerUsed);
-                  return (
-                    <button
-                      key={candidate.windowId}
-                      className={candidate.windowId === source.windowId ? "active" : ""}
-                      type="button"
-                      onClick={() => onSelectSource(candidate.windowId)}
-                    >
-                      <span>{candidate.poolDisplayName}</span>
-                      <strong>
-                        {left === null
-                          ? "Waiting for quota"
-                          : `${formatAmount(left, candidate.unit)} left`}
-                      </strong>
-                      <small>
-                        {candidate.isActive
-                          ? `Resets ${formatDate(candidate.endsAt)}`
-                          : "Inactive window"}
-                      </small>
-                    </button>
-                  );
-                })}
-              </nav>
-            )}
 
             <div className="overview-content block-dashboard-content">
               {codexSource && scopes.length > 0 && !protectionActive && (
@@ -1086,62 +1035,70 @@ export function Dashboard({
               <section className="overview-block-grid">
                 <article className="dashboard-block quota-dashboard-block">
                   <div className="block-kicker">
+                    <Icon name="gauge" size={15} />
                     <span className={`status-dot ${source.isActive ? "active" : ""}`} />
-                    {source.isActive ? "Active window" : "Inactive window"}
-                    <small>{formatLastSync(source.lastSyncedAt)}</small>
+                    {providerWindows.length > 1
+                      ? `${providerWindows.length} allowance windows`
+                      : source.isActive
+                        ? "Active window"
+                        : "Inactive window"}
+                    <small>{formatLastSync(providerLastSyncedAt)}</small>
                   </div>
-                  <div className={`quota-story ${statusTone}`}>
-                    <h2>
-                      {formatAmount(
-                        quotaWindow.providerSpendable,
-                        quotaWindow.unit,
-                      )}{" "}
-                      left
-                    </h2>
-                    <p>{statusMessage}</p>
+                  <div className="provider-allowance-bars">
+                    {displayedProviderWindows.map((candidate) => {
+                      const left =
+                        candidate.providerUsed === null
+                          ? null
+                          : Math.max(
+                              0,
+                              candidate.capacity - candidate.providerUsed,
+                            );
+                      const leftPercent =
+                        left === null || candidate.capacity === 0
+                          ? 0
+                          : Math.min(100, (left / candidate.capacity) * 100);
+                      return (
+                        <div className="provider-allowance-row" key={candidate.windowId}>
+                          <div>
+                            <strong>{candidate.poolDisplayName}</strong>
+                            <span>
+                              {candidate.isActive
+                                ? `Resets ${formatDate(candidate.endsAt)}`
+                                : "Inactive window"}
+                            </span>
+                          </div>
+                          <b>
+                            {left === null
+                              ? "Waiting for quota"
+                              : `${formatAmount(left, candidate.unit)} left`}
+                          </b>
+                          <div
+                            className="used-progress neutral"
+                            role="progressbar"
+                            aria-label={`${candidate.poolDisplayName}: ${Math.round(leftPercent)}% left`}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={Math.round(leftPercent)}
+                          >
+                            <span style={{ width: `${leftPercent}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div className="used-progress-section">
-                    <div
-                      className={`used-progress ${statusTone}`}
-                      role="progressbar"
-                      aria-label={`${availablePercent}% left`}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={availablePercent}
-                    >
-                      <span style={{ width: `${availablePercent}%` }} />
-                    </div>
-                    <div className="used-progress-meta">
-                      <span>{formatDate(quotaWindow.startsAt)}</span>
-                      <strong>{availablePercent}% left</strong>
-                      <span>{formatDate(quotaWindow.endsAt)}</span>
-                    </div>
-                  </div>
-                  {shortWindow && (
-                    <dl className="short-window-facts">
-                      <div>
-                        <dt>Used this window</dt>
-                        <dd>{formatAmount(usedAmount, quotaWindow.unit)}</dd>
-                      </div>
-                      <div>
-                        <dt>Time remaining</dt>
-                        <dd>
-                          {remainingPacingUnits}h
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Safe pace</dt>
-                        <dd>
-                          {formatAmount(pacingBudget, quotaWindow.unit)}/h
-                        </dd>
-                      </div>
-                    </dl>
-                  )}
+                  <UsageHeatmap
+                    history={dashboard.quotaHistory}
+                    capacity={quotaWindow.capacity}
+                    unit={quotaWindow.unit}
+                  />
                 </article>
 
                 <article className="dashboard-block allocation-summary-block">
                   <div className="reset-summary">
-                    <span>{source.isActive ? "Resets" : "Window"}</span>
+                    <span>
+                      <Icon name="calendar" size={15} />
+                      {source.isActive ? "Resets" : "Window"}
+                    </span>
                     <strong>
                       {source.isActive
                         ? `${remainingPacingUnits} ${
@@ -1224,7 +1181,10 @@ export function Dashboard({
               <section className="workspace-budget-section dashboard-block">
                 <header>
                   <div>
-                    <h2>Workspace allocations</h2>
+                    <h2 className="heading-with-icon">
+                      <Icon name="folder" size={23} />
+                      Weekly workspace allocations
+                    </h2>
                     <p>
                       {protectionActive
                         ? "Drag to set priority. Higher allocations are protected first."
@@ -1289,7 +1249,10 @@ export function Dashboard({
               <section className="attribution-diagnostics dashboard-block">
                 <div className="attribution-diagnostics-heading">
                   <div>
-                    <span className="block-kicker">Attribution</span>
+                    <span className="block-kicker">
+                      <Icon name="activity" size={15} />
+                      Attribution
+                    </span>
                     <h2>Where provider usage went</h2>
                   </div>
                   <p>{attributionIssue}</p>
@@ -1324,15 +1287,6 @@ export function Dashboard({
                 </dl>
               </section>
 
-              {!shortWindow && (
-                <section className="usage-history-section dashboard-block">
-                  <UsageHeatmap
-                    history={dashboard.quotaHistory}
-                    capacity={quotaWindow.capacity}
-                    unit={quotaWindow.unit}
-                  />
-                </section>
-              )}
             </div>
           </>
         )}

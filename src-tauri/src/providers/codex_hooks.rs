@@ -618,6 +618,13 @@ where
             })
             .map_err(|error| error.to_string())?;
     }
+    if let Some(pool_display_name) = exhausted_codex_window(service, observed_at)? {
+        return Ok(CodexHookOutcome::Blocked {
+            reason: format!(
+                "QuotaFence blocked this prompt because the Codex {pool_display_name} is exhausted."
+            ),
+        });
+    }
     if scope_id.is_some() {
         let refreshed_context = service
             .workspace_context(GetWorkspaceContext {
@@ -631,13 +638,6 @@ where
             .map(|binding| binding.scope_display_name.as_str())
             .ok_or_else(|| format!("workspace {canonical_path} is no longer bound"))?;
         let assessment = allocation_for_window(&refreshed_context, &window_id)?;
-        if assessment.provider_remaining <= 0 {
-            return Ok(CodexHookOutcome::Blocked {
-                reason:
-                    "QuotaFence blocked this prompt because the Codex provider quota is exhausted."
-                        .to_owned(),
-            });
-        }
         if assessment.protected_now == 0 {
             if assessment.remaining <= 0 {
                 return Ok(CodexHookOutcome::Blocked {
@@ -646,7 +646,7 @@ where
             }
             return Ok(CodexHookOutcome::Blocked {
                 reason: format!(
-                    "QuotaFence blocked this prompt because {} has no protected quota at its current priority. Reorder workspace priorities or wait for the next reset.",
+                    "QuotaFence blocked this prompt because {} has no protected weekly quota at its current priority. Reorder workspace priorities or wait for the next weekly reset.",
                     scope_display_name
                 ),
             });
@@ -687,7 +687,7 @@ where
 
 fn exhausted_allocation_reason(workspace: &str, allocation_limit: u64) -> String {
     format!(
-        "QuotaFence stopped this Codex prompt to protect your reserved quota.\n\nWorkspace \"{workspace}\" has 0% left of its {allocation_limit}% QuotaFence allocation for the current quota window. Your Codex subscription may still have quota available, but none is assigned to this workspace.\n\nTo continue, increase this allocation, change workspace priorities, turn off Codex Desktop protection, or wait for the next quota reset."
+        "QuotaFence stopped this Codex prompt to protect your reserved quota.\n\nWorkspace \"{workspace}\" has 0% left of its {allocation_limit}% weekly QuotaFence allocation. Your Codex subscription may still have quota available, but none is assigned to this workspace.\n\nTo continue, increase this allocation, change workspace priorities, turn off Codex Desktop protection, or wait for the next weekly reset."
     )
 }
 
@@ -733,6 +733,33 @@ fn protection_enabled(
     Ok(state
         .dashboard
         .is_some_and(|dashboard| !dashboard.allocations.is_empty()))
+}
+
+fn exhausted_codex_window(
+    service: &mut QuotaService,
+    observed_at: i64,
+) -> Result<Option<String>, String> {
+    let state = service
+        .local_state(GetLocalState {
+            selected_window_id: None,
+            at: observed_at,
+        })
+        .map_err(|error| error.to_string())?;
+    Ok(state
+        .sources
+        .into_iter()
+        .filter(|source| {
+            source.is_active
+                && source.provider_managed
+                && source.provider_display_name.eq_ignore_ascii_case("codex")
+                && source.unit == "percent"
+        })
+        .find(|source| {
+            source
+                .provider_used
+                .is_some_and(|used| used >= source.capacity)
+        })
+        .map(|source| source.pool_display_name))
 }
 
 fn finish_turn<F>(
@@ -799,16 +826,24 @@ fn observation_target(
     context: &WorkspaceContext,
     observed_at: i64,
 ) -> Result<(Option<String>, Option<String>), String> {
-    let mut mapped = context.allocations.iter().filter(|allocation| {
+    let mapped = context.allocations.iter().filter(|allocation| {
         allocation
             .provider_display_name
             .eq_ignore_ascii_case("codex")
             && allocation.unit == "percent"
     });
-    if let Some(allocation) = mapped.next() {
-        if mapped.next().is_some() {
-            return Err("workspace has multiple active Codex percentage allocations".to_owned());
-        }
+    if let Some(allocation) = mapped.min_by_key(|allocation| {
+        (
+            !allocation
+                .pool_display_name
+                .to_ascii_lowercase()
+                .contains("weekly"),
+            !allocation.window_is_active,
+            allocation.provider_spendable,
+            allocation.protected_now,
+            allocation.window_id.clone(),
+        )
+    }) {
         return Ok((
             Some(allocation.window_id.clone()),
             context
@@ -824,19 +859,28 @@ fn observation_target(
             at: observed_at,
         })
         .map_err(|error| error.to_string())?;
-    let mut sources = state.sources.into_iter().filter(|source| {
-        source.provider_managed
-            && source.provider_display_name.eq_ignore_ascii_case("codex")
-            && source.unit == "percent"
-    });
-    let source = sources.next();
-    if sources.next().is_some() {
-        return Err("multiple Codex percentage sources are not supported".to_owned());
-    }
+    let source = state
+        .sources
+        .into_iter()
+        .filter(|source| {
+            source.provider_managed
+                && source.provider_display_name.eq_ignore_ascii_case("codex")
+                && source.unit == "percent"
+        })
+        .min_by_key(|source| {
+            (
+                !source
+                    .pool_display_name
+                    .to_ascii_lowercase()
+                    .contains("weekly"),
+                !source.is_active,
+                source.ends_at.saturating_sub(source.starts_at),
+                source.window_id.clone(),
+            )
+        });
 
     Ok((source.map(|source| source.window_id), None))
 }
-
 fn read_hook_config(config_path: &Path) -> Result<Value, String> {
     if !config_path.exists() {
         return Ok(json!({}));
@@ -1350,6 +1394,101 @@ mod tests {
     }
 
     #[test]
+    fn prompt_uses_weekly_allocation_while_checking_both_native_windows() {
+        let folder = temporary_folder("weekly-allocation-native-windows");
+        let canonical_path = canonicalize_workspace_path(&folder).unwrap();
+        let mut service = protected_service(&folder);
+        service
+            .create_quota_source(CreateQuotaSource {
+                provider_id: "codex-five-hour-provider".to_owned(),
+                provider_display_name: "Codex".to_owned(),
+                account_id: "codex-five-hour-account".to_owned(),
+                account_display_name: "Subscription".to_owned(),
+                pool_id: "codex-five-hour".to_owned(),
+                pool_display_name: "5-hour allowance".to_owned(),
+                window_id: "codex-five-hour-window".to_owned(),
+                starts_at: 1_000,
+                ends_at: 601_000,
+                capacity: 100,
+                unit: "percent".to_owned(),
+                provider_snapshot: Some(ProviderQuotaSnapshotInput {
+                    adapter: CODEX_ADAPTER.to_owned(),
+                    remote_limit_id: "codex".to_owned(),
+                    remote_window_kind: "primary".to_owned(),
+                    used: 20,
+                    observed_at: 2_000,
+                    resets_at: 601_000,
+                }),
+            })
+            .unwrap();
+        let checkpoint = |five_hour_used| CodexDetection {
+            status: DetectionStatus::Detected,
+            provider_id: "codex".to_owned(),
+            provider_display_name: "Codex".to_owned(),
+            plan_type: Some("plus".to_owned()),
+            windows: vec![
+                DetectedQuotaWindow {
+                    id: "codex-primary".to_owned(),
+                    display_name: "5-hour allowance".to_owned(),
+                    kind: "primary".to_owned(),
+                    starts_at: 1_000,
+                    ends_at: 601_000,
+                    capacity: 100,
+                    used: five_hour_used,
+                    remaining: 100 - five_hour_used,
+                    unit: "percent".to_owned(),
+                    duration_minutes: 10,
+                },
+                DetectedQuotaWindow {
+                    id: "codex-secondary".to_owned(),
+                    display_name: "Weekly allowance".to_owned(),
+                    kind: "secondary".to_owned(),
+                    starts_at: 1_000,
+                    ends_at: 10_000,
+                    capacity: 100,
+                    used: 10,
+                    remaining: 90,
+                    unit: "percent".to_owned(),
+                    duration_minutes: 1,
+                },
+            ],
+            message: None,
+        };
+        let event = CodexHookEvent {
+            session_id: "session-shared".to_owned(),
+            turn_id: Some("turn-shared".to_owned()),
+            cwd: canonical_path,
+            hook_event_name: "UserPromptSubmit".to_owned(),
+        };
+
+        let outcome = handle_event(&mut service, &event, 3_000, || Some(checkpoint(20))).unwrap();
+
+        assert!(matches!(
+            outcome,
+            CodexHookOutcome::ObservationStarted {
+                ref window_id,
+                scope_id: Some(ref scope_id),
+                contended: false,
+            } if window_id == "codex-window" && scope_id == "workspace-a"
+        ));
+
+        let exhausted_event = CodexHookEvent {
+            turn_id: Some("turn-exhausted".to_owned()),
+            ..event
+        };
+        let exhausted = handle_event(&mut service, &exhausted_event, 4_000, || {
+            Some(checkpoint(100))
+        })
+        .unwrap();
+        assert!(matches!(
+            exhausted,
+            CodexHookOutcome::Blocked { ref reason }
+                if reason.contains("5-hour allowance is exhausted")
+        ));
+        std::fs::remove_dir(folder).unwrap();
+    }
+
+    #[test]
     fn next_prompt_reconciles_the_previous_turn_when_codex_omits_stop() {
         let folder = temporary_folder("missing-stop-recovery");
         let canonical_path = canonicalize_workspace_path(&folder).unwrap();
@@ -1471,7 +1610,7 @@ mod tests {
         assert!(matches!(
             outcome,
             CodexHookOutcome::Blocked { ref reason }
-                if reason.contains("has 0% left of its 20% QuotaFence allocation")
+                if reason.contains("has 0% left of its 20% weekly QuotaFence allocation")
                     && reason.contains("Your Codex subscription may still have quota available")
                     && reason.contains("increase this allocation")
         ));

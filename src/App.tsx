@@ -322,7 +322,23 @@ function App() {
   const syncInFlight = useRef(false);
 
   const loadState = useCallback(async (windowId: string | null = null) => {
-    const nextState = await getLocalState(windowId);
+    let nextState = await getLocalState(windowId);
+    if (windowId === null && nextState.selectedWindowId !== null) {
+      const selected = nextState.sources.find(
+        (candidate) => candidate.windowId === nextState.selectedWindowId,
+      );
+      const weekly = selected
+        ? nextState.sources.find(
+            (candidate) =>
+              candidate.providerDisplayName.toLowerCase() ===
+                selected.providerDisplayName.toLowerCase() &&
+              candidate.poolDisplayName.toLowerCase().includes("weekly"),
+          )
+        : undefined;
+      if (weekly && weekly.windowId !== nextState.selectedWindowId) {
+        nextState = await getLocalState(weekly.windowId);
+      }
+    }
     setLocalState(nextState);
     return nextState;
   }, []);
@@ -1077,11 +1093,57 @@ function App() {
           <ScopeForm
             unit={unit}
             maxAllocation={dashboard.window.unallocated}
+            allocations={dashboard.allocations}
             submitting={submitting}
             onSubmit={(input: WorkspaceInput) =>
-              runMutation(() =>
-                createAllocatedWorkspace(input, dashboard.window.id, unit),
-              )
+              runMutation(async () => {
+                const donor = input.reallocateFromScopeId
+                  ? dashboard.allocations.find(
+                      (allocation) =>
+                        allocation.scopeId === input.reallocateFromScopeId,
+                    )
+                  : null;
+                const transferAmount = Math.max(
+                  0,
+                  input.allocation - dashboard.window.unallocated,
+                );
+                if (transferAmount > 0 && !donor) {
+                  throw new Error(
+                    "Choose a workspace to take quota from before adding this allocation.",
+                  );
+                }
+                if (donor && transferAmount > donor.limit) {
+                  throw new Error(
+                    `${donor.displayName} does not have enough quota to transfer.`,
+                  );
+                }
+
+                try {
+                  if (donor && transferAmount > 0) {
+                    await setAllocation(
+                      donor.scopeId,
+                      dashboard.window.id,
+                      donor.limit - transferAmount,
+                      unit,
+                    );
+                  }
+                  await createAllocatedWorkspace(
+                    input,
+                    dashboard.window.id,
+                    unit,
+                  );
+                } catch (reason) {
+                  if (donor && transferAmount > 0) {
+                    await setAllocation(
+                      donor.scopeId,
+                      dashboard.window.id,
+                      donor.limit,
+                      unit,
+                    );
+                  }
+                  throw reason;
+                }
+              })
             }
           />
         </Modal>
