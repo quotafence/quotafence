@@ -29,6 +29,18 @@ import {
 
 export type DashboardView = "overview" | "settings";
 
+function combinedProviderKey(source: QuotaSourceSummary): string | null {
+  switch (source.providerDisplayName.trim().toLowerCase()) {
+    case "claude code":
+      return "claude-code";
+    case "codex":
+    case "openai codex":
+      return "codex";
+    default:
+      return null;
+  }
+}
+
 type DashboardProps = {
   state: LocalState;
   view: DashboardView;
@@ -548,18 +560,17 @@ export function Dashboard({
   const sidebarSources = state.sources.reduce<
     Array<{ key: string; sources: QuotaSourceSummary[] }>
   >((groups, candidate) => {
-    const isClaude =
-      candidate.providerDisplayName.toLowerCase() === "claude code";
-    if (!isClaude) {
+    const providerKey = combinedProviderKey(candidate);
+    if (providerKey === null) {
       groups.push({ key: candidate.windowId, sources: [candidate] });
       return groups;
     }
 
-    const claudeGroup = groups.find((group) => group.key === "claude-code");
-    if (claudeGroup) {
-      claudeGroup.sources.push(candidate);
+    const providerGroup = groups.find((group) => group.key === providerKey);
+    if (providerGroup) {
+      providerGroup.sources.push(candidate);
     } else {
-      groups.push({ key: "claude-code", sources: [candidate] });
+      groups.push({ key: providerKey, sources: [candidate] });
     }
     return groups;
   }, []);
@@ -849,7 +860,8 @@ export function Dashboard({
                     : latest,
                 null,
               );
-              const groupedClaude = group.key === "claude-code";
+              const groupedProvider =
+                combinedProviderKey(item) !== null && group.sources.length > 1;
               return (
                 <button
                   className={`source-item ${selectedGroupSource ? "active" : ""}`}
@@ -878,8 +890,8 @@ export function Dashboard({
                   <span>
                     <strong>{item.providerDisplayName}</strong>
                     <small>
-                      {groupedClaude && group.sources.length > 1
-                        ? "5-hour + weekly"
+                      {groupedProvider
+                        ? "5-hour + Weekly"
                         : item.poolDisplayName}
                     </small>
                   </span>
