@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
+  Capability,
   CodexProtectionEvent,
   CodexProtectionStatus,
   CodexSyncResult,
@@ -7,6 +8,7 @@ import type {
   ClaudeProtectionStatus,
   QuotaSourceSummary,
 } from "../types";
+import { getEntitlements } from "../lib/api";
 import {
   observedCodexHookAt,
   verifiedCodexProtectionAt,
@@ -26,6 +28,28 @@ const DECISION_RANGES: Array<{
   { value: "day", label: "24h", duration: 24 * 60 * 60_000 },
   { value: "week", label: "7d", duration: 7 * 24 * 60 * 60_000 },
 ];
+
+const CAPABILITY_LABELS: Record<Capability, string> = {
+  basic_usage: "Usage dashboard",
+  project_quotas: "Unlimited project quotas",
+  local_enforcement: "Local enforcement",
+  basic_history: "Usage history",
+  basic_forecasting: "Depletion forecast",
+  basic_alerts: "In-app alerts",
+  basic_export: "Data export",
+  manual_configuration: "Manual configuration",
+  advanced_analytics: "Advanced analytics",
+  advanced_forecasting: "Advanced forecasting",
+  smart_alerts: "Smart alerts",
+  scheduled_reports: "Scheduled reports",
+  advanced_export: "Advanced export",
+  advanced_rules: "Advanced rules",
+  automatic_routing: "Automatic routing",
+  automatic_updates: "Automatic updates",
+  multi_device_sync: "Multi-device sync",
+  backup_restore: "Backup and restore",
+  priority_support: "Priority support",
+};
 
 type SettingsPanelProps = {
   protection: CodexProtectionStatus | null;
@@ -111,6 +135,9 @@ export function SettingsPanel({
   onCheck,
 }: SettingsPanelProps) {
   const [decisionRange, setDecisionRange] = useState<DecisionRange>("day");
+  const [entitlements, setEntitlements] = useState<
+    Awaited<ReturnType<typeof getEntitlements>> | null
+  >(null);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>(() =>
     claudeIntegration?.installed &&
     !sources.some(
@@ -163,6 +190,22 @@ export function SettingsPanel({
         : latest,
     null,
   );
+
+  useEffect(() => {
+    let active = true;
+    getEntitlements()
+      .then((snapshot) => {
+        if (active) {
+          setEntitlements(snapshot);
+        }
+      })
+      .catch(() => {
+        // Settings remain usable if an older backend lacks this read-only API.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <>
@@ -233,6 +276,43 @@ export function SettingsPanel({
             </button>
           ))}
         </div>
+      </section>
+
+      <section className="settings-card" hidden={settingsTab !== "general"}>
+        <header className="settings-card-header">
+          <span className="settings-card-icon">
+            <Icon name="shield" size={20} />
+          </span>
+          <div>
+            <h2>Edition and capabilities</h2>
+            <p>
+              Your local quota data remains available even if a future license
+              expires or cannot be checked.
+            </p>
+          </div>
+          <span className="settings-status active">
+            {entitlements?.source === "license" ? "Licensed" : "Free core"}
+          </span>
+        </header>
+
+        {entitlements ? (
+          <>
+            <div className="capability-grid" aria-label="Enabled capabilities">
+              {entitlements.capabilities.map((capability) => (
+                <span key={capability}>
+                  <Icon name="check" size={13} />
+                  {CAPABILITY_LABELS[capability]}
+                </span>
+              ))}
+            </div>
+            <p className="capability-contract-note">
+              {entitlements.capabilities.length} enabled · capability contract v
+              {entitlements.schemaVersion} · no project limit
+            </p>
+          </>
+        ) : (
+          <div className="settings-loading">Reading local capabilities…</div>
+        )}
       </section>
 
       <section className="settings-card" hidden={settingsTab !== "claude"}>

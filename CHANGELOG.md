@@ -5,7 +5,7 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.1.0-beta.1] - Unreleased
 
-First source-distributed macOS beta of the Codex vertical slice.
+First source-distributed multi-agent beta of the QuotaFence vertical slice.
 
 ### Added
 
@@ -22,13 +22,23 @@ First source-distributed macOS beta of the Codex vertical slice.
 - Full QuotaFence product, CLI, hook, environment-variable, package, release,
   and application-identifier namespace.
 - One-time local ledger and integration migration from pre-QuotaFence builds.
+- Claude Code 5-hour and weekly allowance discovery, reversible lifecycle
+  hooks, and managed CLI launches for either native window.
+- Windows x64 CI, preview installer workflow, CLI assets, and platform-aware
+  process recovery.
+- A centralized capability/entitlement boundary that keeps the complete Free
+  core available and falls back safely when future grants expire.
+- A versioned capability snapshot in Desktop Settings and the read-only
+  `qfence features [--json]` command.
 
 ### Known limitations
 
-- Codex is the only provider in this beta.
+- Codex and Claude Code are beta providers; Gemini and other agents are not yet
+  implemented.
 - Aggregate provider percentages cannot yield exact per-workspace token usage.
 - Concurrent or ambiguous activity remains unassigned by design.
 - Prompt protection requires separately trusted and enabled Codex hooks and
   cannot terminate an already-running turn.
-- The beta is tested on macOS and currently ships from source, without signed
-  installers or automatic updates.
+- macOS is the live-tested platform. Windows x64 builds in CI but native
+  installed-app validation is not complete.
+- Production-signed installers and automatic updates are not yet available.

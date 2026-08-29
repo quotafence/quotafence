@@ -9,11 +9,16 @@ import type {
   ClaudeProtectionStatus,
   ClaudeSyncResult,
   IpcError,
+  EntitlementSnapshot,
   LocalState,
   PolicySummary,
   QuotaSourceInput,
   WorkspaceInput,
 } from "../types";
+
+export async function getEntitlements(): Promise<EntitlementSnapshot> {
+  return invoke<EntitlementSnapshot>("get_entitlements");
+}
 
 function createId(prefix: string): string {
   const suffix =
@@ -204,10 +209,11 @@ export async function createAllocatedWorkspace(
   input: WorkspaceInput,
   windowId: string,
   unit: string,
-): Promise<void> {
+): Promise<string> {
+  const id = createId("workspace");
   await invoke("create_allocated_workspace", {
     request: {
-      id: createId("workspace"),
+      id,
       displayName: input.displayName,
       canonicalPath: input.workspacePath,
       windowId,
@@ -216,6 +222,7 @@ export async function createAllocatedWorkspace(
       boundAt: Date.now(),
     },
   });
+  return id;
 }
 
 export function getErrorMessage(error: unknown): string {

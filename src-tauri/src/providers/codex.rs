@@ -300,7 +300,7 @@ fn sync_detection_inner(
                 rolled_over: false,
                 synced_at: None,
                 message: Some(
-                    "Codex changed its active quota windows. QuotaFence added the available window; select it and configure its allocations before relying on protection."
+                    "Codex changed its active quota windows. QuotaFence added the available window; workspace allocations remain attached to the weekly allowance."
                         .to_owned(),
                 ),
                 desktop_tracking: None,
@@ -803,7 +803,8 @@ mod tests {
     use super::*;
     use crate::{
         application::{
-            CreateQuotaSource, GetQuotaDashboard, ProviderQuotaSnapshotInput, QuotaService,
+            CreateAllocatedWorkspace, CreateQuotaSource, GetQuotaDashboard,
+            ProviderQuotaSnapshotInput, QuotaService,
         },
         storage::Database,
     };
@@ -988,6 +989,17 @@ mod tests {
                 }),
             })
             .unwrap();
+        service
+            .create_allocated_workspace(CreateAllocatedWorkspace {
+                id: "workspace-a".to_owned(),
+                display_name: "Workspace A".to_owned(),
+                canonical_path: "/code/workspace-a".to_owned(),
+                window_id: "existing-codex-weekly-window".to_owned(),
+                amount: 30,
+                unit: "percent".to_owned(),
+                bound_at: 3_000,
+            })
+            .unwrap();
         let checkpoint = || {
             CodexDetection::detected(
                 Some("plus".to_owned()),
@@ -1057,6 +1069,13 @@ mod tests {
             .unwrap();
         assert_eq!(weekly.pool_id, "existing-codex-weekly-pool");
         assert_eq!(weekly.provider_used, Some(6));
+        let five_hour_dashboard = service
+            .dashboard(GetQuotaDashboard {
+                window_id: five_hour.window_id.clone(),
+                at: 20_000,
+            })
+            .unwrap();
+        assert!(five_hour_dashboard.allocations.is_empty());
 
         let second = sync_detection(
             &mut service,

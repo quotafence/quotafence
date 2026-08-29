@@ -107,6 +107,14 @@ Additional providers, cloud sync, teams, RBAC, billing, and routing are outside
 the current slice. See the [Roadmap](docs/roadmap.md) for implementation gaps,
 milestones, and recommended architecture decisions.
 
+Project quotas, local enforcement, and a useful basic forecast are part of the
+open-source core and are not project-count paywalls. Commercial development is
+capability-based and reserved for advanced insight, automation, and optional
+coordination. See [Product and monetization](docs/product-and-monetization.md)
+and the [commercial launch checklist](docs/commercial-launch-checklist.md).
+The current local edition can be inspected with `qfence features`; no account
+or license server is required for the Free capability set.
+
 ## Beta quick start
 
 The beta can be built from source. GitHub Actions also produces checksum-bearing
@@ -165,6 +173,7 @@ described in [Storage](docs/storage.md), and use-case orchestration in
 is documented in [Tauri commands](docs/tauri-commands.md), and folder-based
 workspace binding in the [QuotaFence CLI guide](docs/cli.md). See
 [Local MVP](docs/local-mvp.md) for the current implemented baseline.
+Private vulnerability reports should follow the [security policy](SECURITY.md).
 
 ### Codex detection
 

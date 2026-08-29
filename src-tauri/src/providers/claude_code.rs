@@ -35,6 +35,7 @@ const CLAUDE_HEARTBEAT_FILENAME: &str = "claude-statusline-heartbeat.json";
 const FIVE_HOURS_MILLIS: i64 = 5 * 60 * 60 * 1_000;
 const SEVEN_DAYS_MILLIS: i64 = 7 * 24 * 60 * 60 * 1_000;
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
+#[cfg(target_os = "macos")]
 const CLAUDE_KEYCHAIN_SERVICE: &str = "Claude Code-credentials";
 #[cfg(target_os = "macos")]
 const CLAUDE_SAFE_STORAGE_SERVICE: &str = "Claude Safe Storage";
