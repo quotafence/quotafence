@@ -7,6 +7,7 @@ const tauriConfig = JSON.parse(
 );
 const cargoManifest = readFileSync("src-tauri/Cargo.toml", "utf8");
 const cargoLock = readFileSync("src-tauri/Cargo.lock", "utf8");
+const changelog = readFileSync("CHANGELOG.md", "utf8");
 
 const cargoVersion = cargoManifest.match(
   /^\[package\][\s\S]*?^version\s*=\s*"([^"]+)"/m,
@@ -42,6 +43,19 @@ const releaseTag = process.env.RELEASE_TAG;
 if (releaseTag && releaseTag !== `v${version}`) {
   throw new Error(
     `Release tag ${releaseTag} does not match application version v${version}`,
+  );
+}
+
+const changelogHeading = new RegExp(
+  `^## \\[${version.replaceAll(".", "\\.")}\\] - (.+)$`,
+  "m",
+).exec(changelog)?.[1];
+if (!changelogHeading) {
+  throw new Error(`CHANGELOG.md has no release heading for ${version}`);
+}
+if (releaseTag && !/^\d{4}-\d{2}-\d{2}$/.test(changelogHeading)) {
+  throw new Error(
+    `CHANGELOG.md must replace ${changelogHeading} with a YYYY-MM-DD date before tagging ${releaseTag}`,
   );
 }
 

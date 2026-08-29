@@ -21,7 +21,7 @@ qfence here
 qfence bind "Workspace name"
 qfence features
 qfence codex
-qfence claude --window 5h
+qfence claude
 ```
 
 Use `--json` with the read-only commands for machine-readable output. Agent
@@ -447,11 +447,12 @@ Claude's managed beta uses the same folder binding and policy boundary:
 
 ```bash
 qfence claude --path /path/to/project
-qfence claude --window 5h --model sonnet
+qfence claude --model sonnet
 ```
 
-The default managed Claude budget is the weekly allocation. `--window 5h`
-selects the separate 5-hour allocation explicitly; QuotaFence does not merge or
-multiply the two provider-native windows. Desktop/IDE attribution instead uses
-the reversible Claude lifecycle hooks installed from Settings and reconciles
-both windows after a turn.
+The managed Claude budget is always the workspace's Weekly allocation. The
+5-hour allowance is refreshed and checked automatically as a provider safety
+limit, but it is not allocated separately. The legacy `--window weekly` option
+is accepted; `--window 5h` now returns an explanation instead of selecting a
+second project budget. Desktop/IDE attribution uses the reversible Claude
+lifecycle hooks installed from Settings and refreshes both native windows.

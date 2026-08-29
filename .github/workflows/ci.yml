@@ -4,7 +4,15 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
   workflow_dispatch:
 
 permissions:
@@ -17,7 +25,7 @@ concurrency:
 jobs:
   checks:
     name: Frontend and Rust checks
-    runs-on: macos-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
 
     steps:
@@ -35,6 +43,14 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
           rustup default stable
+
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
 
       - name: Install frontend dependencies
         run: npm ci
@@ -57,7 +73,7 @@ jobs:
       - name: Test Rust
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
 
-      - name: Smoke-test macOS CLI installer
+      - name: Smoke-test Unix CLI installer
         run: |
           cargo build --locked --manifest-path src-tauri/Cargo.toml --bin quotafence
           QFENCE_INSTALL_DIR="$RUNNER_TEMP/qfence-bin" scripts/install-cli.sh src-tauri/target/debug/quotafence
@@ -66,95 +82,3 @@ jobs:
           QFENCE_INSTALL_DIR="$RUNNER_TEMP/qfence-bin" scripts/uninstall-cli.sh
           test ! -e "$RUNNER_TEMP/qfence-bin/qfence"
           test ! -e "$RUNNER_TEMP/qfence-bin/quotafence"
-
-  windows:
-    name: Windows x64 app and CLI
-    runs-on: windows-latest
-    timeout-minutes: 45
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: Set up Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Audit frontend dependencies
-        run: npm audit --audit-level=high
-
-      - name: Build and test Windows targets
-        run: |
-          npm run build
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --bin quotafence
-
-      - name: Build Windows NSIS installer
-        run: |
-          cargo build --locked --release --manifest-path src-tauri/Cargo.toml --bin quotafence
-          npm run tauri -- build --bundles nsis
-
-      - name: Smoke-test Windows release assets
-        shell: pwsh
-        run: |
-          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
-          if (-not $installer) { throw "Windows NSIS installer was not produced" }
-          src-tauri/target/release/quotafence.exe help | Select-String "QuotaFence"
-          ./scripts/install-cli.ps1 `
-            -BinaryPath src-tauri/target/release/quotafence.exe `
-            -InstallDir "$env:RUNNER_TEMP\qfence-bin" `
-            -SkipPathUpdate
-          & "$env:RUNNER_TEMP\qfence-bin\qfence.exe" help | Select-String "QuotaFence"
-          & "$env:RUNNER_TEMP\qfence-bin\quotafence.exe" help | Select-String "QuotaFence"
-          ./scripts/uninstall-cli.ps1 `
-            -InstallDir "$env:RUNNER_TEMP\qfence-bin" `
-            -KeepPath
-          if (Test-Path "$env:RUNNER_TEMP\qfence-bin\qfence.exe") { throw "qfence.exe was not removed" }
-          if (Test-Path "$env:RUNNER_TEMP\qfence-bin\quotafence.exe") { throw "quotafence.exe was not removed" }
-
-          New-Item -ItemType Directory -Force preview-assets | Out-Null
-          Copy-Item $installer.FullName preview-assets/$($installer.Name)
-          Copy-Item src-tauri/target/release/quotafence.exe preview-assets/qfence.exe
-          Copy-Item scripts/install-cli.ps1 preview-assets/install-cli.ps1
-          Copy-Item scripts/uninstall-cli.ps1 preview-assets/uninstall-cli.ps1
-          $checksumLines = Get-ChildItem preview-assets -File |
-            Get-FileHash -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash.ToLower())  $([System.IO.Path]::GetFileName($_.Path))" }
-          $utf8 = [System.Text.UTF8Encoding]::new($false)
-          [System.IO.File]::WriteAllText(
-            (Join-Path $PWD "preview-assets/SHA256SUMS.txt"),
-            ($checksumLines -join "`n") + "`n",
-            $utf8
-          )
-          $buildInfo = "Signing: unsigned CI preview`nCommit: $env:GITHUB_SHA`nWorkflow: $env:GITHUB_RUN_ID`n"
-          [System.IO.File]::WriteAllText(
-            (Join-Path $PWD "preview-assets/BUILD-INFO.txt"),
-            $buildInfo,
-            $utf8
-          )
-          if ([System.IO.File]::ReadAllBytes("preview-assets/SHA256SUMS.txt") -contains 13) {
-            throw "SHA256SUMS.txt must use portable LF line endings"
-          }
-          Get-Content preview-assets/SHA256SUMS.txt | ForEach-Object {
-            $expected, $name = $_ -split "  ", 2
-            $actual = (Get-FileHash -Algorithm SHA256 (Join-Path "preview-assets" $name)).Hash.ToLower()
-            if ($actual -ne $expected) { throw "Checksum mismatch for $name" }
-          }
-
-      - name: Upload Windows preview installer
-        uses: actions/upload-artifact@v6
-        with:
-          name: quotafence-windows-x64-${{ github.event.pull_request.number || github.sha }}
-          path: preview-assets/*
-          if-no-files-found: error
-          retention-days: 7

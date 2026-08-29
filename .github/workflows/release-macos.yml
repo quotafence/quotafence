@@ -36,6 +36,10 @@ jobs:
           rustup default stable
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
+      - name: Normalize embedded Rust build paths
+        run: |
+          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=. --remap-path-prefix=$HOME=/build-home" >> "$GITHUB_ENV"
+
       - name: Install frontend dependencies
         run: npm ci
 

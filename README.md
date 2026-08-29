@@ -225,7 +225,7 @@ npm run tauri -- dev
 
 The CLI command is available as either `qfence` (recommended) or `quotafence`.
 Common terminal entry points are `qfence`, `qfence sync`, `qfence ls`,
-`qfence allocations`, `qfence codex`, and `qfence claude --window 5h`.
+`qfence allocations`, `qfence codex`, and `qfence claude`.
 
 For source development, run the same interface without installing it globally:
 

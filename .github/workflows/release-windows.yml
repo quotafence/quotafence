@@ -35,6 +35,11 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
 
+      - name: Normalize embedded Rust build paths
+        shell: pwsh
+        run: |
+          "RUSTFLAGS=--remap-path-prefix=$env:GITHUB_WORKSPACE=. --remap-path-prefix=$env:USERPROFILE=C:/build-home" >> $env:GITHUB_ENV
+
       - name: Install frontend dependencies
         run: npm ci
 

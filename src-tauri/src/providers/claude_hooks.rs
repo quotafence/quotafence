@@ -12,7 +12,7 @@ use crate::{
     application::{
         AbandonProviderSessionObservations, BeginProviderTurnObservation,
         EvaluateWorkspaceAdmission, GetLocalState, GetWorkspaceContext, QuotaService,
-        ReconcileProviderTurnObservation,
+        QuotaSourceSummary, ReconcileProviderTurnObservation,
     },
     domain::EnforcementDecision,
     paths,
@@ -231,6 +231,13 @@ fn begin_prompt(
         }
         return Ok(HookOutcome::Skipped);
     }
+    if let Some(window) = exhausted_claude_window(service, observed_at)? {
+        return Ok(HookOutcome::Blocked {
+            reason: format!(
+                "QuotaFence blocked this Claude prompt because the provider's {window} is exhausted."
+            ),
+        });
+    }
     let scope_id = context
         .binding
         .as_ref()
@@ -306,6 +313,35 @@ fn begin_prompt(
             .map_err(|error| error.to_string())?;
     }
     Ok(HookOutcome::Allowed { warning })
+}
+
+fn exhausted_claude_window(
+    service: &mut QuotaService,
+    observed_at: i64,
+) -> Result<Option<String>, String> {
+    let state = service
+        .local_state(GetLocalState {
+            selected_window_id: None,
+            at: observed_at,
+        })
+        .map_err(|error| error.to_string())?;
+    Ok(state
+        .sources
+        .into_iter()
+        .find(is_exhausted_claude_window)
+        .map(|source| source.pool_display_name))
+}
+
+fn is_exhausted_claude_window(source: &QuotaSourceSummary) -> bool {
+    source.is_active
+        && source.provider_managed
+        && source
+            .provider_display_name
+            .eq_ignore_ascii_case("Claude Code")
+        && source.unit == "percent"
+        && source
+            .provider_used
+            .is_some_and(|used| used >= source.capacity)
 }
 
 fn finish_prompt(
@@ -554,6 +590,28 @@ fn now_millis() -> i64 {
 mod tests {
     use super::*;
 
+    fn source(provider: &str, pool: &str, used: u64) -> QuotaSourceSummary {
+        QuotaSourceSummary {
+            provider_id: provider.to_ascii_lowercase(),
+            provider_display_name: provider.to_owned(),
+            account_id: "account".to_owned(),
+            account_display_name: "Subscription".to_owned(),
+            pool_id: pool.to_ascii_lowercase(),
+            pool_display_name: pool.to_owned(),
+            window_id: format!("{pool}-window"),
+            starts_at: 0,
+            ends_at: 10_000,
+            capacity: 100,
+            provider_used: Some(used),
+            unit: "percent".to_owned(),
+            is_active: true,
+            provider_managed: true,
+            last_synced_at: Some(1_000),
+            sync_health: None,
+            turn_health: None,
+        }
+    }
+
     #[test]
     fn installing_hooks_preserves_unrelated_entries() {
         let mut settings = json!({
@@ -582,5 +640,29 @@ mod tests {
             1
         );
         assert!(settings["hooks"].get("Stop").is_none());
+    }
+
+    #[test]
+    fn every_native_claude_window_remains_a_provider_safety_limit() {
+        assert!(is_exhausted_claude_window(&source(
+            "Claude Code",
+            "5-hour allowance",
+            100
+        )));
+        assert!(is_exhausted_claude_window(&source(
+            "Claude Code",
+            "Weekly allowance",
+            100
+        )));
+        assert!(!is_exhausted_claude_window(&source(
+            "Claude Code",
+            "Weekly allowance",
+            99
+        )));
+        assert!(!is_exhausted_claude_window(&source(
+            "Codex",
+            "Weekly allowance",
+            100
+        )));
     }
 }

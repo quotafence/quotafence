@@ -23,13 +23,21 @@ First source-distributed multi-agent beta of the QuotaFence vertical slice.
   and application-identifier namespace.
 - One-time local ledger and integration migration from pre-QuotaFence builds.
 - Claude Code 5-hour and weekly allowance discovery, reversible lifecycle
-  hooks, and managed CLI launches for either native window.
+  hooks, and managed CLI launches against one Weekly workspace allocation.
 - Windows x64 CI, preview installer workflow, CLI assets, and platform-aware
   process recovery.
 - A centralized capability/entitlement boundary that keeps the complete Free
   core available and falls back safely when future grants expire.
 - A versioned capability snapshot in Desktop Settings and the read-only
   `qfence features [--json]` command.
+- Unified Claude Code and Codex sidebar sources with both native allowance
+  windows visible together.
+- Weekly-only workspace allocations with explicit reallocation from another
+  project, compact daily usage history, and provider-wide 5-hour safety checks.
+- A local-only webview Content Security Policy and a narrower Tauri permission
+  set with the unused opener capability removed.
+- A lightweight Linux pull-request gate with explicit manual macOS and Windows
+  artifact gates to reduce hosted-runner usage before the repository is public.
 
 ### Known limitations
 

@@ -31,7 +31,9 @@ enable **Workspace protection** in the Claude Settings tab. Restart Claude Code
 or Claude Desktop and send a test prompt from an allocated folder. QuotaFence preserves
 unrelated Claude hooks and reports protection as unverified until it receives a
 lifecycle event. For an owned CLI session use `qfence claude`; add
-`--window 5h` when the 5-hour allocation should be the managed boundary.
+agent arguments directly after the command when needed. Workspace allocations
+are Weekly-only; the 5-hour allowance remains a provider safety limit and is
+checked automatically rather than allocated separately.
 
 ## Capability boundary
 

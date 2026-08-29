@@ -65,7 +65,6 @@ enum CliCommand {
     },
     RunAgent {
         agent: ManagedAgent,
-        claude_window: ClaudeManagedWindow,
         options: CommonOptions,
         assume_yes: bool,
         agent_args: Vec<String>,
@@ -86,12 +85,6 @@ enum CliCommand {
 enum ManagedAgent {
     Codex,
     Claude,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ClaudeManagedWindow {
-    Weekly,
-    FiveHour,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -310,11 +303,10 @@ fn run(args: Vec<String>) -> Result<u8, String> {
         }
         CliCommand::RunAgent {
             agent,
-            claude_window,
             options,
             assume_yes,
             agent_args,
-        } => run_managed_agent(agent, claude_window, options, assume_yes, agent_args),
+        } => run_managed_agent(agent, options, assume_yes, agent_args),
         CliCommand::HookCodex(options) => {
             // Infrastructure failures remain fail-open. Explicit policy
             // outcomes may block UserPromptSubmit through the hook contract.
@@ -480,7 +472,6 @@ fn run_policy_command(action: PolicyAction) -> Result<u8, String> {
 
 fn run_managed_agent(
     agent: ManagedAgent,
-    claude_window: ClaudeManagedWindow,
     options: CommonOptions,
     assume_yes: bool,
     agent_args: Vec<String>,
@@ -514,7 +505,7 @@ fn run_managed_agent(
             at: now,
         })
         .map_err(|error| error.to_string())?;
-    let allocation = managed_allocation(&context, agent, claude_window)?;
+    let allocation = managed_allocation(&context, agent)?;
     let resolved_provider_id = allocation.provider_id.clone();
     if agent == ManagedAgent::Codex {
         let checkpoint = codex::sync_detection(
@@ -541,6 +532,11 @@ fn run_managed_agent(
                 ));
             }
         }
+    }
+    if let Some(window) = exhausted_native_window(&mut service, agent, now)? {
+        return Err(format!(
+            "cannot launch {agent_name}: the provider's {window} is exhausted"
+        ));
     }
 
     let identity = managed_session_identity(agent_name, now);
@@ -645,7 +641,6 @@ fn run_managed_agent(
     let current_window_id = refresh_managed_checkpoint(
         &mut service,
         agent,
-        claude_window,
         &launch.assessment.window_id,
         finished_at,
     );
@@ -665,7 +660,6 @@ fn run_managed_agent(
 fn refresh_managed_checkpoint(
     service: &mut QuotaService,
     agent: ManagedAgent,
-    claude_window: ClaudeManagedWindow,
     baseline_window_id: &str,
     observed_at: i64,
 ) -> Option<String> {
@@ -676,10 +670,7 @@ fn refresh_managed_checkpoint(
             Ok(sync) => sync
                 .windows
                 .into_iter()
-                .find(|window| match claude_window {
-                    ClaudeManagedWindow::Weekly => window.kind == "seven_day",
-                    ClaudeManagedWindow::FiveHour => window.kind == "five_hour",
-                })
+                .find(|window| window.kind == "seven_day")
                 .map(|window| window.window_id),
             Err(error) => {
                 eprintln!(
@@ -987,7 +978,6 @@ fn provider_allocation<'a>(
 fn managed_allocation(
     context: &WorkspaceContext,
     agent: ManagedAgent,
-    claude_window: ClaudeManagedWindow,
 ) -> Result<&quotafence_lib::application::WorkspaceAllocationContext, String> {
     if agent == ManagedAgent::Codex {
         return provider_allocation(context, "codex");
@@ -1003,25 +993,50 @@ fn managed_allocation(
             allocation
                 .provider_display_name
                 .eq_ignore_ascii_case("Claude Code")
-                && match claude_window {
-                    ClaudeManagedWindow::Weekly => allocation
-                        .pool_display_name
-                        .eq_ignore_ascii_case("Weekly allowance"),
-                    ClaudeManagedWindow::FiveHour => allocation
-                        .pool_display_name
-                        .eq_ignore_ascii_case("5-hour allowance"),
-                }
+                && allocation
+                    .pool_display_name
+                    .eq_ignore_ascii_case("Weekly allowance")
         })
         .ok_or_else(|| {
             format!(
-                "scope {} has no Claude {} allocation",
-                binding.scope_display_name,
-                match claude_window {
-                    ClaudeManagedWindow::Weekly => "weekly",
-                    ClaudeManagedWindow::FiveHour => "5-hour",
-                }
+                "scope {} has no Claude weekly allocation",
+                binding.scope_display_name
             )
         })
+}
+
+fn exhausted_native_window(
+    service: &mut QuotaService,
+    agent: ManagedAgent,
+    at: i64,
+) -> Result<Option<String>, String> {
+    let provider_name = match agent {
+        ManagedAgent::Codex => "Codex",
+        ManagedAgent::Claude => "Claude Code",
+    };
+    let state = service
+        .local_state(GetLocalState {
+            selected_window_id: None,
+            at,
+        })
+        .map_err(|error| error.to_string())?;
+    Ok(state
+        .sources
+        .into_iter()
+        .filter(|source| {
+            source.is_active
+                && source.provider_managed
+                && source
+                    .provider_display_name
+                    .eq_ignore_ascii_case(provider_name)
+                && source.unit == "percent"
+        })
+        .find(|source| {
+            source
+                .provider_used
+                .is_some_and(|used| used >= source.capacity)
+        })
+        .map(|source| source.pool_display_name))
 }
 
 fn provider_matches(provider_id: &str, display_name: &str, reference: &str) -> bool {
@@ -1238,21 +1253,23 @@ fn parse_read_command(args: &[String]) -> Result<CliCommand, String> {
 }
 
 fn parse_run_command(args: &[String], implicit_agent_args: bool) -> Result<CliCommand, String> {
-    let agent = match args.get(1).map(String::as_str) {
-        Some("codex") => ManagedAgent::Codex,
-        Some("claude") => ManagedAgent::Claude,
-        _ => return Err("usage: quotafence run <codex|claude> [--path <directory>] [--window <weekly|5h>] [--yes] -- [agent args]".to_owned()),
-    };
+    let agent =
+        match args.get(1).map(String::as_str) {
+            Some("codex") => ManagedAgent::Codex,
+            Some("claude") => ManagedAgent::Claude,
+            _ => return Err(
+                "usage: quotafence run <codex|claude> [--path <directory>] [--yes] -- [agent args]"
+                    .to_owned(),
+            ),
+        };
     let mut options = CommonOptions::default();
     let mut assume_yes = false;
-    let mut claude_window = ClaudeManagedWindow::Weekly;
     let mut index = 2;
     while index < args.len() {
         match args[index].as_str() {
             "--" => {
                 return Ok(CliCommand::RunAgent {
                     agent,
-                    claude_window,
                     options,
                     assume_yes,
                     agent_args: args[index + 1..].to_vec(),
@@ -1269,20 +1286,19 @@ fn parse_run_command(args: &[String], implicit_agent_args: bool) -> Result<CliCo
             "--yes" => assume_yes = true,
             "--window" if agent == ManagedAgent::Claude => {
                 index += 1;
-                claude_window = match required_value(args, index, "--window")? {
-                    "weekly" | "week" => ClaudeManagedWindow::Weekly,
-                    "5h" | "five-hour" => ClaudeManagedWindow::FiveHour,
-                    value => {
-                        return Err(format!("unknown Claude window {value:?}; use weekly or 5h"))
+                match required_value(args, index, "--window")? {
+                    "weekly" | "week" => {}
+                    "5h" | "five-hour" => {
+                        return Err("Claude workspace allocations are weekly-only; the 5-hour allowance is checked automatically as a provider safety limit".to_owned())
                     }
-                };
+                    value => return Err(format!("unknown Claude window {value:?}; use weekly")),
+                }
             }
             "-h" | "--help" => return Ok(CliCommand::Help),
             option => {
                 if implicit_agent_args {
                     return Ok(CliCommand::RunAgent {
                         agent,
-                        claude_window,
                         options,
                         assume_yes,
                         agent_args: args[index..].to_vec(),
@@ -1297,7 +1313,6 @@ fn parse_run_command(args: &[String], implicit_agent_args: bool) -> Result<CliCo
     }
     Ok(CliCommand::RunAgent {
         agent,
-        claude_window,
         options,
         assume_yes,
         agent_args: Vec::new(),
@@ -2152,7 +2167,6 @@ Everyday:
   qfence ls                           List cached quota sources
   qfence codex [codex args]           Run Codex with quota protection
   qfence claude [claude args]         Run Claude with quota protection
-  qfence claude --window 5h           Use Claude's 5-hour allowance
 
 Workspace:
   qfence here                         Show the current workspace mapping
@@ -2345,24 +2359,18 @@ mod tests {
     fn short_agent_commands_parse_like_managed_runs() {
         let command = parse_args(vec![
             "claude".to_owned(),
-            "--window".to_owned(),
-            "5h".to_owned(),
             "--".to_owned(),
             "--model".to_owned(),
             "sonnet".to_owned(),
         ])
         .unwrap();
         let CliCommand::RunAgent {
-            agent,
-            claude_window,
-            agent_args,
-            ..
+            agent, agent_args, ..
         } = command
         else {
             panic!("expected managed Claude run");
         };
         assert_eq!(agent, ManagedAgent::Claude);
-        assert_eq!(claude_window, ClaudeManagedWindow::FiveHour);
         assert_eq!(agent_args, ["--model", "sonnet"]);
     }
 
@@ -2461,28 +2469,33 @@ mod tests {
     }
 
     #[test]
-    fn managed_claude_run_selects_a_native_window() {
-        let command = parse_args(vec![
+    fn managed_claude_run_is_weekly_only() {
+        let error = parse_args(vec![
             "run".to_owned(),
             "claude".to_owned(),
             "--window".to_owned(),
             "5h".to_owned(),
+        ])
+        .unwrap_err();
+        assert!(error.contains("weekly-only"));
+
+        let command = parse_args(vec![
+            "run".to_owned(),
+            "claude".to_owned(),
+            "--window".to_owned(),
+            "weekly".to_owned(),
             "--".to_owned(),
             "--model".to_owned(),
             "sonnet".to_owned(),
         ])
         .unwrap();
         let CliCommand::RunAgent {
-            agent,
-            claude_window,
-            agent_args,
-            ..
+            agent, agent_args, ..
         } = command
         else {
             panic!("expected managed Claude run");
         };
         assert_eq!(agent, ManagedAgent::Claude);
-        assert_eq!(claude_window, ClaudeManagedWindow::FiveHour);
         assert_eq!(agent_args, ["--model", "sonnet"].map(str::to_owned));
     }
 
