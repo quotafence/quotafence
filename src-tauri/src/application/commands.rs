@@ -152,6 +152,8 @@ pub struct SyncProviderQuota {
 pub struct DesktopUsageObservation {
     pub thread_id: String,
     pub canonical_path: String,
+    #[serde(default)]
+    pub model: Option<String>,
     pub total_tokens: u64,
     pub updated_at: i64,
 }

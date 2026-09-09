@@ -434,6 +434,10 @@ WHERE rowid IN (
 );
 "#;
 
+const CODEX_DESKTOP_MODELS: &str = r#"
+ALTER TABLE codex_desktop_thread_cursors ADD COLUMN model TEXT;
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -524,6 +528,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 18,
         name: "weekly_workspace_allocations",
         sql: WEEKLY_WORKSPACE_ALLOCATIONS,
+    },
+    Migration {
+        version: 19,
+        name: "codex_desktop_models",
+        sql: CODEX_DESKTOP_MODELS,
     },
 ];
 

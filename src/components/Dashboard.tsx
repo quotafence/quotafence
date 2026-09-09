@@ -12,22 +12,26 @@ import type {
   ClaudeStatusLineStatus,
   ClaudeProtectionStatus,
   LocalState,
+  ModelUsagePoint,
   QuotaSourceSummary,
   QuotaHistoryPoint,
   ScopeSummary,
 } from "../types";
 import { Icon } from "./Icon";
 import { ProviderLogo } from "./ProviderLogo";
+import { BrandLogo } from "./BrandLogo";
 import {
   observedCodexHookAt,
   verifiedCodexProtectionAt,
 } from "../lib/protection";
 import {
   SettingsPanel,
+  type AppIconPreference,
   type ThemePreference,
+  type SettingsTab,
 } from "./SettingsPanel";
 
-export type DashboardView = "overview" | "settings";
+export type DashboardView = "overview" | "projects" | "settings";
 
 function combinedProviderKey(source: QuotaSourceSummary): string | null {
   switch (source.providerDisplayName.trim().toLowerCase()) {
@@ -44,7 +48,8 @@ function combinedProviderKey(source: QuotaSourceSummary): string | null {
 type DashboardProps = {
   state: LocalState;
   view: DashboardView;
-  onViewChange: (view: DashboardView) => void;
+  onViewChange: (view: DashboardView, tab?: SettingsTab) => void;
+  settingsTab: SettingsTab;
   refreshing: boolean;
   onSelectSource: (windowId: string) => void;
   onAddSource: () => void;
@@ -68,6 +73,8 @@ type DashboardProps = {
   onClaudeSync: () => void;
   theme: ThemePreference;
   onThemeChange: (theme: ThemePreference) => void;
+  appIcon: AppIconPreference;
+  onAppIconChange: (style: AppIconPreference) => void;
   priorityBusy: boolean;
   onPriorityOrder: (orderedScopeIds: string[]) => void;
 };
@@ -87,6 +94,15 @@ function formatDate(timestamp: number): string {
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
+  }).format(timestamp);
+}
+
+function formatReset(timestamp: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(timestamp);
 }
 
@@ -117,10 +133,12 @@ function startOfLocalDay(timestamp: number): number {
 
 function UsageHeatmap({
   history,
+  modelUsage,
   capacity,
   unit,
 }: {
   history: QuotaHistoryPoint[];
+  modelUsage: ModelUsagePoint[];
   capacity: number;
   unit: string;
 }) {
@@ -170,6 +188,17 @@ function UsageHeatmap({
     if (ratio <= 0.3) return 3;
     return 4;
   };
+  const totalModelTokens = modelUsage.reduce(
+    (total, item) => total + item.tokens,
+    0,
+  );
+  const visibleModels = modelUsage.slice(0, 4);
+  const hiddenModelTokens = modelUsage
+    .slice(4)
+    .reduce((total, item) => total + item.tokens, 0);
+  if (hiddenModelTokens > 0) {
+    visibleModels.push({ model: "Other", tokens: hiddenModelTokens });
+  }
 
   return (
     <div className="quota-trend">
@@ -183,13 +212,9 @@ function UsageHeatmap({
           {activeDayCount === 1 ? "active day" : "active days"}
         </small>
       </div>
-      <div className="quota-heatmap-calendar">
-        <div className="quota-heatmap-body">
-          <div className="quota-weekday-axis" aria-hidden="true">
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-              <span key={day}>{day}</span>
-            ))}
-          </div>
+      <div className="usage-insights-grid">
+        <div className="quota-heatmap-calendar">
+          <div className="quota-heatmap-body">
           <div
             className="quota-heatmap"
             role="img"
@@ -220,6 +245,52 @@ function UsageHeatmap({
           </span>
           <span>{formatDate(lastDay)}</span>
         </div>
+        </div>
+        <section className="model-usage-card" aria-labelledby="model-usage-title">
+          <div className="model-usage-heading">
+            <span id="model-usage-title">
+              <Icon name="spark" size={15} />
+              Model usage
+            </span>
+            <small>Observed token share</small>
+          </div>
+          {totalModelTokens > 0 ? (
+            <div className="model-usage-list">
+              {visibleModels.map((item) => {
+                const rawPercentage = (item.tokens / totalModelTokens) * 100;
+                const barPercentage = Math.max(1, rawPercentage);
+                const percentageLabel =
+                  rawPercentage < 0.5 ? "<1%" : `${Math.round(rawPercentage)}%`;
+                return (
+                  <div className="model-usage-row" key={item.model}>
+                    <div>
+                      <strong title={item.model}>{item.model}</strong>
+                      <span>{percentageLabel}</span>
+                    </div>
+                    <div
+                      className="model-usage-track"
+                      role="progressbar"
+                      aria-label={`${item.model}: ${percentageLabel} of observed local tokens`}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={Math.round(rawPercentage)}
+                    >
+                      <i style={{ width: `${barPercentage}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="model-usage-empty">
+              <Icon name="database" size={22} />
+              <strong>No model breakdown yet</strong>
+              <span>
+                Sync after using Codex. Provider quota remains one combined allowance.
+              </span>
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );
@@ -303,11 +374,11 @@ function SetupDisclosure({
           <li className={trustReady ? "complete" : ""}>
             <Icon name={trustReady ? "check" : "shield"} size={16} />
             <div>
-              <strong>Protection verified in a new Codex task</strong>
+              <strong>Protection confirmed by a Codex message</strong>
               <span>
                 {trustReady
                   ? `Delivered ${formatLastSync(observedAt)}`
-                  : "Trust both hooks, then create a new task and submit one prompt"}
+                  : "Enable both hooks, then send a message from an allocated folder"}
               </span>
             </div>
           </li>
@@ -339,6 +410,7 @@ function AllocationRow({
   onPointerDragCancel,
   onMoveBy,
   onMenu,
+  onEdit,
 }: {
   scope: ScopeSummary;
   allocation: AllocationSnapshot;
@@ -353,7 +425,9 @@ function AllocationRow({
   onPointerDragCancel: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onMoveBy: (direction: -1 | 1) => void;
   onMenu: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  onEdit: () => void;
 }) {
+  const [pathVisible, setPathVisible] = useState(false);
   const overage = Math.max(
     0,
     allocation.attributedUsage - allocation.limit,
@@ -365,6 +439,15 @@ function AllocationRow({
       )
     : 0;
   const remainingLabel = protectionActive ? "protected" : "planned";
+  const protectionLabel = !protectionActive
+    ? "Tracking"
+    : allocation.decision === "stop"
+      ? "Blocked"
+      : allocation.decision === "warn"
+        ? "Warning"
+        : allocation.decision === "require_confirmation"
+          ? "Confirm"
+          : "Active";
 
   return (
     <article
@@ -375,71 +458,28 @@ function AllocationRow({
     >
       <div className="allocation-row-identity">
         <strong className="allocation-rank">{allocation.priority + 1}</strong>
-        <Icon className="allocation-folder-icon" name="folder" size={20} />
-        <div>
-          <strong>{scope.displayName}</strong>
-          <span title={scope.workspacePath ?? undefined}>
-            {scope.workspacePath ?? "Folder path unavailable"}
-          </span>
-        </div>
-      </div>
-      <div className="allocation-quota">
-        <div className="allocation-quota-meta">
-          <span>
-            <strong>
-              {formatAmount(allocation.protectedNow, unit)} left
-            </strong>
-            {allocation.protectedNow > 0 ? ` · ${remainingLabel}` : null}
-          </span>
-          <span>
-            {formatAmount(allocation.attributedUsage, unit)} tracked used
-            {overage > 0 ? (
-              <strong className="allocation-overage">
-                {` · ${formatAmount(overage, unit)} over allocation`}
-              </strong>
-            ) : (
-              <> · {remainingPercent}% of allocation left</>
-            )}
-          </span>
-        </div>
-        <div
-          className="allocation-quota-track"
-          role="progressbar"
-          aria-label={
-            overage > 0
-              ? `${scope.displayName}: ${formatAmount(
-                  allocation.protectedNow,
-                  unit,
-                )} left and ${formatAmount(
-                  overage,
-                  unit,
-                )} over its allocation`
-              : `${scope.displayName}: ${formatAmount(
-                  allocation.protectedNow,
-                  unit,
-                )} left, ${remainingLabel}, from a ${formatAmount(
-                  allocation.limit,
-                  unit,
-                )} allocation`
-          }
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={remainingPercent}
+        <button
+          className="allocation-path-toggle"
+          type="button"
+          aria-expanded={pathVisible}
+          onClick={() => setPathVisible((visible) => !visible)}
+          title={pathVisible ? "Hide folder path" : "Show folder path"}
         >
-          <span
-            className={
-              protectionActive
-                ? "allocation-protected-segment"
-                : "allocation-planned-segment"
-            }
-            style={{ width: `${remainingPercent}%` }}
-          />
+          <Icon className="allocation-folder-icon" name="folder" size={20} />
+          <strong>{scope.displayName}</strong>
+          <Icon className="allocation-path-chevron" name="chevron-down" size={14} />
+        </button>
+      </div>
+      <span className="allocation-cell allocation-budget">{formatAmount(allocation.limit, unit)}</span>
+      <span className={`allocation-cell ${overage > 0 ? "allocation-overage" : ""}`} title={overage > 0 ? `${formatAmount(overage, unit)} over budget` : undefined}>{formatAmount(allocation.attributedUsage, unit)}</span>
+      <div className="allocation-quota">
+        <strong>{formatAmount(allocation.protectedNow, unit)}</strong>
+        <div className="allocation-quota-track" role="progressbar" aria-label={`${scope.displayName}: ${remainingPercent}% of allocation remaining, ${remainingLabel}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={remainingPercent}>
+          <span className={protectionActive ? "allocation-protected-segment" : "allocation-planned-segment"} style={{ width: `${remainingPercent}%` }} />
         </div>
       </div>
-      <span className="allocation-limit">
-        <strong>{formatAmount(allocation.limit, unit)}</strong>
-        allocation
-      </span>
+      <span className={`allocation-protection ${protectionActive ? `verified ${allocation.decision}` : ""}`}><Icon name={protectionActive ? "shield" : "activity"} size={14} />{protectionLabel}</span>
+      <button className="allocation-edit-button" type="button" onClick={onEdit} aria-label={`Edit allocation for ${scope.displayName}`} title="Edit allocation"><Icon name="settings" size={15} /></button>
       <button
         className="row-menu-button"
         type="button"
@@ -472,6 +512,14 @@ function AllocationRow({
       >
         <Icon name="grip" size={18} />
       </button>
+      {pathVisible && (
+        <div className="allocation-path-detail">
+          <Icon name="folder" size={14} />
+          <code title={scope.workspacePath ?? undefined}>
+            {scope.workspacePath ?? "No folder path recorded"}
+          </code>
+        </div>
+      )}
     </article>
   );
 }
@@ -480,6 +528,7 @@ export function Dashboard({
   state,
   view,
   onViewChange,
+  settingsTab,
   refreshing,
   onSelectSource,
   onAddSource,
@@ -503,6 +552,8 @@ export function Dashboard({
   onClaudeSync,
   theme,
   onThemeChange,
+  appIcon,
+  onAppIconChange,
   priorityBusy,
   onPriorityOrder,
 }: DashboardProps) {
@@ -524,7 +575,7 @@ export function Dashboard({
 
   useEffect(() => {
     mainContentRef.current?.scrollTo({ top: 0 });
-  }, [view, state.selectedWindowId]);
+  }, [view, settingsTab, state.selectedWindowId]);
 
   useEffect(() => {
     const handleRefreshShortcut = (event: KeyboardEvent) => {
@@ -601,14 +652,6 @@ export function Dashboard({
   }, []);
 
   const { window: quotaWindow } = dashboard;
-  const shortWindow =
-    quotaWindow.endsAt - quotaWindow.startsAt < 86_400_000;
-  const pacingUnit = shortWindow ? "hour" : "day";
-  const pacingUnitMillis = shortWindow ? 3_600_000 : 86_400_000;
-  const remainingPacingUnits = Math.max(
-    0,
-    Math.ceil((quotaWindow.endsAt - Date.now()) / pacingUnitMillis),
-  );
   const allocationByScope = new Map(
     dashboard.allocations.map((allocation) => [allocation.scopeId, allocation]),
   );
@@ -657,30 +700,7 @@ export function Dashboard({
           : (turnHealth?.pendingCount ?? 0) > 0
             ? `${turnHealth?.pendingCount} ${turnHealth?.pendingCount === 1 ? "turn is" : "turns are"} waiting for a closing checkpoint.`
             : "All observed usage currently has a clear attribution state.";
-  const percentOfWindow = (amount: number) =>
-    quotaWindow.capacity
-      ? Math.min(100, Math.max(0, (amount / quotaWindow.capacity) * 100))
-      : 0;
-  const usedSlicePercent = percentOfWindow(usedAmount);
-  const plannedSlicePercent = percentOfWindow(plannedCapacityNow);
-  const plannedSliceEnd = Math.min(
-    100,
-    usedSlicePercent + plannedSlicePercent,
-  );
   const plannedLabel = protectionActive ? "Protected" : "Planned";
-  const nextAllocationAtRisk = [...scopes]
-    .reverse()
-    .find(
-      (scope) => (allocationByScope.get(scope.id)?.protectedNow ?? 0) > 0,
-    );
-  const nextAtRiskPriority = nextAllocationAtRisk
-    ? (allocationByScope.get(nextAllocationAtRisk.id)?.priority ?? 0)
-    : null;
-  const capacityErosionOrder = nextAllocationAtRisk
-    ? nextAtRiskPriority !== null && nextAtRiskPriority > 0
-      ? `Funding then erodes from ${nextAllocationAtRisk.displayName} toward higher priorities.`
-      : `Further usage then reduces ${nextAllocationAtRisk.displayName}'s planned capacity.`
-    : "No allocation has funded capacity left.";
   const clearPriorityDrag = () => {
     draggedScopeIdRef.current = null;
     dragOverScopeIdRef.current = null;
@@ -777,13 +797,7 @@ export function Dashboard({
     <div className="app-layout overview-redesign">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark">
-            <Icon name="gauge" size={22} />
-          </span>
-          <div>
-            <strong>Agent Quota</strong>
-            <span>Manager</span>
-          </div>
+          <BrandLogo />
         </div>
 
         <nav className="sidebar-navigation" aria-label="Application">
@@ -794,6 +808,14 @@ export function Dashboard({
           >
             <Icon name="gauge" size={18} />
             <span>Overview</span>
+          </button>
+          <button
+            className={view === "projects" ? "active" : ""}
+            type="button"
+            onClick={() => onViewChange("projects")}
+          >
+            <Icon name="folder" size={18} />
+            <span>Projects</span>
           </button>
           <button
             className={view === "settings" ? "active" : ""}
@@ -884,7 +906,7 @@ export function Dashboard({
                   className="source-item source-item-pending"
                   type="button"
                   title="Claude has not reported subscription quota yet."
-                  onClick={() => onViewChange("settings")}
+                  onClick={() => onViewChange("settings", "claude")}
                 >
                   <ProviderLogo
                     className="source-avatar"
@@ -908,6 +930,8 @@ export function Dashboard({
       <main ref={mainContentRef} className="main-content">
         {view === "settings" ? (
           <SettingsPanel
+            settingsTab={settingsTab}
+            onTabChange={(tab) => onViewChange("settings", tab)}
             protection={codexProtection}
             events={codexProtectionEvents}
             sources={state.sources}
@@ -919,6 +943,8 @@ export function Dashboard({
             busy={protectionBusy}
             theme={theme}
             onThemeChange={onThemeChange}
+            appIcon={appIcon}
+            onAppIconChange={onAppIconChange}
             onProtection={onProtection}
             claudeIntegration={claudeIntegration}
             claudeProtection={claudeProtection}
@@ -931,9 +957,9 @@ export function Dashboard({
           <>
             <header className="topbar block-dashboard-header">
               <div>
-                <h1>{source.providerDisplayName}</h1>
+                <h1>{view === "projects" ? "Projects" : source.providerDisplayName}</h1>
                 <p className="topbar-subtitle">
-                  {providerWindows.length > 1
+                  {view === "projects" ? `${source.providerDisplayName} · Weekly budgets` : providerWindows.length > 1
                     ? "5-hour + Weekly allowances"
                     : source.poolDisplayName}
                 </p>
@@ -958,7 +984,7 @@ export function Dashboard({
                   source={source}
                   protection={codexProtection}
                   observedAt={hookObservedAt}
-                  onOpenSettings={() => onViewChange("settings")}
+                  onOpenSettings={() => onViewChange("settings", "codex")}
                 />
               </div>
             </header>
@@ -971,38 +997,17 @@ export function Dashboard({
                 >
                   <Icon name="shield" size={20} />
                   <div>
-                    <strong>
-                      {codexProtection?.installed
-                        ? hookObservedAt !== null
-                          ? "Hook connected, but enforcement is degraded"
-                          : "Current Codex tasks are tracking-only"
-                        : "Allocations are a priority plan—not enforced yet"}
-                    </strong>
-                    <span>
-                      {codexProtection?.installed
-                        ? hookObservedAt !== null
-                          ? `${codexProtection.lastHookIssue ?? "The latest prompt did not produce an enforceable quota decision."} QuotaFence will retry automatically. `
-                          : "QuotaFence still tracks usage in existing tasks, but it cannot block their prompts. Trust and enable UserPromptSubmit and Stop, then create a new Codex task inside an allocated folder to activate hard protection. "
-                        : ""}
-                      {unassignedBufferNow > 0
-                        ? `Unmanaged Codex usage consumes the ${formatAmount(
-                            unassignedBufferNow,
-                            quotaWindow.unit,
-                          )} unassigned capacity still available now. ${capacityErosionOrder}`
-                        : nextAllocationAtRisk
-                          ? `No unassigned capacity remains. The next unmanaged Codex usage reduces ${nextAllocationAtRisk.displayName} first${
-                              nextAtRiskPriority !== null &&
-                              nextAtRiskPriority > 0
-                                ? ", then moves toward higher priorities."
-                                : "."
-                            }`
-                          : "No allocation has funded capacity left. Codex usage can continue until protection is activated."}
-                    </span>
+                    <strong>{codexProtection?.installed ? hookObservedAt !== null ? "Protection needs attention" : "Send a Codex message to confirm protection" : "Protect your project budgets"}</strong>
+                    <span>{codexProtection?.installed
+                      ? hookObservedAt !== null
+                        ? codexProtection.lastHookIssue ?? "The latest hook could not verify a quota decision. Check Codex settings."
+                        : "Hooks are installed. Send a message from an allocated folder, then check the status."
+                      : "Enable Codex protection to check new prompts against each project’s weekly budget."}</span>
                   </div>
                   <button
                     className="button primary small"
                     type="button"
-                    onClick={() => onViewChange("settings")}
+                    onClick={() => onViewChange("settings", "codex")}
                   >
                     {hookObservedAt !== null ? "View status" : "View setup"}
                   </button>
@@ -1018,21 +1023,21 @@ export function Dashboard({
                     <strong>Claude allocations are not protected yet</strong>
                     <span>
                       {claudeProtection?.installed
-                        ? "Restart Claude and send a test prompt from an allocated folder. Until QuotaFence observes the lifecycle hook, these allocations are a priority plan only."
-                        : "Enable Workspace protection in Claude Settings. Without the prompt gate, Claude usage can consume unassigned capacity and lower priorities."}
+                        ? "Restart Claude and send a message from an allocated folder to confirm protection."
+                        : "Enable Claude protection to check new prompts against each project’s weekly budget."}
                     </span>
                   </div>
                   <button
                     className="button primary small"
                     type="button"
-                    onClick={() => onViewChange("settings")}
+                    onClick={() => onViewChange("settings", "claude")}
                   >
                     Finish protection
                   </button>
                 </section>
               )}
 
-              <section className="overview-block-grid">
+              <section className="overview-block-grid" hidden={view === "projects"}>
                 <article className="dashboard-block quota-dashboard-block">
                   <div className="block-kicker">
                     <Icon name="gauge" size={15} />
@@ -1063,8 +1068,8 @@ export function Dashboard({
                             <strong>{candidate.poolDisplayName}</strong>
                             <span>
                               {candidate.isActive
-                                ? `Resets ${formatDate(candidate.endsAt)}`
-                                : "Inactive window"}
+                                ? `Resets ${formatReset(candidate.endsAt)}`
+                                : `Ended ${formatReset(candidate.endsAt)}`}
                             </span>
                           </div>
                           <b>
@@ -1088,107 +1093,23 @@ export function Dashboard({
                   </div>
                   <UsageHeatmap
                     history={dashboard.quotaHistory}
+                    modelUsage={dashboard.modelUsage ?? []}
                     capacity={quotaWindow.capacity}
                     unit={quotaWindow.unit}
                   />
                 </article>
 
-                <article className="dashboard-block allocation-summary-block">
-                  <div className="reset-summary">
-                    <span>
-                      <Icon name="calendar" size={15} />
-                      {source.isActive ? "Resets" : "Window"}
-                    </span>
-                    <strong>
-                      {source.isActive
-                        ? `${remainingPacingUnits} ${
-                            remainingPacingUnits === 1
-                              ? pacingUnit
-                              : `${pacingUnit}s`
-                          }`
-                        : "Ended"}
-                    </strong>
-                    <small>{formatDate(quotaWindow.endsAt)}</small>
-                  </div>
-                  <div className="allocation-donut-group">
-                    <div
-                      className="allocation-donut"
-                      style={{
-                        background: `conic-gradient(var(--quiet) 0 ${usedSlicePercent}%, ${protectionActive ? "var(--success)" : "var(--success-muted)"} ${usedSlicePercent}% ${plannedSliceEnd}%, var(--unassigned) ${plannedSliceEnd}% 100%)`,
-                      }}
-                      role="img"
-                      aria-label={`${formatAmount(
-                        usedAmount,
-                        quotaWindow.unit,
-                      )} used, ${formatAmount(
-                        plannedCapacityNow,
-                        quotaWindow.unit,
-                      )} ${plannedLabel.toLowerCase()}, and ${formatAmount(
-                        unassignedBufferNow,
-                        quotaWindow.unit,
-                      )} unassigned in the current quota window`}
-                    >
-                      <span>
-                        <strong>
-                          {formatAmount(
-                            quotaWindow.providerSpendable,
-                            quotaWindow.unit,
-                          )}
-                        </strong>
-                        <small>left</small>
-                      </span>
-                    </div>
-                    <dl className="allocation-legend">
-                      <div>
-                        <dt>
-                          <i className="used" />
-                          Used
-                        </dt>
-                        <dd>
-                          {formatAmount(usedAmount, quotaWindow.unit)}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>
-                          <i
-                            className={`funded ${
-                              protectionActive ? "protected" : ""
-                            }`}
-                          />
-                          {plannedLabel}
-                        </dt>
-                        <dd>
-                          {formatAmount(plannedCapacityNow, quotaWindow.unit)}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>
-                          <i className="unassigned" />
-                          Unassigned
-                        </dt>
-                        <dd>
-                          {formatAmount(
-                            unassignedBufferNow,
-                            quotaWindow.unit,
-                          )}
-                        </dd>
-                      </div>
-                    </dl>
-                  </div>
-                </article>
               </section>
 
-              <section className="workspace-budget-section dashboard-block">
+              <section id="workspace-allocations" className="workspace-budget-section dashboard-block">
                 <header>
                   <div>
                     <h2 className="heading-with-icon">
                       <Icon name="folder" size={23} />
-                      Weekly workspace allocations
+                      Allocations
                     </h2>
                     <p>
-                      {protectionActive
-                        ? "Drag to set priority. Higher allocations are protected first."
-                        : "Drag to set the funding plan. Lowest priorities lose capacity first."}
+                      Weekly quota · priority 1 is protected first
                     </p>
                   </div>
                   <button
@@ -1201,7 +1122,17 @@ export function Dashboard({
                   </button>
                 </header>
 
+                <div className="budget-summary-line">
+                  <span><b>{formatAmount(usedAmount, quotaWindow.unit)}</b> used</span>
+                  <span><b>{formatAmount(plannedCapacityNow, quotaWindow.unit)}</b> {plannedLabel.toLowerCase()}</span>
+                  <span><b>{formatAmount(unassignedBufferNow, quotaWindow.unit)}</b> free</span>
+                </div>
+                <div className="allocation-table-scroll" role="region" aria-label="Weekly project allocations" tabIndex={0}>
+                <div className="allocation-table-head" aria-hidden="true">
+                  <span>Project</span><span>Weekly</span><span>Used</span><span>Left</span><span>Status</span><span aria-label="Actions" />
+                </div>
                 <div className="overview-allocation-list">
+                  {scopes.length === 0 && <div className="allocation-empty"><Icon name="folder" size={24} /><strong>Give your first project a weekly budget</strong><p>Add a folder and choose its share of this provider’s weekly quota.</p><button className="button primary" type="button" onClick={onAddScope}>Add project</button></div>}
                   {scopes.map((scope) => {
                     const allocation = allocationByScope.get(scope.id);
                     if (!allocation) {
@@ -1229,6 +1160,7 @@ export function Dashboard({
                         onMoveBy={(direction) =>
                           movePriorityBy(scope.id, direction)
                         }
+                        onEdit={() => onEditAllocation(scope)}
                         onMenu={(event) => {
                           const rect = event.currentTarget.getBoundingClientRect();
                           setAllocationMenu({
@@ -1244,9 +1176,10 @@ export function Dashboard({
                     );
                   })}
                 </div>
+                </div>
               </section>
 
-              <section className="attribution-diagnostics dashboard-block">
+              <details className="attribution-diagnostics dashboard-block"><summary><Icon name="activity" size={16} /> Usage attribution <span>Tracking details</span></summary>
                 <div className="attribution-diagnostics-heading">
                   <div>
                     <span className="block-kicker">
@@ -1285,7 +1218,7 @@ export function Dashboard({
                     </small>
                   </div>
                 </dl>
-              </section>
+              </details>
 
             </div>
           </>

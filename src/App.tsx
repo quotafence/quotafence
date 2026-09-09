@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
+import "./Redesign.css";
+import { BrandLogo } from "./components/BrandLogo";
 import { AllocationForm } from "./components/AllocationForm";
 import { Dashboard, type DashboardView } from "./components/Dashboard";
 import { Icon } from "./components/Icon";
 import { Modal } from "./components/Modal";
 import { ProviderLogo } from "./components/ProviderLogo";
 import { ScopeForm } from "./components/ScopeForm";
-import type { ThemePreference } from "./components/SettingsPanel";
+import type {
+  AppIconPreference,
+  ThemePreference,
+  SettingsTab,
+} from "./components/SettingsPanel";
 import { SourceSetupForm } from "./components/SourceSetupForm";
 import {
   archiveQuotaSource,
@@ -26,6 +32,7 @@ import {
   setAllocation,
   setAllocationPriorityOrder,
   setWorkspacePolicy,
+  setAppIcon,
   syncCodexQuota,
   syncClaudeQuota,
   uninstallCodexProtection,
@@ -56,6 +63,7 @@ type ModalState =
   | null;
 
 const THEME_STORAGE_KEY = "quotafence-theme";
+const APP_ICON_STORAGE_KEY = "quotafence-app-icon";
 const LEGACY_THEME_STORAGE_KEY = "aqm-theme";
 const AUTO_SYNC_INTERVAL_MS = 2 * 60_000;
 
@@ -71,13 +79,14 @@ function storedTheme(): ThemePreference {
     : "system";
 }
 
+function storedAppIcon(): AppIconPreference {
+  return localStorage.getItem(APP_ICON_STORAGE_KEY) === "light" ? "light" : "dark";
+}
+
 function LoadingScreen() {
   return (
     <main className="loading-screen">
-      <div className="loading-mark">
-        <Icon name="gauge" size={30} />
-      </div>
-      <strong>QuotaFence</strong>
+      <BrandLogo />
       <span>Opening your local ledger…</span>
       <i />
     </main>
@@ -187,13 +196,7 @@ function WelcomeScreen({
     <main className="welcome-screen">
       <section className="welcome-story">
         <div className="brand welcome-brand">
-          <span className="brand-mark">
-            <Icon name="gauge" size={22} />
-          </span>
-          <div>
-            <strong>Agent Quota</strong>
-            <span>Manager</span>
-          </div>
+          <BrandLogo />
         </div>
 
         <div className="welcome-copy">
@@ -317,7 +320,9 @@ function App() {
   const [claudeBusy, setClaudeBusy] = useState(false);
   const [priorityBusy, setPriorityBusy] = useState(false);
   const [view, setView] = useState<DashboardView>("overview");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
   const [theme, setTheme] = useState<ThemePreference>(storedTheme);
+  const [appIcon, setAppIconPreference] = useState<AppIconPreference>(storedAppIcon);
   const initialSyncStarted = useRef(false);
   const syncInFlight = useRef(false);
 
@@ -359,6 +364,13 @@ function App() {
       return () => systemTheme.removeEventListener("change", applyTheme);
     }
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem(APP_ICON_STORAGE_KEY, appIcon);
+    void setAppIcon(appIcon).catch((reason) => {
+      setError(getErrorMessage(reason));
+    });
+  }, [appIcon]);
 
   useEffect(() => {
     async function initialize() {
@@ -903,7 +915,11 @@ function App() {
       <Dashboard
         state={localState}
         view={view}
-        onViewChange={setView}
+        settingsTab={settingsTab}
+        onViewChange={(nextView, tab = "general") => {
+          setSettingsTab(tab);
+          setView(nextView);
+        }}
         refreshing={refreshing}
         onSelectSource={handleSelectSource}
         onAddSource={() => setModal({ type: "source" })}
@@ -929,6 +945,8 @@ function App() {
         onClaudeSync={() => void handleClaudeSync()}
         theme={theme}
         onThemeChange={setTheme}
+        appIcon={appIcon}
+        onAppIconChange={setAppIconPreference}
         priorityBusy={priorityBusy}
         onPriorityOrder={(orderedScopeIds) => {
           if (localState.selectedWindowId) {
@@ -971,6 +989,7 @@ function App() {
             onClaude={() => {
               if (claudeIntegration?.installed) {
                 setModal(null);
+                setSettingsTab("claude");
                 setView("settings");
               } else {
                 void handleClaudeIntegration(true);
@@ -1156,6 +1175,7 @@ function App() {
           onClose={() => setModal(null)}
         >
           <AllocationForm
+            allocations={dashboard.allocations}
             scope={modal.scope}
             currentAmount={editingAllocation?.limit ?? 0}
             maxAmount={
@@ -1172,14 +1192,25 @@ function App() {
             }
             unit={unit}
             submitting={submitting}
-            onSubmit={(input: WorkspaceBudgetInput) =>
+            onSubmit={(input: WorkspaceBudgetInput & { reallocateFromScopeId: string | null }) =>
               runMutation(async () => {
-                await setAllocation(
-                  modal.scope.id,
-                  dashboard.window.id,
-                  input.amount,
-                  unit,
-                );
+                const available = dashboard.window.unallocated + (editingAllocation?.limit ?? 0);
+                const transfer = Math.max(0, input.amount - available);
+                const donor = dashboard.allocations.find((item) => item.scopeId === input.reallocateFromScopeId && item.scopeId !== modal.scope.id);
+                if (transfer > 0 && (!donor || donor.limit < transfer)) {
+                  throw new Error("Choose a project with enough weekly quota to transfer.");
+                }
+                if (donor && transfer > 0) {
+                  await setAllocation(donor.scopeId, dashboard.window.id, donor.limit - transfer, unit);
+                }
+                try {
+                  await setAllocation(modal.scope.id, dashboard.window.id, input.amount, unit);
+                } catch (reason) {
+                  if (donor && transfer > 0) {
+                    await setAllocation(donor.scopeId, dashboard.window.id, donor.limit, unit);
+                  }
+                  throw reason;
+                }
                 const currentPolicy = editingAllocation?.policy;
                 const policyChanged =
                   !currentPolicy ||

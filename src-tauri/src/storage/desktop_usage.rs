@@ -20,8 +20,43 @@ use super::{
 pub struct DesktopThreadObservation {
     pub thread_id: String,
     pub canonical_path: String,
+    pub model: Option<String>,
     pub total_tokens: u64,
     pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelUsageTotal {
+    pub model: String,
+    pub tokens: u64,
+}
+
+pub(crate) fn model_usage_since(
+    connection: &rusqlite::Connection,
+    pool_id: &QuotaPoolId,
+    since: i64,
+) -> StorageResult<Vec<ModelUsageTotal>> {
+    let mut statement = connection.prepare(
+        "SELECT model, SUM(last_tokens)
+         FROM codex_desktop_thread_cursors
+         WHERE pool_id = ?1
+           AND model IS NOT NULL
+           AND length(trim(model)) > 0
+           AND observed_at >= ?2
+         GROUP BY model
+         ORDER BY SUM(last_tokens) DESC, model ASC",
+    )?;
+    let rows = statement.query_map(params![pool_id.as_str(), since], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+    })?;
+    rows.map(|row| {
+        let (model, tokens) = row?;
+        Ok(ModelUsageTotal {
+            model,
+            tokens: from_sql_integer(tokens, "model usage tokens")?,
+        })
+    })
+    .collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,7 +115,11 @@ pub(crate) fn reconcile(
                 if previous_observed_at
                     .is_some_and(|baseline| observation.updated_at > baseline) =>
             {
-                let delta = current_tokens.saturating_sub(last_tokens);
+                // Codex may compact or reset a thread's cumulative counter. Signed
+                // saturating subtraction still permits a negative result, so clamp
+                // counter regressions to zero and establish the lower value as the
+                // next baseline instead of creating negative pending usage.
+                let delta = current_tokens.saturating_sub(last_tokens).max(0);
                 pending_tokens.saturating_add(delta)
             }
             Some((_, pending_tokens)) => pending_tokens,
@@ -95,12 +134,13 @@ pub(crate) fn reconcile(
 
         transaction.execute(
             "INSERT INTO codex_desktop_thread_cursors (
-                 pool_id, thread_id, canonical_path, last_tokens,
+                 pool_id, thread_id, canonical_path, model, last_tokens,
                  pending_tokens, observed_at
              )
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(pool_id, thread_id) DO UPDATE SET
                  canonical_path = excluded.canonical_path,
+                 model = excluded.model,
                  last_tokens = excluded.last_tokens,
                  pending_tokens = excluded.pending_tokens,
                  observed_at = excluded.observed_at",
@@ -108,6 +148,7 @@ pub(crate) fn reconcile(
                 pool_id.as_str(),
                 observation.thread_id,
                 observation.canonical_path,
+                observation.model,
                 current_tokens,
                 pending_tokens,
                 observation.updated_at,

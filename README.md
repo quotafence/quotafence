@@ -225,7 +225,8 @@ npm run tauri -- dev
 
 The CLI command is available as either `qfence` (recommended) or `quotafence`.
 Common terminal entry points are `qfence`, `qfence sync`, `qfence ls`,
-`qfence allocations`, `qfence codex`, and `qfence claude`.
+`qfence top`, `qfence history`, `qfence allocations`, `qfence codex`, and
+`qfence claude`.
 
 For source development, run the same interface without installing it globally:
 
@@ -244,13 +245,20 @@ with warnings denied, and runs the Rust tests.
 
 ### Resolve or bind the current workspace
 
-Choose a folder and create a workspace allocation in the desktop app, or bind
-an existing top-level allocation from the CLI:
+Create and manage weekly project allocations directly from the CLI, or bind the
+current folder to an existing top-level allocation:
 
 ```bash
+npm run qfence -- allocations add --provider codex --percent 20
+npm run qfence -- allocations set "Workspace allocation name" --percent 30
+npm run qfence -- allocations move "Workspace allocation name" up
 npm run qfence -- here
 npm run qfence -- bind "Workspace allocation name"
 ```
+
+Use `--from "Another project"` when an increase needs quota transferred from
+another allocation. `qfence history` provides the free six-month basic history,
+and `qfence top` opens the live terminal dashboard.
 
 Preview the current policy boundary without launching Codex:
 

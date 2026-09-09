@@ -13,6 +13,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(commands::initialize)
         .invoke_handler(tauri::generate_handler![
+            commands::set_app_icon,
             commands::create_provider,
             commands::create_account,
             commands::create_quota_pool,
