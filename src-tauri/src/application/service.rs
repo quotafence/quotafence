@@ -32,7 +32,7 @@ use super::{
     GetCodexProtectionEvents, GetLocalState, GetPendingCodexConfirmations,
     GetProviderTurnObservation, GetQuotaDashboard, GetWorkspaceContext, GetWorkspacePolicy,
     LocalState, ManagedSessionLaunch, ManagedSessionOutcome, ManagedSessionReconciliation,
-    ManagedSessionReconciliationStatus, MarkManagedSessionRunning, PolicySummary,
+    ManagedSessionReconciliationStatus, MarkManagedSessionRunning, ModelUsagePoint, PolicySummary,
     PrepareManagedSession, ProviderSyncHealthSummary, ProviderTurnObservationSummary,
     QuotaDashboard, QuotaHistoryPoint, QuotaSourceSummary, ReconcileProviderTurnObservation,
     RecordCodexProtectionEvent, RecordUsage, ReleaseReservation, RemoveWorkspaceAllocation,
@@ -229,6 +229,7 @@ impl QuotaService {
                 .map(|observation| DesktopThreadObservation {
                     thread_id: observation.thread_id,
                     canonical_path: observation.canonical_path,
+                    model: observation.model,
                     total_tokens: observation.total_tokens,
                     updated_at: observation.updated_at,
                 })
@@ -1529,6 +1530,15 @@ impl QuotaService {
             }));
         }
         quota_history.sort_by_key(|point| point.observed_at);
+        let model_usage = self
+            .database
+            .model_usage_since(window.pool_id(), history_since)?
+            .into_iter()
+            .map(|usage| ModelUsagePoint {
+                model: usage.model,
+                tokens: usage.tokens,
+            })
+            .collect();
 
         Ok(QuotaDashboard {
             window: WindowSummary {
@@ -1549,6 +1559,7 @@ impl QuotaService {
             },
             allocations: snapshots,
             quota_history,
+            model_usage,
             forecast,
         })
     }
@@ -3510,6 +3521,7 @@ mod tests {
         let baseline = DesktopUsageObservation {
             thread_id: "thread-1".to_owned(),
             canonical_path: "/code/workspace-a".to_owned(),
+            model: Some("gpt-test".to_owned()),
             total_tokens: 100,
             updated_at: 2_000,
         };
@@ -3561,6 +3573,45 @@ mod tests {
             .unwrap();
         assert_eq!(snapshot(&dashboard, "workspace-a").attributed_usage, 2);
         assert_eq!(dashboard.window.unattributed_usage, 10);
+        assert_eq!(
+            dashboard.model_usage,
+            vec![ModelUsagePoint {
+                model: "gpt-test".to_owned(),
+                tokens: 175,
+            }]
+        );
+    }
+
+    #[test]
+    fn desktop_token_counter_regression_resets_the_baseline_without_negative_pending_usage() {
+        let mut service = managed_workspace_service();
+        let baseline = DesktopUsageObservation {
+            thread_id: "thread-1".to_owned(),
+            canonical_path: "/code/workspace-a".to_owned(),
+            model: Some("gpt-test".to_owned()),
+            total_tokens: 200,
+            updated_at: 2_000,
+        };
+        sync_desktop_snapshot(&mut service, 10, 2_100, vec![baseline.clone()]);
+
+        let mut compacted = baseline;
+        compacted.total_tokens = 50;
+        compacted.updated_at = 2_500;
+        let regression = sync_desktop_snapshot(&mut service, 10, 2_600, vec![compacted.clone()]);
+        assert_eq!(
+            regression.desktop_reconciliation.as_ref().unwrap().status,
+            DesktopUsageReconciliationStatus::NoActivity
+        );
+        assert_eq!(regression.desktop_reconciliation.unwrap().pending_tokens, 0);
+
+        compacted.total_tokens = 70;
+        compacted.updated_at = 2_900;
+        let resumed = sync_desktop_snapshot(&mut service, 10, 3_000, vec![compacted]);
+        assert_eq!(
+            resumed.desktop_reconciliation.as_ref().unwrap().status,
+            DesktopUsageReconciliationStatus::PendingProviderDelta
+        );
+        assert_eq!(resumed.desktop_reconciliation.unwrap().pending_tokens, 20);
     }
 
     #[test]
@@ -3569,6 +3620,7 @@ mod tests {
         let baseline = DesktopUsageObservation {
             thread_id: "thread-1".to_owned(),
             canonical_path: "/code/workspace-a".to_owned(),
+            model: None,
             total_tokens: 100,
             updated_at: 2_000,
         };
@@ -3611,12 +3663,14 @@ mod tests {
         let mapped = DesktopUsageObservation {
             thread_id: "thread-1".to_owned(),
             canonical_path: "/code/workspace-a".to_owned(),
+            model: None,
             total_tokens: 100,
             updated_at: 2_000,
         };
         let unmapped = DesktopUsageObservation {
             thread_id: "thread-2".to_owned(),
             canonical_path: "/code/other".to_owned(),
+            model: None,
             total_tokens: 100,
             updated_at: 2_000,
         };

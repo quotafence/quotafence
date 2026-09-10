@@ -3,7 +3,8 @@ use std::{path::Path, time::Duration};
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
 use crate::domain::{
-    Account, Allocation, Provider, QuotaPool, QuotaWindow, Scope, ScopeId, UnixMillis, WindowId,
+    Account, Allocation, Provider, QuotaPool, QuotaPoolId, QuotaWindow, Scope, ScopeId, UnixMillis,
+    WindowId,
 };
 
 use super::{
@@ -316,6 +317,14 @@ impl Database {
         window_id: &WindowId,
     ) -> StorageResult<Vec<super::ProviderQuotaHistoryPoint>> {
         provider_snapshots::list_history(&self.connection, window_id)
+    }
+
+    pub fn model_usage_since(
+        &self,
+        pool_id: &QuotaPoolId,
+        since: i64,
+    ) -> StorageResult<Vec<super::ModelUsageTotal>> {
+        super::desktop_usage::model_usage_since(&self.connection, pool_id, since)
     }
 
     pub fn sync_provider_quota(

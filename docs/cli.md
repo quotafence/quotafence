@@ -14,14 +14,16 @@ fully supported for scripts, hooks, and backwards compatibility.
 qfence
 qfence status
 qfence sync
+qfence top
 qfence ls
 qfence sources show claude
 qfence allocations
+qfence history
 qfence here
 qfence bind "Workspace name"
 qfence features
 qfence codex
-qfence claude --window 5h
+qfence claude
 ```
 
 Use `--json` with the read-only commands for machine-readable output. Agent
@@ -38,9 +40,15 @@ shows how many seconds, minutes, hours, or days ago it was synced.
 | --- | --- | --- |
 | `qfence` or `qfence status` | Show the current quota table | yes |
 | `qfence sync` | Force a new Claude Code and Codex checkpoint, then show status | yes |
+| `qfence top` | Live terminal dashboard with quotas, project budgets, and recent history | every refresh |
 | `qfence ls` | List cached sources (`list` and `sources` are aliases) | no |
 | `qfence sources show <provider>` | Filter cached sources by provider, pool, or window ID | no |
 | `qfence allocations` | List workspace allocations and decisions | no |
+| `qfence allocations add ...` | Allocate weekly quota to a folder | no |
+| `qfence allocations set ...` | Change a project's weekly budget | no |
+| `qfence allocations remove ...` | Remove a project allocation and binding | no |
+| `qfence allocations move ...` | Move a project up or down in protection priority | no |
+| `qfence history [provider]` | Show basic daily usage history for up to 184 days | no |
 | `qfence here` | Resolve the current folder (`context` is an alias) | no |
 | `qfence bind <workspace>` | Bind the folder to a workspace name or ID | no |
 | `qfence policy` | Show the effective workspace policy | no |
@@ -65,6 +73,100 @@ redirects, pipes, `NO_COLOR=1`, and `TERM=dumb` produce plain output.
 Its JSON response contains `schemaVersion`, `source`, and the enabled capability
 identifiers so scripts can inspect the same entitlement snapshot as the desktop
 app.
+
+## Terminal dashboard
+
+Open the live local view with:
+
+```bash
+qfence top
+```
+
+It opens a full-screen terminal UI with Overview, Projects, and History tabs.
+Use `←`/`→` or `h`/`l` to switch tabs, `↑`/`↓` or `j`/`k` to select a project,
+`r` to sync immediately, and `q` or `Esc` to leave. Allowances are grouped into
+one row per provider, with separate 5-hour and weekly columns.
+
+Project allocations can also be managed without leaving the dashboard:
+
+- `a` creates an allocation and lets you choose the provider, folder, weekly
+  budget, and an optional donor project.
+- `e` edits the selected project's weekly budget and optional donor.
+- `d` removes the selected allocation after confirmation.
+- `Shift+K` / `Shift+J` moves the selected project up or down in protection
+  priority.
+
+Inside a form, use `↑`/`↓` or `Tab` to move between fields and `←`/`→` to
+change a provider, donor project, or percentage. Typing a digit in a percentage
+field replaces its initial value. `Enter` advances to the next field and applies
+the action from the final field; `Esc` cancels. The Projects tab reveals the
+selected project's complete folder path. QuotaFence refreshes automatically
+every 30 seconds; use `qfence top --interval 60` to change it.
+
+`qfence top --once` renders a portable text snapshot instead of entering the
+interactive screen, which is useful for screenshots, logs, and terminal tests.
+Redirected output automatically uses this one-frame mode.
+
+## Project allocations
+
+Project allocation is part of the free local core and is now fully manageable
+without opening the desktop app. Allocation always applies to the provider's
+weekly quota; native 5-hour windows remain provider-level safety limits.
+
+Create an allocation for the current folder:
+
+```bash
+qfence allocations add --provider codex --percent 20
+```
+
+Use `--path` for another folder and `--name` to override the folder name:
+
+```bash
+qfence allocations add --provider claude --percent 15 \
+  --path /code/client-site --name "Client site"
+```
+
+When the free weekly percentage is too small, choose which existing project
+should fund the missing amount. QuotaFence uses unallocated quota first and
+only transfers the shortage:
+
+```bash
+qfence allocations add --provider codex --percent 25 --from "Main project"
+qfence allocations set "Client site" --percent 30 --from "Main project"
+```
+
+Decrease a budget, remove an allocation, or change protection priority:
+
+```bash
+qfence allocations set "Client site" --percent 10
+qfence allocations move "Client site" up
+qfence allocations remove "Client site"
+```
+
+If the same project name exists under more than one provider, add
+`--provider codex` or `--provider claude`. Project IDs shown by
+`qfence allocations --json` are always unambiguous. Mutations print the updated
+allocation table; add `--json` for the updated machine-readable result.
+
+## Basic history
+
+Show 30 days of weekly quota consumption for every provider:
+
+```bash
+qfence history
+```
+
+Filter one provider or change the range:
+
+```bash
+qfence history codex --days 90
+qfence history claude --days 184 --json
+```
+
+Human output uses a compact terminal activity graph. JSON returns one record
+per calendar day, including zero-use days, so it is suitable for local scripts
+and basic export. The database retains the same rolling six-month history used
+by the desktop dashboard.
 
 ## Install the CLI
 
@@ -447,11 +549,12 @@ Claude's managed beta uses the same folder binding and policy boundary:
 
 ```bash
 qfence claude --path /path/to/project
-qfence claude --window 5h --model sonnet
+qfence claude --model sonnet
 ```
 
-The default managed Claude budget is the weekly allocation. `--window 5h`
-selects the separate 5-hour allocation explicitly; QuotaFence does not merge or
-multiply the two provider-native windows. Desktop/IDE attribution instead uses
-the reversible Claude lifecycle hooks installed from Settings and reconciles
-both windows after a turn.
+The managed Claude budget is always the workspace's Weekly allocation. The
+5-hour allowance is refreshed and checked automatically as a provider safety
+limit, but it is not allocated separately. The legacy `--window weekly` option
+is accepted; `--window 5h` now returns an explanation instead of selecting a
+second project budget. Desktop/IDE attribution uses the reversible Claude
+lifecycle hooks installed from Settings and refreshes both native windows.

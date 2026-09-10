@@ -46,6 +46,54 @@ pub(crate) fn initialize<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<
     Ok(())
 }
 
+const DARK_APP_ICON: &[u8] = include_bytes!("../../../logo/quotafence-app-icon.png");
+const LIGHT_APP_ICON: &[u8] = include_bytes!("../../../logo/quotafence-app-icon-light.png");
+
+#[tauri::command]
+pub(crate) fn set_app_icon(app: tauri::AppHandle, style: String) -> IpcResult<()> {
+    let icon = match style.as_str() {
+        "dark" => DARK_APP_ICON,
+        "light" => LIGHT_APP_ICON,
+        _ => {
+            return Err(IpcError::integration_error(
+                "App icon style must be either dark or light.",
+            ));
+        }
+    };
+
+    #[cfg(target_os = "macos")]
+    {
+        let icon = icon.to_vec();
+        app.run_on_main_thread(move || {
+            use objc2::{AllocAnyThread, MainThreadMarker};
+            use objc2_app_kit::{NSApplication, NSImage};
+            use objc2_foundation::NSData;
+
+            let marker = unsafe { MainThreadMarker::new_unchecked() };
+            let application = NSApplication::sharedApplication(marker);
+            let data = NSData::with_bytes(&icon);
+            if let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) {
+                unsafe { application.setApplicationIconImage(Some(&image)) };
+            }
+        })
+        .map_err(|_| IpcError::integration_error("The macOS Dock icon could not be updated."))?;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let image = tauri::image::Image::from_bytes(icon)
+            .map_err(|_| IpcError::integration_error("The app icon could not be decoded."))?;
+        let window = app
+            .get_webview_window("main")
+            .ok_or_else(|| IpcError::integration_error("The main app window is unavailable."))?;
+        window
+            .set_icon(image)
+            .map_err(|_| IpcError::integration_error("The app icon could not be updated."))?;
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub(crate) fn create_provider(
     state: State<'_, AppState>,

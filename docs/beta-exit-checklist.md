@@ -19,11 +19,13 @@ Rust formatting, locked dependency build, clippy with warnings denied, all
 library tests, all CLI tests, a high-severity npm advisory gate, and
 documentation whitespace checks.
 
-Pull-request Windows CI must also build the x64 NSIS installer, build the CLI
-explicitly, install and run both CLI command names, uninstall them, verify every
-SHA-256 entry, enforce portable LF manifest line endings, and upload the exact
-preview artifact. The macOS job performs the equivalent CLI lifecycle smoke
-test. A green compile without these artifact checks is not sufficient.
+The lightweight pull-request gate runs on Linux so ordinary changes do not
+consume macOS and Windows runner minutes. Before a platform release, run the
+manual `macOS beta release` and `Windows beta release` workflows. They must
+build the platform installer and CLI, install and run both CLI command names,
+uninstall them, verify every SHA-256 entry, enforce portable manifest line
+endings, and upload the exact preview artifacts. A green Linux compile without
+these platform artifact checks is not sufficient for a release.
 
 ## Manual installed-app gate
 

@@ -14,10 +14,13 @@ import {
   verifiedCodexProtectionAt,
 } from "../lib/protection";
 import { Icon } from "./Icon";
+import darkAppIcon from "../../logo/quotafence-app-icon.png";
+import lightAppIcon from "../../logo/quotafence-app-icon-light.png";
 
 export type ThemePreference = "system" | "light" | "dark";
+export type AppIconPreference = "dark" | "light";
 type DecisionRange = "hour" | "day" | "week";
-type SettingsTab = "general" | "codex" | "claude" | "activity";
+export type SettingsTab = "general" | "codex" | "claude" | "activity";
 
 const DECISION_RANGES: Array<{
   value: DecisionRange;
@@ -52,6 +55,8 @@ const CAPABILITY_LABELS: Record<Capability, string> = {
 };
 
 type SettingsPanelProps = {
+  settingsTab: SettingsTab;
+  onTabChange: (tab: SettingsTab) => void;
   protection: CodexProtectionStatus | null;
   events: CodexProtectionEvent[];
   sources: QuotaSourceSummary[];
@@ -62,6 +67,8 @@ type SettingsPanelProps = {
   busy: boolean;
   theme: ThemePreference;
   onThemeChange: (theme: ThemePreference) => void;
+  appIcon: AppIconPreference;
+  onAppIconChange: (style: AppIconPreference) => void;
   onProtection: (enabled: boolean) => void;
   claudeIntegration: ClaudeStatusLineStatus | null;
   claudeProtection: ClaudeProtectionStatus | null;
@@ -106,7 +113,7 @@ function statusLabel(
   }
   switch (protection.state) {
     case "configured":
-      return "New task required";
+      return "Waiting for a message";
     case "misconfigured":
       return "Needs attention";
     case "disabled":
@@ -115,6 +122,8 @@ function statusLabel(
 }
 
 export function SettingsPanel({
+  settingsTab,
+  onTabChange,
   protection,
   events,
   sources,
@@ -125,6 +134,8 @@ export function SettingsPanel({
   busy,
   theme,
   onThemeChange,
+  appIcon,
+  onAppIconChange,
   onProtection,
   claudeIntegration,
   claudeProtection,
@@ -138,14 +149,6 @@ export function SettingsPanel({
   const [entitlements, setEntitlements] = useState<
     Awaited<ReturnType<typeof getEntitlements>> | null
   >(null);
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>(() =>
-    claudeIntegration?.installed &&
-    !sources.some(
-      (candidate) => candidate.providerDisplayName.toLowerCase() === "claude code",
-    )
-      ? "claude"
-      : "general",
-  );
   const verifiedAt = verifiedCodexProtectionAt(protection, events);
   const observedAt = observedCodexHookAt(protection);
   const desktopTracking = syncResult?.desktopTracking ?? null;
@@ -232,7 +235,7 @@ export function SettingsPanel({
             type="button"
             className={settingsTab === value ? "active" : ""}
             aria-current={settingsTab === value ? "page" : undefined}
-            onClick={() => setSettingsTab(value)}
+            onClick={() => onTabChange(value)}
           >
             {label}
           </button>
@@ -275,6 +278,34 @@ export function SettingsPanel({
               {theme === value && <Icon name="check" size={15} />}
             </button>
           ))}
+        </div>
+
+        <div className="app-icon-setting">
+          <div>
+            <strong>App icon</strong>
+            <span>Choose how QuotaFence appears in the Dock and taskbar.</span>
+          </div>
+          <div className="icon-options" role="radiogroup" aria-label="App icon style">
+            {(
+              [
+                ["dark", darkAppIcon, "Dark"],
+                ["light", lightAppIcon, "Light"],
+              ] as const
+            ).map(([value, image, label]) => (
+              <button
+                key={value}
+                className={appIcon === value ? "active" : ""}
+                type="button"
+                role="radio"
+                aria-checked={appIcon === value}
+                onClick={() => onAppIconChange(value)}
+              >
+                <img src={image} alt="" />
+                <span>{label}</span>
+                {appIcon === value && <Icon name="check" size={15} />}
+              </button>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -487,7 +518,9 @@ export function SettingsPanel({
                 ? "Ready"
                 : integrationNeedsAttention
                   ? "Needs attention"
-                  : "Tracking only"}
+                  : protection?.installed && observedAt === null
+                    ? "Waiting for a message"
+                    : "Tracking only"}
             </span>
             <button
               className="button primary small"
@@ -576,7 +609,7 @@ export function SettingsPanel({
           <div>
             <h2>Codex Desktop protection</h2>
             <p>
-              Block prompts in Codex tasks started after protection was installed.
+              Check each new prompt against your workspace quota.
             </p>
           </div>
           {protection && (
@@ -605,7 +638,7 @@ export function SettingsPanel({
                         ? `Codex delivered a prompt hook ${formatRelativeTime(
                             observedAt,
                           )}, but the latest check did not produce an enforceable quota decision.`
-                        : "Usage tracking is active. Hard protection starts only in a new Codex task created after the hooks were enabled."
+                        : "Hooks are installed. Send a message in Codex so QuotaFence can confirm they are working."
                     : protection.state === "misconfigured"
                       ? protection.issue
                       : "Passive usage tracking stays available, but prompts are not blocked."}
@@ -660,11 +693,10 @@ export function SettingsPanel({
               <div className="settings-callout warning" role="alert">
                 <Icon name="activity" size={18} />
                 <div>
-                  <strong>Start a new Codex task to activate protection</strong>
+                  <strong>Send a message in Codex to finish setup</strong>
                   <p>
-                    Your current task is still tracked, but Codex cannot attach newly
-                    installed hooks to a task that is already open. QuotaFence cannot
-                    block prompts in this task.
+                    Enabling hooks does not send a confirmation by itself. QuotaFence
+                    confirms protection when Codex runs the hook on your next message.
                   </p>
                   <ol>
                     <li>
@@ -672,12 +704,13 @@ export function SettingsPanel({
                       <code>UserPromptSubmit</code> and <code>Stop</code>.
                     </li>
                     <li>
-                      Create a new Codex task inside a folder with an allocation.
+                      Send a message in a Codex task inside a folder with an allocation.
                     </li>
                     <li>
-                      Send its first prompt, then click <b>Check now</b> in QuotaFence.
+                      Return here and click <b>Check now</b> if the status has not updated.
                     </li>
                   </ol>
+                  <p>If it still says waiting, start a new Codex task in that folder and send a message again.</p>
                 </div>
               </div>
             )}
@@ -862,7 +895,7 @@ function promptGateHealthLabel(
     return "Connected · latest hook was not enforceable";
   }
   if (protection.installed) {
-    return "Tracking active · new Codex task required for blocking";
+    return "Hooks installed · send a Codex message to verify";
   }
   return "Off · passive tracking only";
 }

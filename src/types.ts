@@ -225,7 +225,13 @@ export type QuotaDashboard = {
   window: WindowSummary;
   allocations: AllocationSnapshot[];
   quotaHistory: QuotaHistoryPoint[];
+  modelUsage: ModelUsagePoint[];
   forecast: DepletionForecast;
+};
+
+export type ModelUsagePoint = {
+  model: string;
+  tokens: number;
 };
 
 export type QuotaHistoryPoint = {

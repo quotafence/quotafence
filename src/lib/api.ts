@@ -16,6 +16,10 @@ import type {
   WorkspaceInput,
 } from "../types";
 
+export async function setAppIcon(style: "dark" | "light"): Promise<void> {
+  await invoke("set_app_icon", { style });
+}
+
 export async function getEntitlements(): Promise<EntitlementSnapshot> {
   return invoke<EntitlementSnapshot>("get_entitlements");
 }

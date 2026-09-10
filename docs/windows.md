@@ -53,13 +53,13 @@ QuotaFence does not log or copy the token into its own database.
 
 ## CI and preview artifacts
 
-Every pull request runs the Rust tests, smoke-tests both CLI command names, and
-uploads the NSIS installer, CLI binary, and installer script for seven days.
-This makes a PR build testable by a normal Windows user without installing a
-Rust or Node.js toolchain.
+The lightweight pull-request workflow runs the shared frontend and Rust gate on
+Linux. Windows runner time is reserved for the manual and tagged `Windows beta
+release` workflow. Run that workflow for changes affecting Windows, provider
+credentials, process lifecycle, packaging, or before a release; CI compilation
+on Linux is not evidence that the Windows installer works.
 
-The `Windows beta release` workflow runs manually and for version tags. Its
-`quotafence-windows-x64` artifact contains:
+The workflow's `quotafence-windows-x64` artifact contains:
 
 - the unsigned NSIS installer;
 - `quotafence.exe` and the short-name copy `qfence.exe`;

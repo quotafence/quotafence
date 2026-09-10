@@ -90,8 +90,13 @@ fn scan_database(path: &Path) -> Result<Vec<DesktopUsageObservation>, String> {
     } else {
         "updated_at * 1000"
     };
+    let model = if columns.iter().any(|column| column == "model") {
+        "NULLIF(trim(model), '')"
+    } else {
+        "NULL"
+    };
     let query = format!(
-        "SELECT id, cwd, tokens_used, {updated_at}
+        "SELECT id, cwd, {model}, tokens_used, {updated_at}
          FROM threads
          WHERE length(trim(id)) > 0
            AND length(trim(cwd)) > 0
@@ -105,15 +110,16 @@ fn scan_database(path: &Path) -> Result<Vec<DesktopUsageObservation>, String> {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
+                row.get::<_, Option<String>>(2)?,
                 row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
             ))
         })
         .map_err(|_| "Codex Desktop thread metadata could not be read.".to_owned())?;
 
     let mut observations = Vec::new();
     for row in rows {
-        let Ok((thread_id, cwd, total_tokens, updated_at)) = row else {
+        let Ok((thread_id, cwd, model, total_tokens, updated_at)) = row else {
             continue;
         };
         let Ok(total_tokens) = u64::try_from(total_tokens) else {
@@ -125,6 +131,7 @@ fn scan_database(path: &Path) -> Result<Vec<DesktopUsageObservation>, String> {
         observations.push(DesktopUsageObservation {
             thread_id,
             canonical_path,
+            model,
             total_tokens,
             updated_at,
         });
@@ -197,6 +204,7 @@ mod tests {
                 "CREATE TABLE threads (
                     id TEXT PRIMARY KEY,
                     cwd TEXT NOT NULL,
+                    model TEXT,
                     tokens_used INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL,
                     updated_at_ms INTEGER,
@@ -208,8 +216,8 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO threads (
-                    id, cwd, tokens_used, updated_at, updated_at_ms, title, preview
-                 ) VALUES (?1, ?2, 420, 10, 12000, 'private title', 'private preview')",
+                    id, cwd, model, tokens_used, updated_at, updated_at_ms, title, preview
+                 ) VALUES (?1, ?2, 'gpt-5.6-sol', 420, 10, 12000, 'private title', 'private preview')",
                 params!["thread-1", workspace.to_str().unwrap()],
             )
             .unwrap();
@@ -226,6 +234,7 @@ mod tests {
                     .to_str()
                     .unwrap()
                     .to_owned(),
+                model: Some("gpt-5.6-sol".to_owned()),
                 total_tokens: 420,
                 updated_at: 12_000,
             }]

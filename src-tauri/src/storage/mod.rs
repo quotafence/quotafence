@@ -21,7 +21,7 @@ pub use allocations::AllocationRepository;
 pub use catalog::CatalogRepository;
 pub use database::Database;
 pub use desktop_usage::{
-    DesktopReconciliation, DesktopReconciliationStatus, DesktopThreadObservation,
+    DesktopReconciliation, DesktopReconciliationStatus, DesktopThreadObservation, ModelUsageTotal,
 };
 pub use error::{StorageError, StorageResult};
 pub use ledger::LedgerRepository;

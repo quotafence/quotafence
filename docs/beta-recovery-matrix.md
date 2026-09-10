@@ -83,3 +83,26 @@ the test shell denied writes under the Codex home directory. Repeating the same
 official App Server request with normal local permissions succeeded, so this
 was classified as a test-environment restriction rather than a provider or QuotaFence
 sync regression.
+
+## Local packaged-app smoke check — 29 August 2026
+
+- Built the native Apple Silicon app and DMG with the same ad-hoc identity used
+  by the unsigned beta workflow.
+- `hdiutil verify` accepted the DMG checksum and `codesign --verify --deep
+  --strict` accepted the app plus bundled CLI companion.
+- Gatekeeper rejected the app as expected because ad-hoc signing is neither
+  Developer ID signing nor notarization; the beta documentation describes this
+  limitation explicitly.
+- Opened the app from the mounted DMG and verified the production webview
+  rendered both provider sources, both Codex allowance windows, Weekly
+  workspace allocations, history, and attribution with the new CSP enabled.
+- Installed both CLI command names into an isolated temporary directory, ran
+  `qfence help` and `quotafence features --json`, then uninstalled both without
+  touching the user's normal CLI installation.
+- A first DMG attempt inside the command sandbox failed at `hdiutil`/Finder;
+  rerunning only the packaging step with normal local disk-image permissions
+  succeeded. This was a test-environment restriction, not a bundle failure.
+
+This is supporting evidence for the current-machine package only. It does not
+complete the clean-account Gatekeeper journey, the universal Intel slice, or
+the Windows native smoke matrix.
