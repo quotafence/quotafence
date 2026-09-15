@@ -387,10 +387,10 @@ The current automated and live results are tracked in the
 - Provide structured issue forms for sync, attribution, and false-block bugs.
 - Require the full frontend and Rust validation suite before tagging.
 
-The repository now builds checksum-bearing macOS and Windows artifacts in
-GitHub Actions. macOS tag builds create a draft prerelease; Windows remains an
-unsigned workflow artifact until its native smoke matrix and signing strategy
-are complete. Automatic updates, Windows signing, and production Apple
+The repository now builds checksum-bearing macOS, Windows x64, and Linux x64
+artifacts in GitHub Actions. macOS tag builds create a draft prerelease;
+Windows and Linux remain unsigned workflow artifacts until their native smoke
+matrices are complete. Automatic updates, Windows signing, and production Apple
 notarization remain later release-engineering work.
 
 ### Later — Capability-aware routing

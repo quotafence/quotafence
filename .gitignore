@@ -11,6 +11,7 @@ dist
 dist-ssr
 *.local
 coverage
+npm-stage
 
 # Local environment files
 .env

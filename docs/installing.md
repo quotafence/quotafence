@@ -1,9 +1,9 @@
 # Install, Upgrade, and Remove the Beta
 
 QuotaFence beta artifacts are produced by GitHub Actions. macOS artifacts are
-universal binaries; Windows preview artifacts target x64. Production signing is
-not yet available, so verify the downloaded files before bypassing an operating
-system warning.
+universal binaries; Windows and Linux preview artifacts target x64. Production
+signing is not yet available, so verify the downloaded files before bypassing
+an operating system warning.
 
 ## Verify the artifact
 
@@ -14,6 +14,12 @@ On macOS:
 
 ```bash
 shasum -a 256 -c SHA256SUMS.txt
+```
+
+On Linux:
+
+```bash
+sha256sum --check SHA256SUMS.txt
 ```
 
 On Windows PowerShell:
@@ -52,11 +58,38 @@ global Defender exclusion.
 WebView2 is normally present on supported Windows versions. If the app opens to
 an empty window, install the current Microsoft Edge WebView2 Runtime and retry.
 
+## Linux desktop app
+
+Use the AppImage without system installation:
+
+```bash
+chmod +x ./*.AppImage
+./*.AppImage
+```
+
+On a Debian-based x64 distribution, the `.deb` can instead be installed with:
+
+```bash
+sudo apt install ./*.deb
+```
+
+These are unsigned Preview artifacts. Verify `SHA256SUMS.txt` and
+`BUILD-INFO.txt` first. See the [Linux guide](linux.md) for prerequisites and
+the native smoke checklist.
+
 ## CLI
 
 The artifact includes install and uninstall scripts. See the [CLI guide](cli.md)
 for the exact macOS and Windows commands. The CLI and desktop app share one
 local database.
+
+Once the npm beta is published, supported macOS, Windows x64, and GNU/Linux x64
+users can instead install the same native CLI with:
+
+```bash
+npm install --global @quotafence/cli@beta
+qfence status
+```
 
 ## Upgrade
 
@@ -77,6 +110,8 @@ removing the app. This preserves unrelated provider hooks.
 
 - macOS: quit QuotaFence and move it from Applications to Trash.
 - Windows: uninstall QuotaFence from **Settings → Apps → Installed apps**.
+- Linux: uninstall the Debian package with the system package manager, or
+  delete the downloaded AppImage.
 - CLI: run the platform `uninstall-cli` script from the extracted artifact.
 
 Removing the desktop app or CLI does not intentionally erase the quota ledger.
@@ -84,6 +119,8 @@ The database remains at:
 
 - macOS: `~/Library/Application Support/com.buisonanh.quotafence/quotafence.sqlite3`
 - Windows: `%APPDATA%\com.buisonanh.quotafence\quotafence.sqlite3`
+- Linux: `~/.local/share/com.buisonanh.quotafence/quotafence.sqlite3` by
+  default, or below `$XDG_DATA_HOME` when it is configured.
 
 To remove all local QuotaFence state, first quit the app and managed sessions,
 back up anything needed, then delete the entire
@@ -96,4 +133,3 @@ Use the repository's **Installation or upgrade problem** issue form. Include
 the operating system, artifact name, `BUILD-INFO.txt`, and the failing step.
 Never attach provider credentials, the QuotaFence database, prompts,
 transcripts, or source code.
-

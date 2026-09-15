@@ -171,8 +171,8 @@ by the desktop dashboard.
 ## Install the CLI
 
 Release artifacts contain the short `qfence` command, the backwards-compatible
-`quotafence` name, and an installer script. On macOS, download and verify the
-release artifact, then run:
+`quotafence` name, and an installer script. On macOS or Linux, download and
+verify the matching release artifact, then run:
 
 ```bash
 ./install-cli.sh ./qfence
@@ -182,6 +182,9 @@ qfence help
 The default destination is `~/.local/bin`. Set `QFENCE_INSTALL_DIR` to choose a
 different directory. If the destination is not already in `PATH`, the installer
 prints the exact export command without modifying shell startup files.
+
+The first Linux beta targets x64 GNU/Linux. ARM64 and musl/Alpine builds are not
+published yet.
 
 On Windows, open PowerShell in the extracted artifact directory and run:
 

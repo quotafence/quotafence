@@ -1,0 +1,113 @@
+name: Linux beta release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-linux-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Linux x64 app and CLI
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Set up Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Normalize embedded Rust build paths
+        run: |
+          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=. --remap-path-prefix=$HOME=/build-home" >> "$GITHUB_ENV"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
+
+      - name: Validate release version
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: npm run check:release-version
+
+      - name: Build Linux CLI companion
+        run: cargo build --locked --release --manifest-path src-tauri/Cargo.toml --bin quotafence
+
+      - name: Build Linux AppImage and Debian package
+        run: npm run tauri -- build --bundles appimage,deb
+
+      - name: Create release assets and checksums
+        run: |
+          mkdir -p release-assets
+          find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -exec cp {} release-assets/ \;
+          find src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' -exec cp {} release-assets/ \;
+          cp src-tauri/target/release/quotafence release-assets/quotafence
+          cp src-tauri/target/release/quotafence release-assets/qfence
+          cp scripts/install-cli.sh release-assets/install-cli.sh
+          cp scripts/uninstall-cli.sh release-assets/uninstall-cli.sh
+          chmod 755 \
+            release-assets/*.AppImage \
+            release-assets/quotafence \
+            release-assets/qfence \
+            release-assets/install-cli.sh \
+            release-assets/uninstall-cli.sh
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          cd release-assets
+          sha256sum ./*.AppImage ./*.deb ./quotafence ./qfence ./install-cli.sh ./uninstall-cli.sh > SHA256SUMS.txt
+          printf 'Signing: unsigned Linux beta\nArchitecture: x86_64 GNU/Linux\nCommit: %s\nWorkflow: %s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > BUILD-INFO.txt
+          sha256sum --check SHA256SUMS.txt
+
+      - name: Smoke-test Linux CLI assets
+        run: |
+          QFENCE_INSTALL_DIR="$RUNNER_TEMP/qfence-bin" release-assets/install-cli.sh release-assets/qfence
+          "$RUNNER_TEMP/qfence-bin/qfence" help | grep QuotaFence
+          "$RUNNER_TEMP/qfence-bin/quotafence" help | grep QuotaFence
+          QFENCE_INSTALL_DIR="$RUNNER_TEMP/qfence-bin" release-assets/uninstall-cli.sh
+          test ! -e "$RUNNER_TEMP/qfence-bin/qfence"
+          test ! -e "$RUNNER_TEMP/qfence-bin/quotafence"
+
+      - name: Inspect Linux desktop packages
+        run: |
+          appimage=$(find release-assets -maxdepth 1 -type f -name '*.AppImage' -print -quit)
+          deb=$(find release-assets -maxdepth 1 -type f -name '*.deb' -print -quit)
+          "$appimage" --appimage-extract >/dev/null
+          test -x squashfs-root/AppRun
+          dpkg-deb --info "$deb" >/dev/null
+          test "$(dpkg-deb --field "$deb" Architecture)" = "amd64"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: quotafence-linux-x64
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14

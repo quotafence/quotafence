@@ -1,0 +1,203 @@
+name: Publish npm CLI
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact version to publish, without a v prefix
+        required: true
+        type: string
+      dist_tag:
+        description: npm distribution tag
+        required: true
+        default: beta
+        type: choice
+        options:
+          - beta
+          - latest
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-npm-cli-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Verify publish configuration before native builds
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    environment: npm
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Validate version and publishing credential
+        env:
+          RELEASE_TAG: v${{ inputs.version }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm run check:release-version
+          npm run check:npm-cli
+          test -n "$NPM_TOKEN" || { echo 'Configure NPM_TOKEN in the npm environment before running native builds.' >&2; exit 1; }
+
+  macos:
+    needs: preflight
+    name: Package macOS native CLIs
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Set up Rust targets
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - run: npm ci
+      - name: Validate requested version
+        env:
+          RELEASE_TAG: v${{ inputs.version }}
+        run: npm run check:release-version
+      - name: Build both macOS architectures
+        run: |
+          cargo build --locked --release --manifest-path src-tauri/Cargo.toml --bin quotafence --target aarch64-apple-darwin
+          cargo build --locked --release --manifest-path src-tauri/Cargo.toml --bin quotafence --target x86_64-apple-darwin
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          "src-tauri/target/$host/release/quotafence" help | grep QuotaFence
+      - name: Pack native npm packages
+        run: |
+          node scripts/stage-npm-cli.mjs cli-darwin-arm64 src-tauri/target/aarch64-apple-darwin/release/quotafence npm-stage
+          node scripts/stage-npm-cli.mjs cli-darwin-x64 src-tauri/target/x86_64-apple-darwin/release/quotafence npm-stage
+          codesign --force --sign - --timestamp=none npm-stage/cli-darwin-arm64/bin/qfence
+          codesign --force --sign - --timestamp=none npm-stage/cli-darwin-x64/bin/qfence
+          codesign --verify npm-stage/cli-darwin-arm64/bin/qfence
+          codesign --verify npm-stage/cli-darwin-x64/bin/qfence
+          mkdir -p npm-tarballs
+          npm pack ./npm-stage/cli-darwin-arm64 --pack-destination npm-tarballs
+          npm pack ./npm-stage/cli-darwin-x64 --pack-destination npm-tarballs
+      - uses: actions/upload-artifact@v6
+        with:
+          name: npm-cli-macos
+          path: npm-tarballs/*.tgz
+          if-no-files-found: error
+          retention-days: 3
+
+  linux:
+    needs: preflight
+    name: Package Linux native CLI
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Set up Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+      - run: npm ci
+      - name: Validate requested version
+        env:
+          RELEASE_TAG: v${{ inputs.version }}
+        run: npm run check:release-version
+      - run: cargo build --locked --release --manifest-path src-tauri/Cargo.toml --bin quotafence
+      - run: src-tauri/target/release/quotafence help | grep QuotaFence
+      - name: Pack native npm package
+        run: |
+          node scripts/stage-npm-cli.mjs cli-linux-x64-gnu src-tauri/target/release/quotafence npm-stage
+          mkdir -p npm-tarballs
+          npm pack ./npm-stage/cli-linux-x64-gnu --pack-destination npm-tarballs
+      - uses: actions/upload-artifact@v6
+        with:
+          name: npm-cli-linux
+          path: npm-tarballs/*.tgz
+          if-no-files-found: error
+          retention-days: 3
+
+  windows:
+    needs: preflight
+    name: Package Windows native CLI
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Set up Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - run: npm ci
+      - name: Validate requested version
+        env:
+          RELEASE_TAG: v${{ inputs.version }}
+        run: npm run check:release-version
+      - run: cargo build --locked --release --manifest-path src-tauri/Cargo.toml --bin quotafence
+      - run: ./src-tauri/target/release/quotafence.exe help | Select-String QuotaFence
+      - name: Pack native npm package
+        shell: pwsh
+        run: |
+          node scripts/stage-npm-cli.mjs cli-win32-x64 src-tauri/target/release/quotafence.exe npm-stage
+          New-Item -ItemType Directory -Force npm-tarballs | Out-Null
+          npm pack ./npm-stage/cli-win32-x64 --pack-destination npm-tarballs
+      - uses: actions/upload-artifact@v6
+        with:
+          name: npm-cli-windows
+          path: npm-tarballs/*.tgz
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    name: Publish platform packages and launcher
+    needs: [macos, linux, windows]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    environment: npm
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v6
+        with:
+          pattern: npm-cli-*
+          path: npm-tarballs
+          merge-multiple: true
+      - name: Validate requested version
+        env:
+          RELEASE_TAG: v${{ inputs.version }}
+        run: npm run check:release-version
+      - name: Pack portable launcher
+        run: |
+          node scripts/stage-npm-cli.mjs cli '' npm-stage
+          npm pack ./npm-stage/cli --pack-destination npm-tarballs
+      - name: Publish native packages first
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for package in npm-tarballs/quotafence-cli-{darwin-arm64,darwin-x64,linux-x64-gnu,win32-x64}-*.tgz; do
+            npm publish "$package" --access public --tag "${{ inputs.dist_tag }}"
+          done
+      - name: Publish launcher package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_VERSION: ${{ inputs.version }}
+        run: npm publish "npm-tarballs/quotafence-cli-$NPM_VERSION.tgz" --access public --tag "${{ inputs.dist_tag }}"

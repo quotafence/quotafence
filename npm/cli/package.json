@@ -1,0 +1,27 @@
+{
+  "name": "@quotafence/cli",
+  "version": "0.1.0-beta.1",
+  "description": "Local-first quota allocation and enforcement for coding-agent subscriptions.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/quotafence/quotafence.git"
+  },
+  "homepage": "https://github.com/quotafence/quotafence",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "qfence": "bin/qfence.cjs",
+    "quotafence": "bin/qfence.cjs"
+  },
+  "files": [
+    "bin"
+  ],
+  "optionalDependencies": {
+    "@quotafence/cli-darwin-arm64": "0.1.0-beta.1",
+    "@quotafence/cli-darwin-x64": "0.1.0-beta.1",
+    "@quotafence/cli-linux-x64-gnu": "0.1.0-beta.1",
+    "@quotafence/cli-win32-x64": "0.1.0-beta.1"
+  }
+}

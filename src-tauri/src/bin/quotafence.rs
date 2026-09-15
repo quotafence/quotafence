@@ -1978,9 +1978,12 @@ fn find_project_allocation(
     String,
 > {
     let mut matches = Vec::new();
+    // Existing allocations must remain manageable while a provider refresh is
+    // unavailable or its last known window has just expired. `is_active` is an
+    // admission/usage signal, not a reason to strand configuration that is
+    // still visible in the dashboard and TUI.
     for source in state.sources.iter().filter(|source| {
-        source.is_active
-            && is_weekly_window(source)
+        is_weekly_window(source)
             && provider.is_none_or(|reference| {
                 provider_matches(
                     &source.provider_id,
@@ -4521,6 +4524,72 @@ mod tests {
             .collect::<BTreeMap<_, _>>();
         assert_eq!(limits.get("main"), Some(&70));
         assert_eq!(limits.get("side"), Some(&30));
+        drop(service);
+        let _ = fs::remove_file(database);
+    }
+
+    #[test]
+    fn expired_weekly_allocation_remains_manageable_by_scope_id() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let database = env::temp_dir().join(format!(
+            "quotafence-cli-expired-allocation-{}-{stamp}.sqlite3",
+            std::process::id()
+        ));
+        let mut service = QuotaService::open(&database).unwrap();
+        service
+            .create_quota_source(quotafence_lib::application::CreateQuotaSource {
+                provider_id: "claude-code-seven-day-provider".to_owned(),
+                provider_display_name: "Claude Code".to_owned(),
+                account_id: "claude-account".to_owned(),
+                account_display_name: "Claude subscription".to_owned(),
+                pool_id: "claude-code-seven-day".to_owned(),
+                pool_display_name: "Weekly allowance".to_owned(),
+                window_id: "expired-weekly-window".to_owned(),
+                starts_at: 0,
+                ends_at: 10,
+                capacity: 100,
+                unit: "percent".to_owned(),
+                provider_snapshot: None,
+            })
+            .unwrap();
+        service
+            .create_allocated_workspace(CreateAllocatedWorkspace {
+                id: "workspace-cli-expired".to_owned(),
+                display_name: "test".to_owned(),
+                canonical_path: "/tmp/test".to_owned(),
+                window_id: "expired-weekly-window".to_owned(),
+                amount: 1,
+                unit: "percent".to_owned(),
+                bound_at: 1,
+            })
+            .unwrap();
+
+        let state = local_state(&mut service, 20).unwrap();
+        assert!(!state.sources[0].is_active);
+        let (source, dashboard, target_index) = find_project_allocation(
+            &mut service,
+            &state,
+            "workspace-cli-expired",
+            Some("Claude Code"),
+            20,
+        )
+        .unwrap();
+        assert_eq!(source.window_id, "expired-weekly-window");
+        assert_eq!(
+            dashboard.allocations[target_index].scope_id,
+            "workspace-cli-expired"
+        );
+
+        service
+            .remove_workspace_allocation(RemoveWorkspaceAllocation {
+                scope_id: "workspace-cli-expired".to_owned(),
+                window_id: source.window_id,
+                removed_at: 20,
+            })
+            .unwrap();
         drop(service);
         let _ = fs::remove_file(database);
     }
