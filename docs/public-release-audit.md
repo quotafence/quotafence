@@ -48,11 +48,12 @@ a replacement for GitHub secret scanning or a dedicated scanner.
 
 ## Must be completed before a beta release
 
-- [ ] Run both manual platform release workflows for the exact release commit.
+- [ ] Run all three manual platform release workflows for the exact release
+  commit.
 - [ ] Verify checksums and install/uninstall the generated artifacts on clean
-  macOS and Windows accounts.
-- [ ] Complete the installed-app and Windows native smoke matrices with dated
-  evidence.
+  macOS, Windows, and Linux accounts.
+- [ ] Complete the installed-app, Windows, and Linux native smoke matrices with
+  dated evidence.
 - [ ] Inspect `BUILD-INFO.txt` and label ad-hoc/unsigned artifacts clearly.
 - [ ] Scan the final app, CLI, installer, and extracted bundle for credentials,
   developer-machine paths, database files, logs, and signing material.

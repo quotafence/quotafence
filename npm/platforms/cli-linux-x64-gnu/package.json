@@ -1,0 +1,11 @@
+{
+  "name": "@quotafence/cli-linux-x64-gnu",
+  "version": "0.1.0-beta.1",
+  "description": "QuotaFence native CLI for GNU/Linux x64.",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/quotafence/quotafence",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "libc": ["glibc"],
+  "files": ["bin"]
+}

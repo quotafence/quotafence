@@ -21,11 +21,12 @@ documentation whitespace checks.
 
 The lightweight pull-request gate runs on Linux so ordinary changes do not
 consume macOS and Windows runner minutes. Before a platform release, run the
-manual `macOS beta release` and `Windows beta release` workflows. They must
-build the platform installer and CLI, install and run both CLI command names,
-uninstall them, verify every SHA-256 entry, enforce portable manifest line
-endings, and upload the exact preview artifacts. A green Linux compile without
-these platform artifact checks is not sufficient for a release.
+manual `macOS beta release`, `Windows beta release`, and `Linux beta release`
+workflows. They must build the platform installer and CLI, install and run both
+CLI command names, uninstall them, verify every SHA-256 entry, enforce portable
+manifest line endings, and upload the exact preview artifacts. A green Linux
+compile without the Linux packaging and native smoke checks is not sufficient
+for a release.
 
 ## Manual installed-app gate
 
@@ -62,6 +63,8 @@ The Codex beta can exit P4 only when:
   tested by someone other than the build author.
 - Windows support remains Preview until the Windows native smoke checklist has
   dated evidence; CI success alone does not promote it to live-tested support.
+- Linux support remains Preview until the Linux native smoke checklist has dated
+  evidence for both the AppImage and Debian package.
 
 Failures are release blockers. Record the issue link and leave the row failed
 or pending; do not weaken the expected behavior to make the matrix green.

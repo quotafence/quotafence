@@ -8,6 +8,13 @@ const tauriConfig = JSON.parse(
 const cargoManifest = readFileSync("src-tauri/Cargo.toml", "utf8");
 const cargoLock = readFileSync("src-tauri/Cargo.lock", "utf8");
 const changelog = readFileSync("CHANGELOG.md", "utf8");
+const npmPackageFiles = [
+  "npm/cli/package.json",
+  "npm/platforms/cli-darwin-arm64/package.json",
+  "npm/platforms/cli-darwin-x64/package.json",
+  "npm/platforms/cli-linux-x64-gnu/package.json",
+  "npm/platforms/cli-win32-x64/package.json",
+];
 
 const cargoVersion = cargoManifest.match(
   /^\[package\][\s\S]*?^version\s*=\s*"([^"]+)"/m,
@@ -23,6 +30,10 @@ const versions = new Map([
   ["src-tauri/Cargo.toml", cargoVersion],
   ["src-tauri/Cargo.lock", lockedCargoVersion],
   ["src-tauri/tauri.conf.json", tauriConfig.version],
+  ...npmPackageFiles.map((file) => [
+    file,
+    JSON.parse(readFileSync(file, "utf8")).version,
+  ]),
 ]);
 
 const missing = [...versions].filter(([, version]) => !version);
@@ -39,6 +50,16 @@ if (uniqueVersions.size !== 1) {
 }
 
 const version = uniqueVersions.values().next().value;
+const cliPackage = JSON.parse(readFileSync("npm/cli/package.json", "utf8"));
+for (const [name, dependencyVersion] of Object.entries(
+  cliPackage.optionalDependencies ?? {},
+)) {
+  if (dependencyVersion !== version) {
+    throw new Error(
+      `npm/cli/package.json optional dependency ${name}=${dependencyVersion} does not match ${version}`,
+    );
+  }
+}
 const releaseTag = process.env.RELEASE_TAG;
 if (releaseTag && releaseTag !== `v${version}`) {
   throw new Error(

@@ -38,6 +38,10 @@ First source-distributed multi-agent beta of the QuotaFence vertical slice.
   set with the unused opener capability removed.
 - A lightweight Linux pull-request gate with explicit manual macOS and Windows
   artifact gates to reduce hosted-runner usage before the repository is public.
+- Linux x64 AppImage, Debian package, standalone CLI assets, checksums, and a
+  dedicated native release smoke-test workflow.
+- Scoped npm CLI packaging with platform-selected macOS, Windows x64, and
+  GNU/Linux x64 native binaries plus a manual, approval-friendly publish gate.
 - Full weekly project allocation management from the CLI, including creation,
   resizing, donor-based quota transfer, removal, and protection priority.
 - A free basic-history command and an ANSI live terminal dashboard with quota,

@@ -10,9 +10,11 @@ create a GitHub release. Tag pushes create the draft release only when the tag
 matches every application version file.
 
 The separate Windows workflow builds an unsigned x64 NSIS installer plus
-`quotafence.exe` and `qfence.exe`. It retains them as a GitHub Actions artifact
-for 14 days; it does not attach them to the public release until Windows signing
-and native smoke testing are complete. See the [Windows guide](windows.md).
+`quotafence.exe` and `qfence.exe`. The Linux workflow builds unsigned x64
+AppImage and Debian desktop packages plus `quotafence` and `qfence`. Both retain
+their files as GitHub Actions artifacts for 14 days; they are not attached to
+the public release until their native smoke checks are complete. See the
+[Windows guide](windows.md) and [Linux guide](linux.md).
 
 Production signing is a distribution safety requirement, not a Pro
 entitlement. Once configured, official signed/notarized downloads must remain
@@ -54,7 +56,7 @@ or issue reports.
 1. Update `CHANGELOG.md` and replace `Unreleased` with the release date.
 2. Set the same semantic version in `package.json`, `package-lock.json`,
    `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and
-   `src-tauri/tauri.conf.json`.
+   `src-tauri/tauri.conf.json`, plus every package manifest below `npm/`.
 3. Validate locally:
 
    ```bash
@@ -86,10 +88,39 @@ or issue reports.
    checklist in the Windows guide. Do not copy the unsigned preview into the
    public release without explicitly labelling the SmartScreen warning.
 
-Both platform artifacts must contain install and uninstall scripts for the CLI.
+8. Inspect the `Linux beta release` artifact independently. Verify its checksum,
+   test both the AppImage and Debian package in a clean Linux account, and run
+   the Linux native smoke checklist. Publish Linux as Preview until that evidence
+   is recorded.
+
+All platform artifacts must contain install and uninstall scripts for the CLI.
 The workflows exercise `qfence help`, the compatible `quotafence help`, and CLI
 removal before uploading an artifact. A missing or non-runnable command is a
 release failure, even when the desktop bundle itself builds successfully.
+
+## Publish the npm CLI
+
+The npm CLI is intentionally a separate, manual workflow so ordinary pushes and
+release tags do not spend three additional native runner jobs. Before the first
+publish, create an `npm` GitHub environment, add an `NPM_TOKEN` secret that can
+publish the five reserved `@quotafence` packages, and protect that environment
+with the desired reviewer rule.
+
+Run **Publish npm CLI** with the exact application version and the `beta`
+distribution tag. It builds and packs four native packages first, then publishes
+`@quotafence/cli`, whose two command aliases select the correct optional native
+dependency. Use `latest` only when intentionally promoting a stable release.
+
+After publishing, verify from clean macOS, Windows, and Linux accounts:
+
+```bash
+npm install --global @quotafence/cli@beta
+qfence help
+qfence top
+```
+
+Never republish or replace files for an existing npm version. Fix a failed or
+incomplete release with a new prerelease version.
 
 ## Rollback
 

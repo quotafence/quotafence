@@ -118,8 +118,8 @@ or license server is required for the Free capability set.
 ## Beta quick start
 
 The beta can be built from source. GitHub Actions also produces checksum-bearing
-macOS and unsigned Windows preview artifacts; production-signed installers are
-not published yet.
+macOS plus unsigned Windows and Linux x64 preview artifacts; production-signed
+installers are not published yet.
 
 1. Install the prerequisites listed below, clone the repository, and launch it:
 
@@ -140,9 +140,9 @@ not published yet.
 Read the [Beta guide](docs/beta.md) before relying on QuotaFence for important work.
 It documents what the beta can enforce, what remains approximate, its privacy
 boundary, and the diagnostic information to include in bug reports.
-Maintainers can follow the [release guide](docs/releasing.md) for tagged macOS
-builds and the [Windows guide](docs/windows.md) for native development, CI, and
-preview artifacts.
+Maintainers can follow the [release guide](docs/releasing.md) for tagged builds,
+the [Windows guide](docs/windows.md), and the [Linux guide](docs/linux.md) for
+native development, CI, and preview artifacts.
 End users should follow the [install, upgrade, and removal guide](docs/installing.md)
 to verify checksums and handle Gatekeeper or SmartScreen warnings safely.
 
