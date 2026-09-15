@@ -18,11 +18,11 @@ Target: `0.1.0-beta.1`. This is an execution record, not a stable-release claim.
 - Portable npm wrapper tests pass for all four targets, including arguments,
   inherited TTY, and child exit code.
 - Fresh Rust rebuild passes 166 library tests and 25 CLI tests.
+- Formatting and clippy with warnings denied pass after the fresh rebuild.
 - New local branch: `codex/linux-npm-beta`.
 
 ## Not yet verified or published
 
-- Final clippy validation is in progress.
 - No new branch has been pushed and no new hosted release jobs have been run.
 - No repository signing/npm secrets were present when inspected.
 - The `npm` environment secrets API returned 404; publishing configuration is
