@@ -15,9 +15,14 @@ on:
         options:
           - beta
           - latest
+      artifact_run_id:
+        description: Optional successful run ID whose npm-cli-* artifacts should be reused
+        required: false
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: publish-npm-cli-${{ inputs.version }}
@@ -45,6 +50,7 @@ jobs:
 
   macos:
     needs: preflight
+    if: inputs.artifact_run_id == ''
     name: Package macOS native CLIs
     runs-on: macos-latest
     timeout-minutes: 30
@@ -91,6 +97,7 @@ jobs:
 
   linux:
     needs: preflight
+    if: inputs.artifact_run_id == ''
     name: Package Linux native CLI
     runs-on: ubuntu-22.04
     timeout-minutes: 30
@@ -130,6 +137,7 @@ jobs:
 
   windows:
     needs: preflight
+    if: inputs.artifact_run_id == ''
     name: Package Windows native CLI
     runs-on: windows-latest
     timeout-minutes: 30
@@ -166,7 +174,18 @@ jobs:
 
   publish:
     name: Publish platform packages and launcher
-    needs: [macos, linux, windows]
+    needs: [preflight, macos, linux, windows]
+    if: >-
+      always() &&
+      needs.preflight.result == 'success' &&
+      (
+        inputs.artifact_run_id != '' ||
+        (
+          needs.macos.result == 'success' &&
+          needs.linux.result == 'success' &&
+          needs.windows.result == 'success'
+        )
+      )
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     environment: npm
@@ -176,8 +195,19 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      - uses: actions/download-artifact@v6
+      - name: Download packages built in this run
+        if: inputs.artifact_run_id == ''
+        uses: actions/download-artifact@v6
         with:
+          pattern: npm-cli-*
+          path: npm-tarballs
+          merge-multiple: true
+      - name: Reuse packages from an earlier successful build
+        if: inputs.artifact_run_id != ''
+        uses: actions/download-artifact@v6
+        with:
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ github.token }}
           pattern: npm-cli-*
           path: npm-tarballs
           merge-multiple: true
@@ -194,10 +224,10 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           for package in npm-tarballs/quotafence-cli-{darwin-arm64,darwin-x64,linux-x64-gnu,win32-x64}-*.tgz; do
-            npm publish "$package" --access public --tag "${{ inputs.dist_tag }}"
+            npm publish "./$package" --access public --tag "${{ inputs.dist_tag }}"
           done
       - name: Publish launcher package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_VERSION: ${{ inputs.version }}
-        run: npm publish "npm-tarballs/quotafence-cli-$NPM_VERSION.tgz" --access public --tag "${{ inputs.dist_tag }}"
+        run: npm publish "./npm-tarballs/quotafence-cli-$NPM_VERSION.tgz" --access public --tag "${{ inputs.dist_tag }}"
