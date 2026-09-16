@@ -1,6 +1,6 @@
-# Install, Upgrade, and Remove the Beta
+# Install, Upgrade, and Remove QuotaFence
 
-QuotaFence beta artifacts are produced by GitHub Actions. macOS artifacts are
+QuotaFence release artifacts are produced by GitHub Actions. macOS artifacts are
 universal binaries; Windows and Linux preview artifacts target x64. Production
 signing is not yet available, so verify the downloaded files before bypassing
 an operating system warning.
@@ -38,7 +38,7 @@ records the commit, workflow run, and signing mode that produced the artifact.
 
 ## macOS desktop app
 
-Open the DMG and drag QuotaFence into Applications. The ad-hoc beta is not
+Open the DMG and drag QuotaFence into Applications. The ad-hoc build is not
 notarized, so Gatekeeper can warn on first launch even when its checksum is
 correct.
 
@@ -83,13 +83,12 @@ The CLI and desktop app share one local database. Supported macOS, Windows x64,
 and GNU/Linux x64 users can install the native CLI from npm:
 
 ```bash
-npm install --global @quotafence/cli@beta
+npm install --global @quotafence/cli
 qfence status
 ```
 
-Keep the `@beta` suffix until a stable release is published. Users who do not
-use Node.js/npm can install from the matching release archive instead; see the
-[CLI guide](cli.md) for the macOS, Linux, and Windows commands.
+Users who do not use Node.js/npm can install from the matching release archive
+instead; see the [CLI guide](cli.md) for the macOS, Linux, and Windows commands.
 
 ## Upgrade
 

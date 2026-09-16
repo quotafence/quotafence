@@ -3,7 +3,7 @@
 Install the local-first QuotaFence CLI and terminal dashboard:
 
 ```bash
-npm install --global @quotafence/cli@beta
+npm install --global @quotafence/cli
 qfence status
 qfence top
 ```

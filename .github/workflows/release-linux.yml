@@ -1,4 +1,4 @@
-name: Linux beta release
+name: Linux release
 
 on:
   push:
@@ -83,7 +83,7 @@ jobs:
           test -n "$(find release-assets -maxdepth 1 -type f -name '*.deb' -print -quit)"
           cd release-assets
           sha256sum ./*.AppImage ./*.deb ./quotafence ./qfence ./install-cli.sh ./uninstall-cli.sh > SHA256SUMS.txt
-          printf 'Signing: unsigned Linux beta\nArchitecture: x86_64 GNU/Linux\nCommit: %s\nWorkflow: %s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > BUILD-INFO.txt
+          printf 'Signing: unsigned Linux release\nArchitecture: x86_64 GNU/Linux\nCommit: %s\nWorkflow: %s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > BUILD-INFO.txt
           sha256sum --check SHA256SUMS.txt
 
       - name: Smoke-test Linux CLI assets

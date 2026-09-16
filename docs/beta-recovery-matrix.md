@@ -87,7 +87,7 @@ sync regression.
 ## Local packaged-app smoke check — 29 August 2026
 
 - Built the native Apple Silicon app and DMG with the same ad-hoc identity used
-  by the unsigned beta workflow.
+  by the unsigned release workflow.
 - `hdiutil verify` accepted the DMG checksum and `codesign --verify --deep
   --strict` accepted the app plus bundled CLI companion.
 - Gatekeeper rejected the app as expected because ad-hoc signing is neither

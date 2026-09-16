@@ -1,6 +1,6 @@
 {
   "name": "@quotafence/cli-darwin-x64",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0",
   "description": "QuotaFence native CLI for macOS x64.",
   "license": "Apache-2.0",
   "repository": "https://github.com/quotafence/quotafence",

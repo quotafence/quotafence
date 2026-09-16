@@ -380,15 +380,15 @@ being hidden by the milestone status.
 The current automated and live results are tracked in the
 [Codex Desktop beta recovery matrix](beta-recovery-matrix.md).
 
-### Beta release readiness — current
+### Initial release readiness — current
 
 - Publish honest source-build onboarding, privacy boundaries, and known limits.
-- Keep JavaScript, Rust, and Tauri versions aligned for `v0.1.0-beta.1`.
+- Keep JavaScript, Rust, Tauri, and npm package versions aligned for `v0.1.0`.
 - Provide structured issue forms for sync, attribution, and false-block bugs.
 - Require the full frontend and Rust validation suite before tagging.
 
 The repository now builds checksum-bearing macOS, Windows x64, and Linux x64
-artifacts in GitHub Actions. macOS tag builds create a draft prerelease;
+artifacts in GitHub Actions. macOS tag builds create a draft release;
 Windows and Linux remain unsigned workflow artifacts until their native smoke
 matrices are complete. Automatic updates, Windows signing, and production Apple
 notarization remain later release-engineering work.

@@ -1,7 +1,7 @@
-# v0.1 Beta Guide
+# v0.1 Usage Guide
 
-QuotaFence `v0.1.0-beta.1` is an ad-hoc-signed macOS beta for solo
-Codex and Claude Code power users. A Windows x64 source-built preview is also
+QuotaFence `v0.1.0` is an early, ad-hoc-signed macOS release for solo
+Codex and Claude Code power users. A Windows x64 unsigned build is also
 available. Treat it as a safety aid
 with explicit health states, not as an account-level guarantee.
 
@@ -73,14 +73,14 @@ contents, source files, or workspace file contents. Hook decisions retain
 folder identity and policy outcomes, not prompt text. Review diagnostic output
 before posting it because local paths may reveal usernames or project names.
 
-## Known beta limitations
+## Known v0.1 limitations
 
-- Claude support is beta; cross-provider routing is not implemented because
+- Claude support is early; cross-provider routing is not implemented because
   unlike native quota windows are not safely comparable.
-- macOS is the live-tested platform for this beta. Windows x64 is compiled and
+- macOS is the live-tested platform for this release. Windows x64 is compiled and
   tested in CI, but still needs native manual smoke testing before it reaches
   the same support level.
-- The beta DMG is not notarized, so macOS displays a Gatekeeper warning and the
+- The DMG is not notarized, so macOS displays a Gatekeeper warning and the
   user must explicitly allow the first launch. There is no automatic update or
   production signing flow yet.
 - Percentage checkpoints are integer and aggregate, so small or concurrent

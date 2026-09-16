@@ -10,7 +10,7 @@ on:
       dist_tag:
         description: npm distribution tag
         required: true
-        default: beta
+        default: latest
         type: choice
         options:
           - beta

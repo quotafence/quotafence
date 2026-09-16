@@ -1,13 +1,13 @@
 # Security policy
 
-QuotaFence is an early beta. Security reports are welcome, especially for local
+QuotaFence is an early `0.x` release. Security reports are welcome, especially for local
 credential exposure, hook configuration changes, command execution, update or
 release integrity, path handling, and accidental collection of prompts, source
 code, or transcripts.
 
 ## Report privately
 
-For the public beta, use GitHub's **Report a vulnerability** flow in the
+For the initial public release, use GitHub's **Report a vulnerability** flow in the
 repository Security tab to open a private security advisory. Maintainers must
 enable and verify that channel before changing the repository to public. If the
 button is absent, do not publish an issue for an unpatched vulnerability;

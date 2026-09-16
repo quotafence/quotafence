@@ -1,6 +1,6 @@
 {
   "name": "@quotafence/cli-win32-x64",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0",
   "description": "QuotaFence native CLI for Windows x64.",
   "license": "Apache-2.0",
   "repository": "https://github.com/quotafence/quotafence",

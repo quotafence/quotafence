@@ -1,4 +1,4 @@
-# Public repository and beta release audit
+# Public repository and initial release audit
 
 Last reviewed: 29 August 2026 on `codex/release-readiness`.
 
@@ -46,7 +46,7 @@ a replacement for GitHub secret scanning or a dedicated scanner.
 - [ ] Publish operator-specific privacy, terms, refund/cancellation, and
   support policies before accepting payment.
 
-## Must be completed before a beta release
+## Must be completed before a public release
 
 - [ ] Run all three manual platform release workflows for the exact release
   commit.
