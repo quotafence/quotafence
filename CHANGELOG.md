@@ -3,7 +3,7 @@
 All notable changes to QuotaFence are documented in this file. The
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0-beta.1] - Unreleased
+## [0.1.0-beta.1] - 2026-09-16
 
 First source-distributed multi-agent beta of the QuotaFence vertical slice.
 
