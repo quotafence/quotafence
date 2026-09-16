@@ -224,10 +224,27 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           for package in npm-tarballs/quotafence-cli-{darwin-arm64,darwin-x64,linux-x64-gnu,win32-x64}-*.tgz; do
-            npm publish "./$package" --access public --tag "${{ inputs.dist_tag }}"
+            spec=$(tar -xOf "$package" package/package.json | node -e '
+              let input = "";
+              process.stdin.on("data", (chunk) => { input += chunk; });
+              process.stdin.on("end", () => {
+                const manifest = JSON.parse(input);
+                process.stdout.write(`${manifest.name}@${manifest.version}`);
+              });
+            ')
+            if npm view "$spec" version >/dev/null 2>&1; then
+              echo "$spec is already published; skipping"
+            else
+              npm publish "./$package" --access public --tag "${{ inputs.dist_tag }}"
+            fi
           done
       - name: Publish launcher package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_VERSION: ${{ inputs.version }}
-        run: npm publish "./npm-tarballs/quotafence-cli-$NPM_VERSION.tgz" --access public --tag "${{ inputs.dist_tag }}"
+        run: |
+          if npm view "@quotafence/cli@$NPM_VERSION" version >/dev/null 2>&1; then
+            echo "@quotafence/cli@$NPM_VERSION is already published; skipping"
+          else
+            npm publish "./npm-tarballs/quotafence-cli-$NPM_VERSION.tgz" --access public --tag "${{ inputs.dist_tag }}"
+          fi
