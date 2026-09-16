@@ -1,4 +1,4 @@
-# Codex Beta Exit Checklist
+# Codex v0.1 Release Checklist
 
 This checklist is the release gate for the Codex-first vertical slice. Automated
 checks prevent known regressions; manual checks verify the installed Codex
@@ -21,7 +21,7 @@ documentation whitespace checks.
 
 The lightweight pull-request gate runs on Linux so ordinary changes do not
 consume macOS and Windows runner minutes. Before a platform release, run the
-manual `macOS beta release`, `Windows beta release`, and `Linux beta release`
+manual `macOS release`, `Windows release`, and `Linux release`
 workflows. They must build the platform installer and CLI, install and run both
 CLI command names, uninstall them, verify every SHA-256 entry, enforce portable
 manifest line endings, and upload the exact preview artifacts. A green Linux
@@ -52,13 +52,13 @@ Use disposable allocations where a stop test could interrupt real work.
 
 ## Release decision
 
-The Codex beta can exit P4 only when:
+The Codex v0.1 milestone can exit P4 only when:
 
 - the automated gate passes from merged `main`;
 - every manual row above has a dated Pass result in
   `beta-recovery-matrix.md`;
 - no open false-block or cross-window attribution regression remains;
-- limitations are visible in the app or beta guide at the point they matter;
+- limitations are visible in the app or v0.1 guide at the point they matter;
 - the chosen distribution artifact and Gatekeeper instructions have been
   tested by someone other than the build author.
 - Windows support remains Preview until the Windows native smoke checklist has

@@ -1,8 +1,8 @@
-# Beta Release
+# Release Guide
 
 The macOS release workflow builds one universal macOS application for Apple Silicon
 and Intel, including the CLI companion expected by Tauri's multi-binary bundle,
-packages a DMG, produces SHA-256 checksums, and creates a **draft prerelease**.
+packages a DMG, produces SHA-256 checksums, and creates a **draft release**.
 A human must inspect and publish the draft.
 
 Manual workflow runs build and retain the same artifacts for 14 days but do not
@@ -23,7 +23,7 @@ later, but important security fixes must always remain manually downloadable.
 
 ## Release modes
 
-### Ad-hoc beta build
+### Ad-hoc unsigned build
 
 When Apple signing secrets are absent, the workflow uses the ad-hoc identity
 `-`. This helps downloaded Apple Silicon bundles avoid appearing corrupted, but
@@ -71,8 +71,8 @@ or issue reports.
    ```bash
    git switch main
    git pull --ff-only
-   git tag -a v0.1.0-beta.1 -m "QuotaFence v0.1.0-beta.1"
-   git push origin v0.1.0-beta.1
+   git tag -a v0.1.0 -m "QuotaFence v0.1.0"
+   git push origin v0.1.0
    ```
 
 6. Inspect the workflow result and draft release:
@@ -83,12 +83,12 @@ or issue reports.
      one allow/block decision;
    - edit generated release notes and publish only after those checks pass.
 
-7. Inspect the `Windows beta release` workflow artifact independently. Verify
+7. Inspect the `Windows release` workflow artifact independently. Verify
    `SHA256SUMS.txt`, install it in a Windows test account, and run the smoke
    checklist in the Windows guide. Do not copy the unsigned preview into the
    public release without explicitly labelling the SmartScreen warning.
 
-8. Inspect the `Linux beta release` artifact independently. Verify its checksum,
+8. Inspect the `Linux release` artifact independently. Verify its checksum,
    test both the AppImage and Debian package in a clean Linux account, and run
    the Linux native smoke checklist. Publish Linux as Preview until that evidence
    is recorded.
@@ -106,25 +106,25 @@ publish, create an `npm` GitHub environment, add an `NPM_TOKEN` secret that can
 publish the five reserved `@quotafence` packages, and protect that environment
 with the desired reviewer rule.
 
-Run **Publish npm CLI** with the exact application version and the `beta`
-distribution tag. It builds and packs four native packages first, then publishes
-`@quotafence/cli`, whose two command aliases select the correct optional native
-dependency. Use `latest` only when intentionally promoting a stable release.
+Run **Publish npm CLI** with the exact application version and the `latest`
+distribution tag for a normal release. It builds and packs four native packages
+first, then publishes `@quotafence/cli`, whose two command aliases select the
+correct optional native dependency. Reserve `beta` for explicit prereleases.
 
 After publishing, verify from clean macOS, Windows, and Linux accounts:
 
 ```bash
-npm install --global @quotafence/cli@beta
+npm install --global @quotafence/cli
 qfence help
 qfence top
 ```
 
 Never republish or replace files for an existing npm version. Fix a failed or
-incomplete release with a new prerelease version.
+incomplete release with a new version.
 
 ## Rollback
 
-Keep a failed draft unpublished. If a published beta is unsafe, mark it clearly
+Keep a failed draft unpublished. If a published release is unsafe, mark it clearly
 in the release notes, remove it from recommendations, and ship a new version;
 do not silently replace assets under an existing tag because that invalidates
 checksums and provenance.

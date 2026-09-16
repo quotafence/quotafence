@@ -1,4 +1,4 @@
-name: Windows beta release
+name: Windows release
 
 on:
   push:
@@ -77,7 +77,7 @@ jobs:
             ($checksumLines -join "`n") + "`n",
             $utf8
           )
-          $buildInfo = "Signing: unsigned beta`nCommit: $env:GITHUB_SHA`nWorkflow: $env:GITHUB_RUN_ID`n"
+          $buildInfo = "Signing: unsigned`nCommit: $env:GITHUB_SHA`nWorkflow: $env:GITHUB_RUN_ID`n"
           [System.IO.File]::WriteAllText(
             (Join-Path $PWD "release-assets/BUILD-INFO.txt"),
             $buildInfo,

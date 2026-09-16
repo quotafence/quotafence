@@ -1,4 +1,4 @@
-name: macOS beta release
+name: macOS release
 
 on:
   push:
@@ -162,7 +162,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Create draft prerelease
+      - name: Create draft release
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -170,6 +170,5 @@ jobs:
           gh release create "$GITHUB_REF_NAME" release-assets/* \
             --verify-tag \
             --draft \
-            --prerelease \
             --generate-notes \
             --title "QuotaFence $GITHUB_REF_NAME"

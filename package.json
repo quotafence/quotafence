@@ -1,7 +1,7 @@
 {
   "name": "quotafence",
   "private": true,
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0",
   "type": "module",
   "packageManager": "npm@10.9.8",
   "engines": {

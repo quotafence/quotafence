@@ -3,6 +3,19 @@
 All notable changes to QuotaFence are documented in this file. The
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0] - 2026-09-17
+
+First public QuotaFence release for macOS, Windows x64, GNU/Linux x64, and
+the scoped npm CLI. It promotes the tested `0.1.0-beta.1` feature set without
+changing the local data model or quota semantics.
+
+### Distribution
+
+- Desktop installers and standalone CLI archives for all supported platforms.
+- `@quotafence/cli` published to npm under the default `latest` tag.
+- Immutable SHA-256 checksums for every GitHub release artifact.
+- Unsigned installer limitations documented explicitly for each platform.
+
 ## [0.1.0-beta.1] - 2026-09-16
 
 First source-distributed multi-agent beta of the QuotaFence vertical slice.

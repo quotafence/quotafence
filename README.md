@@ -6,11 +6,11 @@
 
   [![CI](https://github.com/quotafence/quotafence/actions/workflows/ci.yml/badge.svg)](https://github.com/quotafence/quotafence/actions/workflows/ci.yml)
   [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-  [![Beta](https://img.shields.io/badge/status-beta-orange.svg)](docs/beta.md)
+  [![Release](https://img.shields.io/badge/release-v0.1.0-2ea44f.svg)](docs/beta.md)
 </div>
 
 > [!WARNING]
-> QuotaFence is beta software. Downloadable builds are unsigned; macOS builds
+> QuotaFence is an early `0.x` release. Downloadable builds are unsigned; macOS builds
 > are ad-hoc signed but not notarized. Verify the supplied checksum before
 > bypassing Gatekeeper or SmartScreen, and do not rely on QuotaFence as the only
 > safeguard for critical quota.
@@ -47,7 +47,7 @@ QuotaFence service. The free core works without an account or cloud backend.
 
 | Platform | Desktop app | CLI/TUI | Status |
 | --- | --- | --- | --- |
-| macOS Apple silicon and Intel | Universal DMG | Universal binary | Beta; ad-hoc signed, not notarized |
+| macOS Apple silicon and Intel | Universal DMG | Universal binary | Supported; ad-hoc signed, not notarized |
 | Windows x64 | NSIS installer | Native x64 binary | Preview; unsigned |
 | GNU/Linux x64 | AppImage and Debian package | Native x64 binary | Preview; unsigned |
 
@@ -57,14 +57,14 @@ ARM64 Windows/Linux and musl/Alpine packages are not published yet.
 
 | Provider | Allowance sync | Project allocation | Managed CLI | Desktop prompt gate |
 | --- | --- | --- | --- | --- |
-| Codex | 5-hour + weekly | Weekly | Beta | Beta |
-| Claude Code | 5-hour + weekly | Weekly | Beta | Beta |
+| Codex | 5-hour + weekly | Weekly | Available | Available |
+| Claude Code | 5-hour + weekly | Weekly | Available | Available |
 
 Availability depends on the provider client, account type, and quota windows
 returned for that account. QuotaFence never invents a missing window or converts
 context usage into subscription usage.
 
-## Install the beta
+## Install QuotaFence
 
 Download QuotaFence from [GitHub Releases](https://github.com/quotafence/quotafence/releases):
 
@@ -79,11 +79,9 @@ Download QuotaFence from [GitHub Releases](https://github.com/quotafence/quotafe
 Install the native CLI and terminal dashboard on supported platforms:
 
 ```bash
-npm install --global @quotafence/cli@beta
+npm install --global @quotafence/cli
 qfence status
 ```
-
-The `@beta` suffix is intentional while QuotaFence is prerelease software.
 
 ### Standalone CLI archive
 
@@ -109,7 +107,7 @@ A Homebrew tap/cask is planned separately.
 ### Verify a download
 
 The commands below do not install QuotaFence. They compare downloaded files
-with the release checksum before you open an unsigned beta installer:
+with the release checksum before you open an unsigned installer:
 
 ```bash
 # macOS
@@ -138,7 +136,7 @@ QuotaFence distinguishes **installed** from **verified** protection. Existing
 Codex tasks cannot attach a newly installed prompt hook; create or use a task
 after setup and send a prompt before expecting the health panel to turn green.
 
-Read the [beta guide](docs/beta.md) before using hard limits for important work.
+Read the [v0.1 usage guide](docs/beta.md) before using hard limits for important work.
 
 ## CLI and terminal dashboard
 
