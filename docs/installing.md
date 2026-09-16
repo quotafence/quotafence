@@ -79,17 +79,17 @@ the native smoke checklist.
 
 ## CLI
 
-The artifact includes install and uninstall scripts. See the [CLI guide](cli.md)
-for the exact macOS and Windows commands. The CLI and desktop app share one
-local database.
-
-Once the npm beta is published, supported macOS, Windows x64, and GNU/Linux x64
-users can instead install the same native CLI with:
+The CLI and desktop app share one local database. Supported macOS, Windows x64,
+and GNU/Linux x64 users can install the native CLI from npm:
 
 ```bash
 npm install --global @quotafence/cli@beta
 qfence status
 ```
+
+Keep the `@beta` suffix until a stable release is published. Users who do not
+use Node.js/npm can install from the matching release archive instead; see the
+[CLI guide](cli.md) for the macOS, Linux, and Windows commands.
 
 ## Upgrade
 

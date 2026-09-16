@@ -74,7 +74,21 @@ Download QuotaFence from [GitHub Releases](https://github.com/quotafence/quotafe
 | Windows x64 | Run the `windows-x64-setup.exe` installer |
 | GNU/Linux x64 | Run the `.AppImage`, or install the `.deb` on Debian-based systems |
 
-For the standalone CLI, extract the matching `quotafence-cli-*` archive and run:
+### CLI via npm (recommended)
+
+Install the native CLI and terminal dashboard on supported platforms:
+
+```bash
+npm install --global @quotafence/cli@beta
+qfence status
+```
+
+The `@beta` suffix is intentional while QuotaFence is prerelease software.
+
+### Standalone CLI archive
+
+If you do not use Node.js/npm, extract the matching `quotafence-cli-*` archive
+from GitHub Releases and run:
 
 ```bash
 # macOS or Linux
@@ -88,15 +102,6 @@ On Windows, open PowerShell in the extracted CLI directory:
 Set-ExecutionPolicy -Scope Process Bypass
 .\install-cli.ps1
 qfence status
-```
-
-### Package managers
-
-Package-manager installation is not live yet. The following command will be
-enabled and documented after the scoped npm package is actually published:
-
-```bash
-npm install --global @quotafence/cli@beta
 ```
 
 A Homebrew tap/cask is planned separately.
