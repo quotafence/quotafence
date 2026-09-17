@@ -44,6 +44,7 @@ use super::{
 };
 
 const TURN_OBSERVATION_STALE_AFTER_MILLIS: i64 = 12 * 60 * 60 * 1_000;
+const PROVIDER_WINDOW_MATCH_TOLERANCE_MILLIS: u64 = 5 * 60_000;
 
 pub struct QuotaService {
     database: Database,
@@ -195,22 +196,64 @@ impl QuotaService {
             .into());
         }
 
-        let rolled_over = current_window.starts_at().value() != command.starts_at
+        let bounds_changed = current_window.starts_at().value() != command.starts_at
             || current_window.ends_at().value() != command.ends_at;
-        let target_window_id = if rolled_over {
-            WindowId::new(format!(
-                "{}-window-{}",
-                current_window.pool_id(),
-                command.ends_at
-            ))?
-        } else {
-            current_window_id.clone()
-        };
+        let requested_duration = command
+            .ends_at
+            .checked_sub(command.starts_at)
+            .filter(|duration| *duration > 0)
+            .unwrap_or_default() as u64;
+        let matching_tolerance = PROVIDER_WINDOW_MATCH_TOLERANCE_MILLIS
+            .min(requested_duration / 10)
+            .max(1);
+        let matching_window = bounds_changed
+            .then(|| self.database.catalog().list_quota_windows())
+            .transpose()?
+            .and_then(|windows| {
+                windows
+                    .into_iter()
+                    .filter(|window| window.pool_id() == current_window.pool_id())
+                    .filter_map(|window| {
+                        let starts_difference =
+                            window.starts_at().value().abs_diff(command.starts_at);
+                        let ends_difference = window.ends_at().value().abs_diff(command.ends_at);
+                        (starts_difference <= matching_tolerance
+                            && ends_difference <= matching_tolerance)
+                            .then_some((starts_difference + ends_difference, window))
+                    })
+                    .min_by_key(|(difference, _)| *difference)
+                    .map(|(_, window)| window)
+            });
+        let (target_window_id, target_starts_at, target_ends_at) =
+            if let Some(existing) = matching_window {
+                (
+                    existing.id().clone(),
+                    existing.starts_at().value(),
+                    existing.ends_at().value(),
+                )
+            } else if bounds_changed {
+                (
+                    WindowId::new(format!(
+                        "{}-window-{}",
+                        current_window.pool_id(),
+                        command.ends_at
+                    ))?,
+                    command.starts_at,
+                    command.ends_at,
+                )
+            } else {
+                (
+                    current_window_id.clone(),
+                    current_window.starts_at().value(),
+                    current_window.ends_at().value(),
+                )
+            };
+        let rolled_over = target_window_id != current_window_id;
         let target_window = QuotaWindow::new(
             target_window_id.clone(),
             current_window.pool_id().clone(),
-            UnixMillis::new(command.starts_at),
-            UnixMillis::new(command.ends_at),
+            UnixMillis::new(target_starts_at),
+            UnixMillis::new(target_ends_at),
             QuotaAmount::new(command.capacity, unit),
         )?;
         let snapshot = ProviderQuotaSnapshot::new(
@@ -220,7 +263,7 @@ impl QuotaService {
             command.remote_window_kind,
             command.used,
             UnixMillis::new(command.observed_at),
-            UnixMillis::new(command.ends_at),
+            UnixMillis::new(target_ends_at),
         );
 
         let desktop_observations = command.desktop_observations.map(|observations| {
@@ -801,6 +844,47 @@ impl QuotaService {
             allocations,
             available_workspace_scopes,
         })
+    }
+
+    pub fn workspace_context_matching_display_name(
+        &mut self,
+        display_name: &str,
+        at: i64,
+    ) -> ApplicationResult<Option<WorkspaceContext>> {
+        let requested_name = normalized_workspace_name(display_name);
+        if requested_name.is_empty() {
+            return Ok(None);
+        }
+
+        let scopes = self.database.catalog().list_scopes()?;
+        let bindings = self.database.workspace_bindings().list()?;
+        let mut matching_paths = bindings
+            .iter()
+            .filter_map(|binding| {
+                let scope = scopes
+                    .iter()
+                    .find(|scope| scope.id() == binding.scope_id())?;
+                let folder_name = Path::new(binding.canonical_path())
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or_default();
+                (normalized_workspace_name(scope.display_name()) == requested_name
+                    || normalized_workspace_name(folder_name) == requested_name)
+                    .then(|| binding.canonical_path().to_owned())
+            })
+            .collect::<Vec<_>>();
+        matching_paths.sort();
+        matching_paths.dedup();
+
+        if matching_paths.len() != 1 {
+            return Ok(None);
+        }
+
+        self.workspace_context(GetWorkspaceContext {
+            canonical_path: matching_paths.remove(0),
+            at,
+        })
+        .map(Some)
     }
 
     pub fn evaluate_workspace_admission(
@@ -1810,6 +1894,14 @@ fn required_request_text(value: String, field: &str) -> ApplicationResult<String
         });
     }
     Ok(value)
+}
+
+fn normalized_workspace_name(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| character.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 fn map_input_storage_error(error: StorageError) -> ApplicationError {
@@ -3749,6 +3841,53 @@ mod tests {
             state.selected_window_id.as_deref(),
             Some("codex-weekly-window-20000")
         );
+    }
+
+    #[test]
+    fn concurrent_provider_sync_reuses_a_window_with_boundary_drift() {
+        let mut service = configured_service();
+        let first = service
+            .sync_provider_quota(SyncProviderQuota {
+                current_window_id: "week-1".to_owned(),
+                adapter: "codex_app_server".to_owned(),
+                remote_limit_id: "codex".to_owned(),
+                remote_window_kind: "secondary".to_owned(),
+                starts_at: 10_000,
+                ends_at: 20_000,
+                capacity: 100,
+                used: 4,
+                unit: "quota_points".to_owned(),
+                observed_at: 11_000,
+                desktop_observations: None,
+            })
+            .unwrap();
+        let retry = service
+            .sync_provider_quota(SyncProviderQuota {
+                current_window_id: "week-1".to_owned(),
+                adapter: "codex_app_server".to_owned(),
+                remote_limit_id: "codex".to_owned(),
+                remote_window_kind: "secondary".to_owned(),
+                starts_at: 10_001,
+                ends_at: 20_001,
+                capacity: 100,
+                used: 5,
+                unit: "quota_points".to_owned(),
+                observed_at: 11_001,
+                desktop_observations: None,
+            })
+            .unwrap();
+
+        assert_eq!(retry.window_id, first.window_id);
+        assert!(retry.rolled_over);
+        let pool_windows = service
+            .database
+            .catalog()
+            .list_quota_windows()
+            .unwrap()
+            .into_iter()
+            .filter(|window| window.pool_id().as_str() == "codex-weekly")
+            .count();
+        assert_eq!(pool_windows, 2);
     }
 
     #[test]

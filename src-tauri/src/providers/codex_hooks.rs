@@ -564,6 +564,7 @@ where
     let reported_path =
         canonicalize_workspace_path(&event.cwd).map_err(|error| error.to_string())?;
     let mut canonical_path = reported_path.clone();
+    let chatgpt_project_name = chatgpt_project_name(&reported_path);
     let mut context = service
         .workspace_context(GetWorkspaceContext {
             canonical_path: canonical_path.clone(),
@@ -587,11 +588,31 @@ where
             }
         }
     }
+    if context.binding.is_none() {
+        if let Some(project_name) = chatgpt_project_name.as_deref() {
+            if let Some(project_context) = service
+                .workspace_context_matching_display_name(project_name, observed_at)
+                .map_err(|error| error.to_string())?
+            {
+                if let Some(binding) = project_context.binding.as_ref() {
+                    canonical_path = binding.canonical_path.clone();
+                    context = project_context;
+                }
+            }
+        }
+    }
     let (window_id, scope_id) = observation_target(service, &context, observed_at)?;
     let Some(window_id) = window_id else {
         return Ok(CodexHookOutcome::Skipped);
     };
     if scope_id.is_none() && protection_enabled(service, &window_id, observed_at)? {
+        if let Some(project_name) = chatgpt_project_name {
+            return Ok(CodexHookOutcome::Blocked {
+                reason: format!(
+                    "QuotaFence blocked this prompt because ChatGPT Project \"{project_name}\" is not linked to a unique Codex allocation. Add an allocation with the same project name, or start the task from an allocated local folder."
+                ),
+            });
+        }
         return Ok(CodexHookOutcome::Blocked {
             reason: format!(
                 "QuotaFence blocked this prompt because the Codex task reported {reported_path}, which has no Codex allocation. Add that folder in QuotaFence or start the task from an allocated folder."
@@ -683,6 +704,32 @@ where
         scope_id,
         contended: result.contended,
     })
+}
+
+fn chatgpt_project_name(canonical_path: &str) -> Option<String> {
+    let project_root = Path::new(canonical_path).ancestors().find(|candidate| {
+        candidate
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            == Some(".chatgpt-projects")
+            && candidate
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("g-p-"))
+    })?;
+    let instructions = fs::read_to_string(project_root.join("AGENTS.md")).ok()?;
+    let marker = "local mirror of the ChatGPT project ";
+    let raw_name = instructions
+        .lines()
+        .find_map(|line| line.split_once(marker).map(|(_, name)| name.trim()))?;
+    let name = raw_name
+        .trim_end_matches('.')
+        .trim_matches(|character: char| {
+            matches!(character, '“' | '”' | '‘' | '’' | '\'' | '"' | '`')
+        })
+        .trim();
+    (!name.is_empty()).then(|| name.to_owned())
 }
 
 fn exhausted_allocation_reason(workspace: &str, allocation_limit: u64) -> String {
@@ -1928,11 +1975,59 @@ mod tests {
         std::fs::remove_dir(helper_cwd).unwrap();
     }
 
+    #[test]
+    fn hook_maps_a_chatgpt_project_to_a_unique_matching_workspace_allocation() {
+        let root = temporary_folder("chatgpt-project");
+        let allocated_folder = root.join("wall_street_crew");
+        let project_mirror = root.join(".chatgpt-projects").join("g-p-wall-street-crew");
+        std::fs::create_dir(&allocated_folder).unwrap();
+        std::fs::create_dir_all(&project_mirror).unwrap();
+        std::fs::write(
+            project_mirror.join("AGENTS.md"),
+            "# ChatGPT project context\n\nThis directory is a local mirror of the ChatGPT project “Wall Street Crew”.\n",
+        )
+        .unwrap();
+        let mut service = protected_service_named(&allocated_folder, "wall_street_crew");
+        let event = CodexHookEvent {
+            session_id: "chatgpt-project-session".to_owned(),
+            turn_id: Some("turn-1".to_owned()),
+            cwd: project_mirror.to_string_lossy().into_owned(),
+            hook_event_name: "UserPromptSubmit".to_owned(),
+        };
+
+        let outcome = handle_event(&mut service, &event, 3_000, || Some(detection(10))).unwrap();
+
+        assert!(matches!(
+            outcome,
+            CodexHookOutcome::ObservationStarted {
+                scope_id: Some(ref scope_id),
+                ..
+            } if scope_id == "workspace-a"
+        ));
+        let observation = service
+            .provider_turn_observation(GetProviderTurnObservation {
+                session_id: "chatgpt-project-session".to_owned(),
+                turn_id: "turn-1".to_owned(),
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            observation.canonical_path,
+            canonicalize_workspace_path(&allocated_folder).unwrap()
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     fn detection(used: u64) -> CodexDetection {
         detection_window(used, 1_000, 10_000)
     }
 
     fn protected_service(folder: &Path) -> QuotaService {
+        protected_service_named(folder, "Workspace A")
+    }
+
+    fn protected_service_named(folder: &Path, display_name: &str) -> QuotaService {
         let canonical_path = canonicalize_workspace_path(folder).unwrap();
         let mut service = QuotaService::new(Database::open_in_memory().unwrap());
         service
@@ -1964,7 +2059,7 @@ mod tests {
         service
             .create_allocated_workspace(CreateAllocatedWorkspace {
                 id: "workspace-a".to_owned(),
-                display_name: "Workspace A".to_owned(),
+                display_name: display_name.to_owned(),
                 canonical_path,
                 window_id: "codex-window".to_owned(),
                 amount: 20,
