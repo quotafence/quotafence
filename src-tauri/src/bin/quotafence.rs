@@ -2481,6 +2481,7 @@ struct CliAllocation {
     limit: u64,
     used: u64,
     remaining: i64,
+    protected_now: u64,
     decision: EnforcementDecision,
 }
 
@@ -2534,7 +2535,11 @@ fn collect_allocations(
                 limit: allocation.limit,
                 used: allocation.attributed_usage,
                 remaining: allocation.remaining,
-                decision: allocation.decision,
+                protected_now: allocation.protected_now,
+                decision: effective_allocation_decision(
+                    allocation.decision,
+                    allocation.protected_now,
+                ),
             }
         }));
     }
@@ -2554,25 +2559,25 @@ fn print_allocation_table(rows: Vec<CliAllocation>) {
         .max()
         .unwrap_or(5)
         .clamp(7, 28);
-    let widths = [3, provider_width, scope_width, 8, 8, 8, 12];
+    let widths = [3, provider_width, scope_width, 8, 8, 8, 8, 12];
     println!("{}", paint(&table_rule('╭', '┬', '╮', &widths), "2"));
     println!(
-            "{} {:<3} {} {:<provider_width$} {} {:<scope_width$} {} {:<8} {} {:<8} {} {:<8} {} {:<12} {}",
+            "{} {:<3} {} {:<provider_width$} {} {:<scope_width$} {} {:<8} {} {:<8} {} {:<8} {} {:<8} {} {:<12} {}",
             paint("│", "2"), paint("#", "2"), paint("│", "2"), paint("PROVIDER", "2"),
             paint("│", "2"), paint("PROJECT", "2"), paint("│", "2"), paint("WEEKLY", "2"),
             paint("│", "2"), paint("USED", "2"), paint("│", "2"), paint("LEFT", "2"),
-            paint("│", "2"), paint("STATUS", "2"), paint("│", "2")
+            paint("│", "2"), paint("SAFE", "2"), paint("│", "2"), paint("STATUS", "2"), paint("│", "2")
         );
     println!("{}", paint(&table_rule('├', '┼', '┤', &widths), "2"));
     for row in rows {
         let project = truncate_text(&row.scope, scope_width);
         let (icon, color) = decision_style(row.decision);
         println!(
-                "{} {:<3} {} {:<provider_width$} {} {:<scope_width$} {} {:<8} {} {:<8} {} {:<8} {} {:<12} {}",
+                "{} {:<3} {} {:<provider_width$} {} {:<scope_width$} {} {:<8} {} {:<8} {} {:<8} {} {:<8} {} {:<12} {}",
                 paint("│", "2"), row.priority + 1, paint("│", "2"), row.provider,
                 paint("│", "2"), project, paint("│", "2"), format!("{}%", row.limit),
                 paint("│", "2"), format!("{}%", row.used), paint("│", "2"),
-                format!("{}%", row.remaining.max(0)), paint("│", "2"),
+                format!("{}%", row.remaining.max(0)), paint("│", "2"), format!("{}%", row.protected_now), paint("│", "2"),
                 paint(&format!("{icon} {}", decision_label(row.decision, false)), color),
                 paint("│", "2")
             );
@@ -3839,12 +3844,13 @@ fn draw_top_projects(frame: &mut Frame<'_>, area: Rect, snapshot: &TopSnapshot, 
         || "No allocation selected. Create one with qfence allocations add.".to_owned(),
         |allocation| {
             format!(
-                "{}\n{}\nProvider: {}  •  priority {}  •  {}% of weekly quota",
+                "{}\n{}\nProvider: {}  •  priority {}  •  {}% budget left  •  {}% protected now",
                 allocation.scope,
                 allocation.path.as_deref().unwrap_or("No folder binding"),
                 allocation.provider,
                 allocation.priority + 1,
-                allocation.limit
+                allocation.remaining.max(0),
+                allocation.protected_now,
             )
         },
     );
@@ -3862,7 +3868,7 @@ fn draw_top_allocation_table(
     title: &str,
 ) {
     let header = Row::new([
-        "#", "Project", "Provider", "Budget", "Used", "Left", "State",
+        "#", "Project", "Provider", "Budget", "Used", "Left", "Safe", "State",
     ])
     .style(
         Style::default()
@@ -3882,6 +3888,7 @@ fn draw_top_allocation_table(
             Cell::from(format!("{}%", allocation.limit)),
             Cell::from(format!("{}%", allocation.used)),
             Cell::from(format!("{}%", allocation.remaining.max(0))),
+            Cell::from(format!("{}%", allocation.protected_now)),
             Cell::from(decision_label(allocation.decision, false))
                 .style(Style::default().fg(color)),
         ])
@@ -3893,6 +3900,7 @@ fn draw_top_allocation_table(
             Constraint::Percentage(30),
             Constraint::Percentage(18),
             Constraint::Length(9),
+            Constraint::Length(8),
             Constraint::Length(8),
             Constraint::Length(8),
             Constraint::Length(12),
@@ -4133,6 +4141,17 @@ fn decision_label(decision: EnforcementDecision, override_applied: bool) -> &'st
         (EnforcementDecision::RequireConfirmation, true) => "allow (explicit override)",
         (EnforcementDecision::RequireConfirmation, false) => "confirmation required",
         (EnforcementDecision::Stop, _) => "stop",
+    }
+}
+
+fn effective_allocation_decision(
+    allocation_decision: EnforcementDecision,
+    protected_now: u64,
+) -> EnforcementDecision {
+    if protected_now == 0 {
+        EnforcementDecision::Stop
+    } else {
+        allocation_decision
     }
 }
 
@@ -4778,6 +4797,18 @@ mod tests {
         assert_eq!(relative_age(Some(now - 7_200_000), now), "2h ago");
         assert_eq!(relative_age(Some(now - 172_800_000), now), "2d ago");
         assert_eq!(relative_age(None, now), "never");
+    }
+
+    #[test]
+    fn allocation_state_stops_when_priority_protects_no_quota() {
+        assert_eq!(
+            effective_allocation_decision(EnforcementDecision::Allow, 0),
+            EnforcementDecision::Stop
+        );
+        assert_eq!(
+            effective_allocation_decision(EnforcementDecision::Warn, 4),
+            EnforcementDecision::Warn
+        );
     }
 
     #[test]

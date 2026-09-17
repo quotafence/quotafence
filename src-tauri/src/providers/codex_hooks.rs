@@ -667,8 +667,10 @@ where
             }
             return Ok(CodexHookOutcome::Blocked {
                 reason: format!(
-                    "QuotaFence blocked this prompt because {} has no protected weekly quota at its current priority. Reorder workspace priorities or wait for the next weekly reset.",
-                    scope_display_name
+                    "QuotaFence blocked this prompt because {scope_display_name} has {}% left in its {}% weekly project budget, but currently receives 0% protected quota at its priority. Codex has {}% weekly quota left, and it is reserved for higher-priority projects. Move this project higher, reduce a higher-priority budget, or wait for the weekly reset.",
+                    assessment.remaining,
+                    assessment.limit,
+                    assessment.provider_remaining,
                 ),
             });
         }
