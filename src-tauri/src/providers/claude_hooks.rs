@@ -25,6 +25,8 @@ use super::claude_code::{self, ClaudeHookEventKind, ClaudeHookObservation, CLAUD
 const OWNED_MARKER: &str = " hook claude";
 const HEARTBEAT_FILE: &str = "claude-hook-heartbeat.json";
 const EVENTS: [&str; 4] = ["UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"];
+const CLAUDE_HOOK_CACHE_TTL_MILLIS: i64 = 60_000;
+const CLAUDE_HOOK_FALLBACK_TTL_MILLIS: i64 = 5 * 60_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -166,11 +168,18 @@ fn begin_prompt(
         .provider_turn_observations_for_session(&event.session_id)
         .map_err(|error| error.to_string())?
         .is_empty()
+        && finish_prompt(service, event, observed_at).is_err()
     {
-        finish_prompt(service, event, observed_at)?;
+        // A provider refresh can be rate limited or temporarily unavailable. Do not let an
+        // unreconciled turn permanently prevent future prompts; provider quota protection is
+        // still evaluated below from the most recent safe checkpoint.
+        service
+            .abandon_provider_session_observations(AbandonProviderSessionObservations {
+                session_id: event.session_id.clone(),
+            })
+            .map_err(|error| error.to_string())?;
     }
-    let observation = claude_code::fetch_subscription_usage()?;
-    let synced = claude_code::ingest_observation(service, &observation, observed_at)?;
+    let synced = sync_claude_for_hook(service, observed_at)?;
     let canonical_path =
         canonicalize_workspace_path(&event.current_directory).map_err(|error| error.to_string())?;
     let context = service
@@ -313,6 +322,77 @@ fn begin_prompt(
             .map_err(|error| error.to_string())?;
     }
     Ok(HookOutcome::Allowed { warning })
+}
+
+fn sync_claude_for_hook(
+    service: &mut QuotaService,
+    observed_at: i64,
+) -> Result<claude_code::ClaudeSyncResult, String> {
+    if let Some(cached) = cached_claude_sync(service, observed_at, CLAUDE_HOOK_CACHE_TTL_MILLIS)? {
+        return Ok(cached);
+    }
+
+    match claude_code::fetch_subscription_usage()
+        .and_then(|observation| claude_code::ingest_observation(service, &observation, observed_at))
+    {
+        Ok(synced) => Ok(synced),
+        Err(refresh_error) => {
+            cached_claude_sync(service, observed_at, CLAUDE_HOOK_FALLBACK_TTL_MILLIS)?
+                .ok_or(refresh_error)
+        }
+    }
+}
+
+fn cached_claude_sync(
+    service: &mut QuotaService,
+    observed_at: i64,
+    max_age_millis: i64,
+) -> Result<Option<claude_code::ClaudeSyncResult>, String> {
+    let state = service
+        .local_state(GetLocalState {
+            selected_window_id: None,
+            at: observed_at,
+        })
+        .map_err(|error| error.to_string())?;
+    let windows = state
+        .sources
+        .iter()
+        .filter_map(|source| cached_claude_window(source, observed_at, max_age_millis))
+        .collect::<Vec<_>>();
+    Ok((!windows.is_empty()).then_some(claude_code::ClaudeSyncResult { windows }))
+}
+
+fn cached_claude_window(
+    source: &QuotaSourceSummary,
+    observed_at: i64,
+    max_age_millis: i64,
+) -> Option<claude_code::ClaudeSyncedWindow> {
+    if !source.is_active
+        || source.unit != "percent"
+        || !source
+            .provider_display_name
+            .eq_ignore_ascii_case("Claude Code")
+    {
+        return None;
+    }
+    let synced_at = source.last_synced_at?;
+    if observed_at.saturating_sub(synced_at) > max_age_millis {
+        return None;
+    }
+    let normalized = source.pool_display_name.to_ascii_lowercase();
+    let kind = if normalized.contains("5-hour") || normalized.contains("5 hour") {
+        "five_hour"
+    } else if normalized.contains("weekly") || normalized.contains("7-day") {
+        "seven_day"
+    } else {
+        return None;
+    };
+    Some(claude_code::ClaudeSyncedWindow {
+        kind: kind.to_owned(),
+        display_name: source.pool_display_name.clone(),
+        window_id: source.window_id.clone(),
+        rolled_over: false,
+    })
 }
 
 fn exhausted_claude_window(
@@ -664,5 +744,26 @@ mod tests {
             "Weekly allowance",
             100
         )));
+    }
+
+    #[test]
+    fn recent_active_claude_source_can_back_a_hook_decision() {
+        let mut source = source("Claude Code", "Weekly allowance", 12);
+        source.last_synced_at = Some(9_000);
+        let cached = cached_claude_window(&source, 10_000, 5_000).unwrap();
+        assert_eq!(cached.kind, "seven_day");
+        assert_eq!(cached.window_id, "Weekly allowance-window");
+    }
+
+    #[test]
+    fn stale_or_inactive_sources_cannot_back_a_hook_decision() {
+        let mut stale = source("Claude Code", "5-hour allowance", 12);
+        stale.last_synced_at = Some(1_000);
+        assert!(cached_claude_window(&stale, 10_000, 5_000).is_none());
+
+        let mut inactive = source("Claude Code", "Weekly allowance", 12);
+        inactive.last_synced_at = Some(9_000);
+        inactive.is_active = false;
+        assert!(cached_claude_window(&inactive, 10_000, 5_000).is_none());
     }
 }
