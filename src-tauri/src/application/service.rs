@@ -1258,19 +1258,45 @@ impl QuotaService {
         &mut self,
         command: CreateAllocatedWorkspace,
     ) -> ApplicationResult<()> {
+        let canonical_path = required_request_text(command.canonical_path, "workspace path")?;
+        let window_id = WindowId::new(command.window_id)?;
+        let amount = QuotaAmount::new(command.amount, QuotaUnit::new(command.unit)?);
+
+        if let Some(binding) = self
+            .database
+            .workspace_bindings()
+            .get_by_path(&canonical_path)?
+        {
+            let allocation_exists = self
+                .database
+                .allocations()
+                .list_for_window(&window_id)?
+                .iter()
+                .any(|allocation| allocation.scope_id() == binding.scope_id());
+            if allocation_exists {
+                return Err(ApplicationError::InvalidRequest {
+                    message: format!(
+                        "workspace {canonical_path} already has an allocation in quota window {window_id}"
+                    ),
+                });
+            }
+            let allocation = Allocation::new(binding.scope_id().clone(), window_id, amount);
+            self.database
+                .allocations()
+                .set(&allocation)
+                .map_err(map_input_storage_error)?;
+            return Ok(());
+        }
+
         let scope = Scope::new(
             ScopeId::new(command.id)?,
             None,
             crate::domain::ScopeKind::Workspace,
             command.display_name,
         )?;
-        let allocation = Allocation::new(
-            scope.id().clone(),
-            WindowId::new(command.window_id)?,
-            QuotaAmount::new(command.amount, QuotaUnit::new(command.unit)?),
-        );
+        let allocation = Allocation::new(scope.id().clone(), window_id, amount);
         let binding = WorkspaceBinding::new(
-            required_request_text(command.canonical_path, "workspace path")?,
+            canonical_path,
             scope.id().clone(),
             UnixMillis::new(command.bound_at),
         );
@@ -3331,6 +3357,124 @@ mod tests {
             .scopes
             .iter()
             .any(|scope| scope.id == "workspace-rolled-back"));
+    }
+
+    #[test]
+    fn workspace_binding_is_shared_across_provider_allocations() {
+        let mut service = configured_service();
+        service
+            .create_quota_source(CreateQuotaSource {
+                provider_id: "claude".to_owned(),
+                provider_display_name: "Claude Code".to_owned(),
+                account_id: "claude-subscription".to_owned(),
+                account_display_name: "Subscription".to_owned(),
+                pool_id: "claude-weekly".to_owned(),
+                pool_display_name: "Weekly allowance".to_owned(),
+                window_id: "claude-week-1".to_owned(),
+                starts_at: 1_000,
+                ends_at: 10_000,
+                capacity: 100,
+                unit: "quota_points".to_owned(),
+                provider_snapshot: Some(ProviderQuotaSnapshotInput {
+                    adapter: "claude_status_line".to_owned(),
+                    remote_limit_id: "claude".to_owned(),
+                    remote_window_kind: "weekly".to_owned(),
+                    used: 5,
+                    observed_at: 2_000,
+                    resets_at: 10_000,
+                }),
+            })
+            .unwrap();
+        service
+            .create_allocated_workspace(CreateAllocatedWorkspace {
+                id: "workspace-shared".to_owned(),
+                display_name: "Shared workspace".to_owned(),
+                canonical_path: "/code/shared".to_owned(),
+                window_id: "week-1".to_owned(),
+                amount: 30,
+                unit: "quota_points".to_owned(),
+                bound_at: 2_000,
+            })
+            .unwrap();
+        service
+            .create_allocated_workspace(CreateAllocatedWorkspace {
+                id: "unused-second-scope".to_owned(),
+                display_name: "Shared workspace".to_owned(),
+                canonical_path: "/code/shared".to_owned(),
+                window_id: "claude-week-1".to_owned(),
+                amount: 20,
+                unit: "quota_points".to_owned(),
+                bound_at: 2_100,
+            })
+            .unwrap();
+        let codex_rollover = service
+            .sync_provider_quota(SyncProviderQuota {
+                current_window_id: "week-1".to_owned(),
+                adapter: "codex_app_server".to_owned(),
+                remote_limit_id: "codex".to_owned(),
+                remote_window_kind: "weekly".to_owned(),
+                starts_at: 10_000,
+                ends_at: 20_000,
+                capacity: 100,
+                used: 6,
+                unit: "quota_points".to_owned(),
+                observed_at: 11_000,
+                desktop_observations: None,
+            })
+            .unwrap();
+
+        let context = service
+            .workspace_context(GetWorkspaceContext {
+                canonical_path: "/code/shared".to_owned(),
+                at: 11_000,
+            })
+            .unwrap();
+        assert_eq!(
+            context.binding.as_ref().unwrap().scope_id,
+            "workspace-shared"
+        );
+        assert_eq!(context.allocations.len(), 2);
+        assert!(!service
+            .local_state(GetLocalState {
+                selected_window_id: None,
+                at: 11_000,
+            })
+            .unwrap()
+            .scopes
+            .iter()
+            .any(|scope| scope.id == "unused-second-scope"));
+
+        service
+            .remove_workspace_allocation(RemoveWorkspaceAllocation {
+                scope_id: "workspace-shared".to_owned(),
+                window_id: codex_rollover.window_id,
+                removed_at: 11_100,
+            })
+            .unwrap();
+        let context = service
+            .workspace_context(GetWorkspaceContext {
+                canonical_path: "/code/shared".to_owned(),
+                at: 11_200,
+            })
+            .unwrap();
+        assert!(context.binding.is_some());
+        assert_eq!(context.allocations.len(), 1);
+        assert_eq!(context.allocations[0].window_id, "claude-week-1");
+
+        service
+            .remove_workspace_allocation(RemoveWorkspaceAllocation {
+                scope_id: "workspace-shared".to_owned(),
+                window_id: "claude-week-1".to_owned(),
+                removed_at: 11_300,
+            })
+            .unwrap();
+        let context = service
+            .workspace_context(GetWorkspaceContext {
+                canonical_path: "/code/shared".to_owned(),
+                at: 11_400,
+            })
+            .unwrap();
+        assert!(context.binding.is_none());
     }
 
     #[test]
