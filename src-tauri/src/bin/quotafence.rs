@@ -2783,6 +2783,42 @@ struct TopSnapshot {
     refreshed_at: i64,
 }
 
+const TOP_WARNING_TTL: Duration = Duration::from_secs(6);
+
+fn update_top_warning_toast(
+    warnings: &mut Vec<String>,
+    previous_warnings: &mut Vec<String>,
+    visible_until: &mut Option<Instant>,
+    now: Instant,
+) {
+    if warnings.is_empty() {
+        previous_warnings.clear();
+        *visible_until = None;
+        return;
+    }
+    if *warnings != *previous_warnings {
+        *previous_warnings = warnings.clone();
+        *visible_until = Some(now + TOP_WARNING_TTL);
+        return;
+    }
+    if visible_until.is_none_or(|deadline| now >= deadline) {
+        warnings.clear();
+    }
+}
+
+fn expire_top_warning_toast(
+    warnings: &mut Vec<String>,
+    visible_until: &mut Option<Instant>,
+    now: Instant,
+) -> bool {
+    if visible_until.is_some_and(|deadline| now >= deadline) {
+        warnings.clear();
+        *visible_until = None;
+        return true;
+    }
+    false
+}
+
 #[derive(Debug)]
 enum TopDialog {
     Add(AddAllocationForm),
@@ -2909,6 +2945,9 @@ fn top_event_loop(
     let mut selected_row = 0usize;
     let mut last_refresh = Instant::now();
     let refresh_interval = Duration::from_secs(interval_seconds);
+    let mut previous_warnings = snapshot.warnings.clone();
+    let mut warning_visible_until =
+        (!snapshot.warnings.is_empty()).then(|| Instant::now() + TOP_WARNING_TTL);
     let mut transient_error = None;
     let mut needs_draw = true;
     let mut last_draw = Instant::now();
@@ -2951,6 +2990,13 @@ fn top_event_loop(
                             dialog = None;
                             match load_top_snapshot(options) {
                                 Ok(next) => {
+                                    let mut next = next;
+                                    update_top_warning_toast(
+                                        &mut next.warnings,
+                                        &mut previous_warnings,
+                                        &mut warning_visible_until,
+                                        Instant::now(),
+                                    );
                                     snapshot = next;
                                     selected_row = selected_row
                                         .min(snapshot.allocations.len().saturating_sub(1));
@@ -2968,6 +3014,13 @@ fn top_event_loop(
                     KeyCode::Char('q') | KeyCode::Esc => break,
                     KeyCode::Char('r') => match load_top_snapshot(options) {
                         Ok(next) => {
+                            let mut next = next;
+                            update_top_warning_toast(
+                                &mut next.warnings,
+                                &mut previous_warnings,
+                                &mut warning_visible_until,
+                                Instant::now(),
+                            );
                             snapshot = next;
                             selected_row =
                                 selected_row.min(snapshot.allocations.len().saturating_sub(1));
@@ -3042,6 +3095,13 @@ fn top_event_loop(
                             match execute_top_mutation(options, &args) {
                                 Ok(()) => match load_top_snapshot(options) {
                                     Ok(next) => {
+                                        let mut next = next;
+                                        update_top_warning_toast(
+                                            &mut next.warnings,
+                                            &mut previous_warnings,
+                                            &mut warning_visible_until,
+                                            Instant::now(),
+                                        );
                                         snapshot = next;
                                         selected_row = if direction == "up" {
                                             selected_row.saturating_sub(1)
@@ -3091,6 +3151,13 @@ fn top_event_loop(
         if last_refresh.elapsed() >= refresh_interval {
             match load_top_snapshot(options) {
                 Ok(next) => {
+                    let mut next = next;
+                    update_top_warning_toast(
+                        &mut next.warnings,
+                        &mut previous_warnings,
+                        &mut warning_visible_until,
+                        Instant::now(),
+                    );
                     snapshot = next;
                     selected_row = selected_row.min(snapshot.allocations.len().saturating_sub(1));
                     transient_error = None;
@@ -3102,6 +3169,13 @@ fn top_event_loop(
                 }
             }
             last_refresh = Instant::now();
+        }
+        if expire_top_warning_toast(
+            &mut snapshot.warnings,
+            &mut warning_visible_until,
+            Instant::now(),
+        ) {
+            needs_draw = true;
         }
     }
     Ok(())
@@ -4423,6 +4497,53 @@ mod tests {
         assert_eq!(history_glyph(0, 10), '·');
         assert_eq!(history_glyph(1, 10), '▁');
         assert_eq!(history_glyph(10, 10), '█');
+    }
+
+    #[test]
+    fn top_warning_toast_expires_and_deduplicates_consecutive_failures() {
+        let started_at = Instant::now();
+        let warning = "Claude refresh is rate limited".to_owned();
+        let mut warnings = vec![warning.clone()];
+        let mut previous = Vec::new();
+        let mut visible_until = None;
+
+        update_top_warning_toast(&mut warnings, &mut previous, &mut visible_until, started_at);
+        assert_eq!(warnings, vec![warning.clone()]);
+        assert_eq!(visible_until, Some(started_at + TOP_WARNING_TTL));
+
+        assert!(expire_top_warning_toast(
+            &mut warnings,
+            &mut visible_until,
+            started_at + TOP_WARNING_TTL,
+        ));
+        assert!(warnings.is_empty());
+
+        warnings.push(warning.clone());
+        update_top_warning_toast(
+            &mut warnings,
+            &mut previous,
+            &mut visible_until,
+            started_at + TOP_WARNING_TTL,
+        );
+        assert!(warnings.is_empty());
+
+        update_top_warning_toast(
+            &mut warnings,
+            &mut previous,
+            &mut visible_until,
+            started_at + TOP_WARNING_TTL,
+        );
+        assert!(previous.is_empty());
+
+        warnings.push(warning);
+        update_top_warning_toast(
+            &mut warnings,
+            &mut previous,
+            &mut visible_until,
+            started_at + TOP_WARNING_TTL,
+        );
+        assert!(!warnings.is_empty());
+        assert!(visible_until.is_some());
     }
 
     #[test]
