@@ -96,18 +96,6 @@ struct ClaudeTokenRefreshResponse {
     expires_in: Option<f64>,
 }
 
-#[derive(Debug, Deserialize)]
-struct ClaudeUsageResponse {
-    five_hour: Option<ClaudeUsageWindow>,
-    seven_day: Option<ClaudeUsageWindow>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ClaudeUsageWindow {
-    utilization: f64,
-    resets_at: String,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClaudeCodeProbeStatus {
@@ -884,20 +872,135 @@ fn read_desktop_access_token() -> Result<String, String> {
     )
 }
 
-fn map_usage_window(window: ClaudeUsageWindow) -> Result<ClaudeRateLimitWindow, String> {
-    if !window.utilization.is_finite() || !(0.0..=100.0).contains(&window.utilization) {
+fn parse_usage_number(value: &Value) -> Option<f64> {
+    value
+        .as_f64()
+        .or_else(|| value.as_str()?.trim().parse::<f64>().ok())
+}
+
+fn parse_usage_reset(value: &Value) -> Option<i64> {
+    if let Some(seconds) = value.as_i64() {
+        return (seconds > 0).then_some(seconds);
+    }
+    if let Some(seconds) = value.as_f64() {
+        return (seconds.is_finite() && seconds > 0.0).then_some(seconds as i64);
+    }
+    let reset = value.as_str()?.trim();
+    DateTime::parse_from_rfc3339(reset)
+        .ok()
+        .map(|value| value.timestamp())
+        .filter(|seconds| *seconds > 0)
+        .or_else(|| reset.parse::<i64>().ok().filter(|seconds| *seconds > 0))
+}
+
+fn map_usage_window(value: &Value) -> Result<Option<ClaudeRateLimitWindow>, String> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    let window = value.as_object().ok_or_else(|| {
+        format!(
+            "Claude returned an invalid subscription window ({})",
+            json_shape(value)
+        )
+    })?;
+    let utilization = window
+        .get("utilization")
+        .or_else(|| window.get("used_percentage"))
+        .and_then(parse_usage_number)
+        .ok_or_else(|| {
+            format!(
+                "Claude returned an invalid subscription utilization ({})",
+                json_shape(value)
+            )
+        })?;
+    if !utilization.is_finite() || !(0.0..=100.0).contains(&utilization) {
         return Err("Claude returned an invalid subscription utilization".to_owned());
     }
-    let resets_at_seconds = DateTime::parse_from_rfc3339(&window.resets_at)
-        .map_err(|_| "Claude returned an invalid subscription reset time")?
-        .timestamp();
-    if resets_at_seconds <= 0 {
-        return Err("Claude returned an invalid subscription reset time".to_owned());
+    let reset = window
+        .get("resets_at")
+        .or_else(|| window.get("reset_at"))
+        .ok_or_else(|| {
+            format!(
+                "Claude returned an invalid subscription reset time ({})",
+                json_shape(value)
+            )
+        })?;
+    if reset.is_null() {
+        return Ok(None);
     }
-    Ok(ClaudeRateLimitWindow {
-        used_percentage: window.utilization,
+    let resets_at_seconds = parse_usage_reset(reset).ok_or_else(|| {
+        format!(
+            "Claude returned an invalid subscription reset time ({})",
+            json_shape(value)
+        )
+    })?;
+    Ok(Some(ClaudeRateLimitWindow {
+        used_percentage: utilization,
         resets_at_seconds,
-    })
+    }))
+}
+
+fn json_shape(value: &Value) -> String {
+    match value {
+        Value::Object(object) => object
+            .iter()
+            .map(|(key, value)| {
+                let kind = match value {
+                    Value::Null => "null",
+                    Value::Bool(_) => "boolean",
+                    Value::Number(_) => "number",
+                    Value::String(_) => "string",
+                    Value::Array(_) => "array",
+                    Value::Object(_) => "object",
+                };
+                format!("{key}:{kind}")
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+        Value::Null => "null".to_owned(),
+        Value::Bool(_) => "boolean".to_owned(),
+        Value::Number(_) => "number".to_owned(),
+        Value::String(_) => "string".to_owned(),
+        Value::Array(_) => "array".to_owned(),
+    }
+}
+
+fn parse_usage_response(
+    value: &Value,
+) -> Result<(Option<ClaudeRateLimitWindow>, Option<ClaudeRateLimitWindow>), String> {
+    let root = value
+        .get("rate_limits")
+        .or_else(|| value.get("usage"))
+        .unwrap_or(value);
+    let object = root.as_object().ok_or_else(|| {
+        format!(
+            "Claude returned an unsupported usage response ({})",
+            json_shape(value)
+        )
+    })?;
+    let has_known_window = object.contains_key("five_hour")
+        || object.contains_key("fiveHour")
+        || object.contains_key("seven_day")
+        || object.contains_key("sevenDay");
+    let five_hour = object
+        .get("five_hour")
+        .or_else(|| object.get("fiveHour"))
+        .map(|value| map_usage_window(value).map_err(|error| format!("5-hour allowance: {error}")))
+        .transpose()?
+        .flatten();
+    let seven_day = object
+        .get("seven_day")
+        .or_else(|| object.get("sevenDay"))
+        .map(|value| map_usage_window(value).map_err(|error| format!("weekly allowance: {error}")))
+        .transpose()?
+        .flatten();
+    if !has_known_window {
+        return Err(format!(
+            "Claude returned an unsupported usage response ({})",
+            json_shape(root)
+        ));
+    }
+    Ok((five_hour, seven_day))
 }
 
 pub fn fetch_subscription_usage() -> Result<ClaudeStatusLineObservation, String> {
@@ -955,14 +1058,15 @@ pub fn fetch_subscription_usage() -> Result<ClaudeStatusLineObservation, String>
             response.status().as_u16()
         ));
     }
-    let usage: ClaudeUsageResponse = response
+    let usage: Value = response
         .json()
         .map_err(|_| "Claude returned an unsupported usage response")?;
+    let (five_hour, seven_day) = parse_usage_response(&usage)?;
     let observation = ClaudeStatusLineObservation {
         session_id: "oauth-usage-refresh".to_owned(),
         current_directory: "provider-account".to_owned(),
-        five_hour: usage.five_hour.map(map_usage_window).transpose()?,
-        seven_day: usage.seven_day.map(map_usage_window).transpose()?,
+        five_hour,
+        seven_day,
     };
     record_status_line_heartbeat(
         current_time_millis(),
@@ -1371,6 +1475,68 @@ mod tests {
           "rate_limits":{"seven_day":{"used_percentage":101,"resets_at":9000}}
         }"#;
         assert!(ClaudeStatusLineObservation::parse(invalid).is_err());
+    }
+
+    #[test]
+    fn oauth_usage_parser_accepts_current_and_status_line_shapes() {
+        let (five_hour, seven_day) = parse_usage_response(&json!({
+            "five_hour": {
+                "utilization": 12.5,
+                "resets_at": "2026-09-17T10:00:00Z"
+            },
+            "seven_day": {
+                "utilization": "31",
+                "resets_at": "1789639200"
+            },
+            "seven_day_sonnet": null
+        }))
+        .unwrap();
+        assert_eq!(five_hour.unwrap().used_percentage, 12.5);
+        assert_eq!(seven_day.unwrap().used_percentage, 31.0);
+
+        let (five_hour, seven_day) = parse_usage_response(&json!({
+            "rate_limits": {
+                "fiveHour": {
+                    "used_percentage": 8,
+                    "reset_at": 1789639200
+                },
+                "sevenDay": null
+            }
+        }))
+        .unwrap();
+        assert_eq!(five_hour.unwrap().used_percentage, 8.0);
+        assert_eq!(seven_day, None);
+    }
+
+    #[test]
+    fn oauth_usage_parser_reports_only_response_shape() {
+        let error = parse_usage_response(&json!({
+            "message": "private provider response",
+            "request_id": "secret"
+        }))
+        .unwrap_err();
+
+        assert!(error.contains("message:string"));
+        assert!(error.contains("request_id:string"));
+        assert!(!error.contains("private provider response"));
+        assert!(!error.contains("secret"));
+    }
+
+    #[test]
+    fn oauth_usage_parser_treats_null_reset_as_an_inactive_window() {
+        let (five_hour, seven_day) = parse_usage_response(&json!({
+            "five_hour": {
+                "utilization": 0,
+                "resets_at": null,
+                "limit_dollars": null,
+                "remaining_dollars": null
+            },
+            "seven_day": null
+        }))
+        .unwrap();
+
+        assert_eq!(five_hour, None);
+        assert_eq!(seven_day, None);
     }
 
     #[test]
