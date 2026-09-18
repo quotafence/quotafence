@@ -24,6 +24,8 @@ does not upload prompts, source code, transcripts, or provider credentials.
 
 <p align="center">
   <img src="docs/assets/desktop-dashboard.png" alt="QuotaFence desktop dashboard showing Codex and Claude Code allowances, daily usage, and weekly project allocations" width="100%" />
+  <br />
+  <sub>Desktop dashboard shown with synthetic demo data.</sub>
 </p>
 
 ## Start in 60 seconds
