@@ -1,230 +1,214 @@
 <div align="center">
-  <img src="logo/quotafence-app-icon.png" alt="QuotaFence" width="120" />
+  <img src="logo/quotafence-app-icon.png" alt="QuotaFence logo" width="112" />
   <h1>QuotaFence</h1>
-  <p><strong>Allocate and protect AI coding-agent quota by project.</strong></p>
-  <p>A local-first desktop app and terminal UI for Codex and Claude Code.</p>
+  <p><strong>Local-first quota management for Codex and Claude Code.</strong></p>
+  <p>Track 5-hour and weekly allowances, assign weekly budgets to project folders, and protect important work before shared quota runs out.</p>
 
+  [![npm](https://img.shields.io/npm/v/@quotafence/cli?label=npm)](https://www.npmjs.com/package/@quotafence/cli)
+  [![GitHub release](https://img.shields.io/github/v/release/quotafence/quotafence)](https://github.com/quotafence/quotafence/releases)
   [![CI](https://github.com/quotafence/quotafence/actions/workflows/ci.yml/badge.svg)](https://github.com/quotafence/quotafence/actions/workflows/ci.yml)
   [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-  [![Release](https://img.shields.io/badge/release-v0.1.0-2ea44f.svg)](docs/beta.md)
 </div>
 
-> [!WARNING]
-> QuotaFence is an early `0.x` release. Downloadable builds are unsigned; macOS builds
-> are ad-hoc signed but not notarized. Verify the supplied checksum before
-> bypassing Gatekeeper or SmartScreen, and do not rely on QuotaFence as the only
-> safeguard for critical quota.
+QuotaFence is an open-source desktop app and terminal UI for people who run AI
+coding agents across several projects. It keeps its ledger on your device and
+does not upload prompts, source code, transcripts, or provider credentials.
 
-## Why QuotaFence?
+> [!IMPORTANT]
+> QuotaFence `0.x` is an early release. Desktop installers are not notarized or
+> production-signed yet. Read the [installation notes](docs/installing.md)
+> before bypassing Gatekeeper or SmartScreen.
 
-AI coding subscriptions usually expose one shared allowance for every project.
-A long low-priority task can consume the capacity intended for important work,
-while provider dashboards cannot explain which folder used it.
+## Start in 60 seconds
 
-QuotaFence adds a local control layer:
-
-1. **Observe** provider-confirmed 5-hour and weekly allowance windows.
-2. **Allocate** weekly quota to folders without limiting the number of projects.
-3. **Enforce** those budgets before new managed or verified-hook work starts.
-
-Prompts, source code, transcripts, and credentials are not uploaded to a
-QuotaFence service. The free core works without an account or cloud backend.
-
-## What you get
-
-| | Capability |
-| --- | --- |
-| 📊 | One dashboard for Codex and Claude Code allowance windows |
-| 📁 | Weekly budgets attached to local project folders |
-| 🛡️ | Soft warnings and hard local admission boundaries |
-| ↕️ | Priority ordering when remaining quota cannot fund every project |
-| 🧭 | Attribution from managed sessions and supported desktop activity signals |
-| 🕘 | Six months of basic local usage history |
-| ⌨️ | `qfence` CLI plus an interactive terminal dashboard |
-| 🔒 | Local SQLite storage with no prompt or source-code collection |
-
-## Platform support
-
-| Platform | Desktop app | CLI/TUI | Status |
-| --- | --- | --- | --- |
-| macOS Apple silicon and Intel | Universal DMG | Universal binary | Supported; ad-hoc signed, not notarized |
-| Windows x64 | NSIS installer | Native x64 binary | Preview; unsigned |
-| GNU/Linux x64 | AppImage and Debian package | Native x64 binary | Preview; unsigned |
-
-ARM64 Windows/Linux and musl/Alpine packages are not published yet.
-
-## Provider support
-
-| Provider | Allowance sync | Project allocation | Managed CLI | Desktop prompt gate |
-| --- | --- | --- | --- | --- |
-| Codex | 5-hour + weekly | Weekly | Available | Available |
-| Claude Code | 5-hour + weekly | Weekly | Available | Available |
-
-Availability depends on the provider client, account type, and quota windows
-returned for that account. QuotaFence never invents a missing window or converts
-context usage into subscription usage.
-
-## Install QuotaFence
-
-Download QuotaFence from [GitHub Releases](https://github.com/quotafence/quotafence/releases):
-
-| Platform | Install the desktop app |
-| --- | --- |
-| macOS | Open the universal `.dmg` and drag QuotaFence to Applications |
-| Windows x64 | Run the `windows-x64-setup.exe` installer |
-| GNU/Linux x64 | Run the `.AppImage`, or install the `.deb` on Debian-based systems |
-
-### CLI via npm (recommended)
-
-Install the native CLI and terminal dashboard on supported platforms:
+Install the CLI and interactive terminal dashboard:
 
 ```bash
 npm install --global @quotafence/cli
-qfence status
+qfence sync
+qfence top
 ```
 
-### Standalone CLI archive
-
-If you do not use Node.js/npm, extract the matching `quotafence-cli-*` archive
-from GitHub Releases and run:
+Inside `qfence top`, use `a` to give the current project a weekly budget. Or do
+the same directly from the shell:
 
 ```bash
-# macOS or Linux
-./install-cli.sh ./qfence
-qfence status
+cd ~/Code/my-important-project
+qfence allocations add --provider codex --percent 30
+qfence codex
 ```
 
-On Windows, open PowerShell in the extracted CLI directory:
+That creates a 30% Codex weekly budget for the current folder, then launches a
+managed Codex session using the same local policy and ledger.
 
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\install-cli.ps1
-qfence status
-```
+Prefer a graphical interface? Download the desktop app from
+[GitHub Releases](https://github.com/quotafence/quotafence/releases).
 
-A Homebrew tap/cask is planned separately.
+## Why QuotaFence exists
 
-### Verify a download
+Codex and Claude Code expose account-level allowances. Those shared limits do
+not tell you how much capacity each project should receive, and one background
+task can consume quota you wanted to keep for more important work.
 
-The commands below do not install QuotaFence. They compare downloaded files
-with the release checksum before you open an unsigned installer:
+QuotaFence adds a local control layer:
+
+1. **Observe** the provider's 5-hour and weekly allowance windows.
+2. **Allocate** a share of weekly quota to each project folder.
+3. **Prioritize** which project budgets stay protected as capacity falls.
+4. **Enforce** local Warn and Stop policies for managed sessions and verified
+   provider hooks.
+5. **Review** basic usage history without sending project data to a cloud
+   service.
+
+## What you get
+
+| Capability | Desktop | CLI / TUI |
+| --- | :---: | :---: |
+| Codex and Claude Code allowance tracking | ✓ | ✓ |
+| 5-hour and weekly reset times | ✓ | ✓ |
+| Weekly budgets for local project folders | ✓ | ✓ |
+| Add, resize, remove, and reprioritize allocations | ✓ | ✓ |
+| Local Warn and Stop policies | ✓ | ✓ |
+| Basic local usage history | ✓ | ✓ |
+| Managed Codex and Claude Code launches | — | ✓ |
+| Verified desktop prompt protection | ✓ | — |
+
+There is no project-count paywall in the open-source core.
+
+## How project budgets work
+
+An allocation is a percentage of the provider's **full weekly allowance**, not
+a percentage of whatever remains at the moment you create it. The 5-hour window
+stays an account-wide safety limit.
+
+If current provider capacity can no longer fund every target, QuotaFence
+protects higher-priority projects first. It can refuse a new managed launch or
+a new prompt seen by a verified hook. It does not claim to terminate work that
+is already running.
+
+Managed sessions can be attributed directly. Desktop attribution uses minimal
+local activity metadata and only assigns provider movement when the active
+folder is unambiguous. Concurrent or unmapped usage remains unattributed rather
+than being guessed.
+
+Read [How QuotaFence models quota](docs/quota-model.md) for the full model.
+
+## Install the desktop app
+
+| Platform | Package | Current support |
+| --- | --- | --- |
+| macOS Apple silicon and Intel | Universal `.dmg` | Supported; ad-hoc signed, not notarized |
+| Windows x64 | NSIS installer | Preview; unsigned |
+| GNU/Linux x64 | AppImage and Debian package | Preview; unsigned |
+
+ARM64 Windows/Linux and musl/Alpine packages are not published yet.
+
+1. Download the package for your OS from
+   [GitHub Releases](https://github.com/quotafence/quotafence/releases).
+2. Open QuotaFence and add the detected Codex or Claude Code source.
+3. Sync once and compare the allowance values with the provider.
+4. Add a project folder and assign its weekly budget.
+5. To protect desktop prompts, open the matching provider tab in
+   **Settings**, enable the integration, then follow the verification steps.
+
+Newly installed hooks cannot attach to tasks that were already open. Start a
+new task, send one prompt, then use **Check now** in QuotaFence.
+
+See the [complete installation guide](docs/installing.md) for checksums,
+Gatekeeper, SmartScreen, upgrades, PATH configuration, and removal.
+
+## Provider support
+
+| Provider | Allowance sync | Weekly project budgets | Managed CLI | Desktop prompt gate |
+| --- | --- | --- | --- | --- |
+| Codex | 5-hour + weekly | Available | Available | Available |
+| Claude Code | 5-hour + weekly | Available | Available | Available |
+
+Availability depends on the provider client, account type, and windows returned
+for that account. QuotaFence does not turn context-window usage into subscription
+usage or invent a provider window that is missing.
+
+## Everyday CLI commands
+
+`qfence` is the recommended command. `quotafence` is an equivalent alias.
 
 ```bash
-# macOS
-shasum -a 256 -c SHA256SUMS.txt
-
-# Linux
-sha256sum --check SHA256SUMS.txt
-```
-
-On Windows, use the PowerShell verification command in the
-[installation guide](docs/installing.md#verify-the-artifact).
-
-See the full [install, verification, upgrade, and removal guide](docs/installing.md)
-for Gatekeeper, SmartScreen, PATH, and uninstall instructions.
-
-## Five-minute setup
-
-1. Open QuotaFence and add a detected Codex or Claude Code source.
-2. Sync and confirm that percentages and reset times match the provider.
-3. Choose a project folder and assign part of the provider's weekly quota.
-4. Reorder projects to decide which budgets are protected first.
-5. Enable the provider integration from **Settings**, follow its trust steps,
-   send one test prompt, and run **Check now**.
-
-QuotaFence distinguishes **installed** from **verified** protection. Existing
-Codex tasks cannot attach a newly installed prompt hook; create or use a task
-after setup and send a prompt before expecting the health panel to turn green.
-
-Read the [v0.1 usage guide](docs/beta.md) before using hard limits for important work.
-
-## CLI and terminal dashboard
-
-`qfence` is the recommended command. `quotafence` remains an equivalent alias.
-
-```bash
-qfence status              # refresh and show all allowances
-qfence sync                # force a provider checkpoint refresh
+qfence status              # refresh and show current allowances
+qfence sync                # force a provider refresh
 qfence top                 # open the interactive terminal dashboard
 qfence history             # show basic local usage history
 qfence allocations         # list weekly project budgets
-qfence codex               # launch a managed Codex session
-qfence claude              # launch a managed Claude session
+qfence here                # show the current folder mapping
+qfence codex               # launch Codex with quota protection
+qfence claude              # launch Claude Code with quota protection
 ```
 
-Create or resize an allocation without opening the desktop app:
+Manage allocations without opening the desktop app:
 
 ```bash
-qfence allocations add --provider codex --percent 20
+qfence allocations add --provider claude --percent 20
 qfence allocations set "Client project" --percent 30 --from "Main project"
 qfence allocations move "Client project" up
+qfence allocations remove "Client project" --provider claude
 ```
 
-The TUI supports adding, editing, deleting, and reprioritizing allocations.
-Run `qfence help` or read the complete [CLI and TUI guide](docs/cli.md).
+Run `qfence help` or read the [CLI and TUI guide](docs/cli.md) for every command
+and keyboard shortcut.
 
-## How enforcement works
+### Install without npm
 
-Allocations are percentages of a provider's full **weekly** window, not of the
-amount currently remaining. Native 5-hour windows stay provider-level safety
-limits.
+Extract the matching `quotafence-cli-*` archive from GitHub Releases. On macOS
+or Linux:
 
-The highest-priority project is funded first. If external usage reduces the
-remaining weekly allowance, QuotaFence removes protection from lower-priority
-projects before higher-priority projects. It can refuse a new managed launch or
-a new prompt observed through a verified provider hook; it does not terminate a
-turn already running.
+```bash
+./install-cli.sh ./qfence
+```
 
-Managed sessions can be attributed directly. Desktop attribution uses minimal
-local activity metadata and assigns an aggregate provider delta only when the
-active folder is unambiguous. Concurrent or unmapped activity remains
-explicitly unattributed.
+On Windows, run `install-cli.ps1` from PowerShell. A Homebrew tap is not
+available yet.
 
-## Privacy boundary
+## Privacy and security boundary
 
-QuotaFence stores configuration, provider checkpoints, allocations, and basic
-usage history locally. It does **not** intentionally collect or upload:
+QuotaFence stores its configuration, provider checkpoints, project mappings,
+allocations, policy decisions, and basic usage history in a local SQLite
+database. It does **not** intentionally collect or upload:
 
 - prompts or assistant responses;
 - source files or repository contents;
 - conversation transcripts;
 - provider credentials; or
-- the local QuotaFence database.
+- the QuotaFence database.
 
-Provider authorization material required for a refresh is kept in memory and
-is not persisted by QuotaFence. Optional sync and paid cloud coordination are
-not part of this beta.
+Provider authorization material needed for a refresh is used in memory and is
+not persisted by QuotaFence. The current open-source release does not require a
+QuotaFence account or cloud backend.
 
-See [Security](SECURITY.md), [Storage](docs/storage.md), and the
+Read [Security](SECURITY.md), [Local storage](docs/storage.md), and the
 [provider capability matrix](docs/provider-capability-matrix.md) for details.
 
-## Known beta limitations
+## Honest limitations
 
-- Installers are not production-signed or notarized.
-- Windows and Linux builds are Preview quality and currently x64 only.
-- Exact subscription token usage by folder is not exposed by providers.
-- External or concurrent activity may remain unattributed.
-- Hooks protect new work; they do not stop an already-running turn.
-- Downgrading the local database is not guaranteed.
-- Cloud sync, teams, billing, and automatic cross-provider routing are not
-  implemented.
+- Desktop installers are not production-signed or notarized.
+- Windows and Linux are currently x64 Preview targets.
+- Providers do not expose exact subscription-token usage by project.
+- External, concurrent, or unmapped activity may remain unattributed.
+- Hook protection applies to new prompts; it cannot stop an in-flight turn.
+- Automatic updates, cloud sync, teams, billing, and automatic agent switching
+  are not implemented in `v0.1.0`.
 
-Use the matching form under
-[New issue](https://github.com/quotafence/quotafence/issues/new/choose) for an
-installation, sync, false-block, or attribution problem. Never attach
-credentials, prompts, transcripts, source code, or the QuotaFence database.
+If something looks wrong, use the matching form under
+[New issue](https://github.com/quotafence/quotafence/issues/new/choose). Never
+attach credentials, prompts, transcripts, source code, or the local database.
 
 ## Build from source
 
-### Prerequisites
+Prerequisites:
 
-- Node.js 22 or newer
-- npm 10 or newer
-- stable Rust toolchain
-- [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS
-
-Windows contributors should also read the [Windows setup guide](docs/windows.md);
-Linux contributors should read the [Linux guide](docs/linux.md).
+- Node.js 22 or newer;
+- npm 10 or newer;
+- the stable Rust toolchain; and
+- the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for
+  your operating system.
 
 ```bash
 git clone https://github.com/quotafence/quotafence.git
@@ -233,70 +217,63 @@ npm install
 npm run tauri -- dev
 ```
 
-Run the CLI directly from source:
+Run the CLI from source:
 
 ```bash
 npm run qfence -- status
 npm run qfence -- top
 ```
 
-Validate a change:
-
-```bash
-npm run check
-```
-
-This checks release-version alignment and npm packaging, builds the frontend,
-formats and lints Rust with warnings denied, and runs the Rust test suite.
+Validate a change with `npm run check`. Windows contributors should also read
+the [Windows guide](docs/windows.md); Linux contributors should read the
+[Linux guide](docs/linux.md).
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  UI[Desktop UI] --> APP[Shared application layer]
-  CLI[qfence CLI / TUI] --> APP
+  UI[Desktop app] --> APP[Shared application layer]
+  CLI[qfence CLI and TUI] --> APP
   APP --> CORE[Quota and policy core]
   CORE --> STORE[(Local SQLite ledger)]
   APP --> ADAPTER[Provider adapters]
-  ADAPTER --> AGENTS[Codex / Claude Code]
+  ADAPTER --> AGENTS[Codex and Claude Code]
 ```
 
-The desktop app and CLI share the same Rust application, policy, provider, and
-storage layers. The current release is a modular monolith; it does not require
+The desktop app and CLI share the same Rust application, provider, policy, and
+storage layers. QuotaFence is currently a modular monolith and does not require
 a daemon or hosted service.
-
-Start with [Architecture](docs/architecture.md), [Quota model](docs/quota-model.md),
-and [Application services](docs/application-services.md) for implementation
-details.
 
 ## Documentation
 
-| Guide | Audience |
+| Guide | Start here when… |
 | --- | --- |
-| [Beta guide](docs/beta.md) | Everyone evaluating the beta |
-| [Installing and removing](docs/installing.md) | Desktop and CLI users |
-| [CLI and TUI](docs/cli.md) | Terminal users |
-| [Windows](docs/windows.md) | Windows users and contributors |
-| [Linux](docs/linux.md) | Linux users and contributors |
-| [Roadmap](docs/roadmap.md) | Product direction and remaining work |
-| [Architecture](docs/architecture.md) | Contributors |
-| [Security policy](SECURITY.md) | Vulnerability reporters |
+| [Installation](docs/installing.md) | You want to install, upgrade, verify, or remove QuotaFence |
+| [CLI and TUI](docs/cli.md) | You want all commands and keyboard shortcuts |
+| [Quota model](docs/quota-model.md) | You want to understand budgets and priority |
+| [Provider capabilities](docs/provider-capability-matrix.md) | You want exact Codex/Claude behavior |
+| [Windows](docs/windows.md) | You use or build on Windows |
+| [Linux](docs/linux.md) | You use or build on Linux |
+| [Architecture](docs/architecture.md) | You want to contribute to the codebase |
+| [Roadmap](docs/roadmap.md) | You want to see what is planned next |
 
-Project quotas and local enforcement are part of the open-source core. Future
-commercial capabilities are intended for advanced analytics, automation, and
-optional multi-device or team coordination—not project-count paywalls. See the
-[product direction](docs/product-and-monetization.md).
+## Open-source core and future Pro features
 
-## Contributing
+Project budgets, local enforcement, provider adapters, basic history, and the
+desktop/terminal dashboards are part of the Apache-2.0 open-source core. The
+planned commercial layer is for workflow conveniences such as advanced
+analytics, forecasting, automation, and optional multi-device or team
+coordination—not a project-count paywall.
 
-QuotaFence is early, so discuss large design changes before implementing them.
-Read [CONTRIBUTING.md](CONTRIBUTING.md), then open an issue or pull request.
-Private vulnerability reports must follow [SECURITY.md](SECURITY.md).
+See [Product direction](docs/product-and-monetization.md) and
+[Licensing](docs/licensing.md).
 
-## License
+## Contributing and license
 
-QuotaFence is licensed under the [Apache License 2.0](LICENSE).
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a large change. Report
+security issues privately through [SECURITY.md](SECURITY.md).
 
-Codex, OpenAI, Claude, Anthropic, and their associated marks belong to their
-respective owners. QuotaFence is an independent project and is not affiliated
-with or endorsed by those providers.
+QuotaFence is licensed under the [Apache License 2.0](LICENSE). Codex, OpenAI,
+Claude, Anthropic, and their associated marks belong to their respective
+owners. QuotaFence is independent and is not affiliated with or endorsed by
+those providers.
