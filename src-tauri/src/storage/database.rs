@@ -171,12 +171,9 @@ impl Database {
         }
 
         transaction.execute(
-            "DELETE FROM provider_turn_observations WHERE scope_id = ?1",
-            [scope_id.as_str()],
-        )?;
-        transaction.execute(
-            "DELETE FROM workspace_bindings WHERE scope_id = ?1",
-            [scope_id.as_str()],
+            "DELETE FROM provider_turn_observations
+             WHERE scope_id = ?1 AND window_id = ?2",
+            params![scope_id.as_str(), window_id.as_str()],
         )?;
         transaction.execute(
             "DELETE FROM allocation_priorities WHERE pool_id = ?1 AND scope_id = ?2",
@@ -186,6 +183,27 @@ impl Database {
             "DELETE FROM allocations WHERE scope_id = ?1 AND window_id = ?2",
             params![scope_id.as_str(), window_id.as_str()],
         )?;
+        let remaining_allocations: i64 = transaction.query_row(
+            "SELECT COUNT(*)
+             FROM allocations a
+             JOIN quota_windows w ON w.id = a.window_id
+             WHERE a.scope_id = ?1
+               AND w.id = (
+                   SELECT current.id
+                   FROM quota_windows current
+                   WHERE current.pool_id = w.pool_id
+                   ORDER BY current.ends_at DESC, current.starts_at DESC, current.id DESC
+                   LIMIT 1
+               )",
+            [scope_id.as_str()],
+            |row| row.get(0),
+        )?;
+        if remaining_allocations == 0 {
+            transaction.execute(
+                "DELETE FROM workspace_bindings WHERE scope_id = ?1",
+                [scope_id.as_str()],
+            )?;
+        }
         transaction.commit()?;
         Ok(())
     }
