@@ -3,6 +3,30 @@
 All notable changes to QuotaFence are documented in this file. The
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-09-18
+
+Patch release focused on reliable project matching, multi-provider allocations,
+and conservative provider-hook behavior.
+
+### Fixed
+
+- Map Codex/ChatGPT projects to the correct allocated workspace instead of
+  rejecting valid prompts from an allocated folder.
+- Allow the same folder to hold independent Codex and Claude Code weekly
+  allocations without a duplicate binding failure.
+- Accept inactive Claude allowance windows and avoid false prompt blocks during
+  short-lived Claude refresh failures when a recent verified checkpoint exists.
+- Expire repeated TUI refresh warnings instead of leaving stale warnings on
+  screen indefinitely.
+- Report allocation state from effective protected quota so the TUI and prompt
+  gate agree when higher-priority projects reserve current provider capacity.
+
+### Documentation
+
+- Rewrite the public README around installation, the core workflow, privacy,
+  platform support, and the distinction between the open-source core and future
+  optional Pro capabilities.
+
 ## [0.1.0] - 2026-09-17
 
 First public QuotaFence release for macOS, Windows x64, GNU/Linux x64, and

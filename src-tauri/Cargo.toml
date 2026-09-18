@@ -1,6 +1,6 @@
 [package]
 name = "quotafence"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local-first quota allocation and enforcement for coding-agent subscriptions."
 authors = ["buisonanh"]
 edition = "2021"

@@ -1,6 +1,6 @@
 {
   "name": "@quotafence/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local-first quota allocation and enforcement for coding-agent subscriptions.",
   "license": "Apache-2.0",
   "repository": {
@@ -19,9 +19,9 @@
     "bin"
   ],
   "optionalDependencies": {
-    "@quotafence/cli-darwin-arm64": "0.1.0",
-    "@quotafence/cli-darwin-x64": "0.1.0",
-    "@quotafence/cli-linux-x64-gnu": "0.1.0",
-    "@quotafence/cli-win32-x64": "0.1.0"
+    "@quotafence/cli-darwin-arm64": "0.1.1",
+    "@quotafence/cli-darwin-x64": "0.1.1",
+    "@quotafence/cli-linux-x64-gnu": "0.1.1",
+    "@quotafence/cli-win32-x64": "0.1.1"
   }
 }
