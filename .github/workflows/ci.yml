@@ -4,15 +4,7 @@ on:
   push:
     branches:
       - main
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - ".github/ISSUE_TEMPLATE/**"
   pull_request:
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - ".github/ISSUE_TEMPLATE/**"
   workflow_dispatch:
 
 permissions:
@@ -31,8 +23,48 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect documentation-only changes
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          heavy=true
+          if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then
+            base="$BEFORE_SHA"
+            if [[ "$EVENT_NAME" == "pull_request" ]]; then
+              base="$BASE_SHA"
+            fi
+
+            if [[ -n "$base" ]] &&
+              [[ "$base" != "0000000000000000000000000000000000000000" ]] &&
+              git cat-file -e "$base^{commit}"; then
+              heavy=false
+              while IFS= read -r file; do
+                case "$file" in
+                  *.md|docs/*|.github/ISSUE_TEMPLATE/*) ;;
+                  *) heavy=true; break ;;
+                esac
+              done < <(git diff --name-only "$base" "$HEAD_SHA")
+            fi
+          fi
+          echo "heavy=$heavy" >> "$GITHUB_OUTPUT"
+
+      - name: Documentation-only check
+        if: steps.scope.outputs.heavy == 'false'
+        run: |
+          git diff --check "$BASE_SHA" "$HEAD_SHA"
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
 
       - name: Set up Node.js
+        if: steps.scope.outputs.heavy == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -40,11 +72,13 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Set up Rust
+        if: steps.scope.outputs.heavy == 'true'
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
           rustup default stable
 
       - name: Install Tauri Linux dependencies
+        if: steps.scope.outputs.heavy == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -53,27 +87,35 @@ jobs:
             librsvg2-dev
 
       - name: Install frontend dependencies
+        if: steps.scope.outputs.heavy == 'true'
         run: npm ci
 
       - name: Audit frontend dependencies
+        if: steps.scope.outputs.heavy == 'true'
         run: npm audit --audit-level=high
 
       - name: Build frontend
+        if: steps.scope.outputs.heavy == 'true'
         run: npm run build
 
       - name: Check Rust formatting
+        if: steps.scope.outputs.heavy == 'true'
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
       - name: Check Rust
+        if: steps.scope.outputs.heavy == 'true'
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml
 
       - name: Lint Rust
+        if: steps.scope.outputs.heavy == 'true'
         run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
       - name: Test Rust
+        if: steps.scope.outputs.heavy == 'true'
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
 
       - name: Smoke-test Unix CLI installer
+        if: steps.scope.outputs.heavy == 'true'
         run: |
           cargo build --locked --manifest-path src-tauri/Cargo.toml --bin quotafence
           QFENCE_INSTALL_DIR="$RUNNER_TEMP/qfence-bin" scripts/install-cli.sh src-tauri/target/debug/quotafence

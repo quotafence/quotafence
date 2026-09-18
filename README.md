@@ -8,6 +8,9 @@
   [![GitHub release](https://img.shields.io/github/v/release/quotafence/quotafence)](https://github.com/quotafence/quotafence/releases)
   [![CI](https://github.com/quotafence/quotafence/actions/workflows/ci.yml/badge.svg)](https://github.com/quotafence/quotafence/actions/workflows/ci.yml)
   [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
+  <a href="https://quotafence.com">Website</a> ·
+  <a href="https://quotafence.com/docs/">Documentation</a>
 </div>
 
 QuotaFence is an open-source desktop app and terminal UI for people who run AI
@@ -19,6 +22,10 @@ does not upload prompts, source code, transcripts, or provider credentials.
 > production-signed yet. Read the [installation notes](docs/installing.md)
 > before bypassing Gatekeeper or SmartScreen.
 
+<p align="center">
+  <img src="docs/assets/desktop-dashboard.png" alt="QuotaFence desktop dashboard showing Codex and Claude Code allowances, daily usage, and weekly project allocations" width="100%" />
+</p>
+
 ## Start in 60 seconds
 
 Install the CLI and interactive terminal dashboard:
@@ -28,6 +35,10 @@ npm install --global @quotafence/cli
 qfence sync
 qfence top
 ```
+
+<p align="center">
+  <img src="docs/assets/cli-status.png" alt="QuotaFence CLI status showing Codex and Claude Code 5-hour and weekly allowances" width="100%" />
+</p>
 
 Inside `qfence top`, use `a` to give the current project a weekly budget. Or do
 the same directly from the shell:
@@ -152,6 +163,10 @@ qfence allocations move "Client project" up
 qfence allocations remove "Client project" --provider claude
 ```
 
+<p align="center">
+  <img src="docs/assets/terminal-dashboard.png" alt="QuotaFence terminal dashboard showing provider allowances, project budgets, and usage history" width="100%" />
+</p>
+
 Run `qfence help` or read the [CLI and TUI guide](docs/cli.md) for every command
 and keyboard shortcut.
 
@@ -245,6 +260,10 @@ storage layers. QuotaFence is currently a modular monolith and does not require
 a daemon or hosted service.
 
 ## Documentation
+
+Start with the hosted [QuotaFence documentation](https://quotafence.com/docs/)
+for installation and everyday use. The repository guides below provide the
+same operational details alongside contributor and architecture references.
 
 | Guide | Start here when… |
 | --- | --- |
