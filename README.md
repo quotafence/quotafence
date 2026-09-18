@@ -194,7 +194,7 @@ Read [Security](SECURITY.md), [Local storage](docs/storage.md), and the
 - External, concurrent, or unmapped activity may remain unattributed.
 - Hook protection applies to new prompts; it cannot stop an in-flight turn.
 - Automatic updates, cloud sync, teams, billing, and automatic agent switching
-  are not implemented in `v0.1.0`.
+  are not implemented in `v0.1.1`.
 
 If something looks wrong, use the matching form under
 [New issue](https://github.com/quotafence/quotafence/issues/new/choose). Never
